@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var testResult: String? = nil
     @State private var showingMemoryViewer = false
     @State private var showingResetConfirmation = false
+    @State private var showingDeleteChatConfirmation = false
     
     init() {
         _apiKey = State(initialValue: UserDefaults.standard.string(forKey: "claude_api_key") ?? "")
@@ -176,6 +177,45 @@ struct SettingsView: View {
                         Button("Cancel", role: .cancel) {}
                     } message: {
                         Text("This will delete all memory data. This action cannot be undone.")
+                    }
+                }
+                
+                Section(header: Text("Chat Management")) {
+                    Button("Delete Chat History") {
+                        showingDeleteChatConfirmation = true
+                    }
+                    .foregroundColor(.red)
+                    .confirmationDialog(
+                        "Delete Chat History",
+                        isPresented: $showingDeleteChatConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Delete", role: .destructive) {
+                            // Clear chat messages from UserDefaults
+                            UserDefaults.standard.removeObject(forKey: "chat_messages")
+                            UserDefaults.standard.removeObject(forKey: "streaming_message_id")
+                            UserDefaults.standard.removeObject(forKey: "last_streaming_content")
+                            UserDefaults.standard.set(false, forKey: "chat_processing_state")
+                            
+                            // Post notification to refresh chat view
+                            NotificationCenter.default.post(name: NSNotification.Name("ChatHistoryDeleted"), object: nil)
+                            
+                            // Show confirmation toast or alert
+                            let generator = UINotificationFeedbackGenerator()
+                            generator.notificationOccurred(.success)
+                            
+                            testResult = "✅ Chat history deleted!"
+                            
+                            // Clear the success message after a delay
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                if testResult == "✅ Chat history deleted!" {
+                                    testResult = nil
+                                }
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This will delete all Chat message data. This action cannot be undone.")
                     }
                 }
                 
