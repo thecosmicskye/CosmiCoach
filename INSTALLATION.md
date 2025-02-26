@@ -1,6 +1,6 @@
-# Installation Guide for ADHD Coach
+# Installation Guide for Cosmic Coach
 
-This guide will walk you through the process of installing the ADHD Coach app on your iOS device.
+This guide will walk you through the process of installing the Cosmic Coach app on your iOS device.
 
 ## Prerequisites
 
@@ -66,7 +66,7 @@ Once the app is installed and running:
 ### Calendar or Reminders Access Issues
 
 - Go to Settings > Privacy on your iPhone
-- Check that ADHD Coach has permission to access Calendar and Reminders
+- Check that Cosmic Coach has permission to access Calendar and Reminders
 
 ### Claude API Not Working
 

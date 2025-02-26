@@ -100,7 +100,7 @@ struct ContentView: View {
                 }
                 .padding()
             }
-            .navigationTitle("ADHD Coach")
+            .navigationTitle("Cosmic Coach")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {

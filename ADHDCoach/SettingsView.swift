@@ -242,13 +242,13 @@ struct SettingsView: View {
                 Section(header: Text("Experimental Features")) {
                     Toggle("Automatic Messages", isOn: $enableAutomaticResponses)
                     
-                    Text("ADHD Coach will automatically send you a message when you open the app (only if you've been away for at least 5 minutes).")
+                    Text("Cosmic Coach will automatically send you a message when you open the app (only if you've been away for at least 5 minutes).")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 
                 Section(header: Text("About")) {
-                    Text("ADHD Coach v1.0")
+                    Text("Cosmic Coach v1.0")
                         .foregroundColor(.secondary)
                     
                     Text("This app uses Claude 3.7 to help manage your calendar, reminders, and provide ADHD coaching.")
