@@ -31,6 +31,7 @@ class ChatManager: ObservableObject {
     6. Use the provided calendar events and reminders to give context-aware advice
     7. You can create, modify, or delete calendar events and reminders by using specific formatting
     8. Be empathetic and understanding of ADHD challenges
+    9. Keep important information in the memory file so you can reference it in future conversations
 
     To modify calendar or reminders, use the following format:
     [CALENDAR_ADD] Title | Start time | End time | Notes (optional)
@@ -41,7 +42,15 @@ class ChatManager: ObservableObject {
     [REMINDER_MODIFY] Reminder ID | New title | New due date/time | New notes (optional)
     [REMINDER_DELETE] Reminder ID
 
-    You have access to the user's memory file which contains information about them that persists between conversations.
+    You have access to the user's memory file which contains information about them that persists between conversations. You should update this file when you learn important information about the user, their preferences, or patterns you observe. 
+    
+    To update the memory file, use the following format:
+    [MEMORY_UPDATE]
+    +This line will be added to the memory file
+    -This line will be removed from the memory file
+    [/MEMORY_UPDATE]
+    
+    Be careful not to remove too much content at once. Focus on adding new information or updating specific sections. The memory file content is visible at the top of each conversation under USER MEMORY.
     """
     
     @MainActor
@@ -219,7 +228,13 @@ class ChatManager: ObservableObject {
         }
         
         // Prepare context for Claude
-        let memoryContent = await memoryManager?.readMemory() ?? "No memory available."
+        var memoryContent = "No memory available."
+        if let manager = memoryManager {
+            memoryContent = await manager.readMemory()
+            print("Memory content loaded for Claude request. Length: \(memoryContent.count)")
+        } else {
+            print("WARNING: Memory manager not available when sending message to Claude")
+        }
         
         // Format calendar events and reminders for context
         let calendarContext = formatCalendarEvents(calendarEvents)
@@ -353,8 +368,11 @@ class ChatManager: ObservableObject {
                 }
             }
             
-            // Process the response for any calendar or reminder modifications
+            // Process the response for any calendar, reminder, or memory modifications
             await processClaudeResponse(completeResponse)
+            
+            // Look for memory update patterns and apply them
+            await processMemoryUpdates(completeResponse)
             
             // Finalize the assistant message
             await MainActor.run {
@@ -481,6 +499,43 @@ class ChatManager: ObservableObject {
             }
         } catch {
             return "❌ Error: \(error.localizedDescription)"
+        }
+    }
+    
+    private func processMemoryUpdates(_ response: String) async {
+        // Check if we have a memory manager
+        guard let memManager = await MainActor.run(body: { [weak self] in
+            return self?.memoryManager
+        }) else {
+            print("Error: MemoryManager not available for memory updates")
+            return
+        }
+        
+        // Look for memory update commands in the format:
+        // [MEMORY_UPDATE]
+        // +Added line
+        // -Removed line
+        // [/MEMORY_UPDATE]
+        
+        let memoryUpdatePattern = "\\[MEMORY_UPDATE\\]([\\s\\S]*?)\\[\\/MEMORY_UPDATE\\]"
+        if let regex = try? NSRegularExpression(pattern: memoryUpdatePattern, options: []) {
+            let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
+            
+            for match in matches {
+                if let updateRange = Range(match.range(at: 1), in: response) {
+                    let diffContent = String(response[updateRange])
+                    print("Found memory update instruction: \(diffContent.count) characters")
+                    
+                    // Apply the diff to the memory file
+                    let success = await memManager.applyDiff(diff: diffContent.trimmingCharacters(in: .whitespacesAndNewlines))
+                    
+                    if success {
+                        print("Successfully updated memory file")
+                    } else {
+                        print("Failed to update memory file")
+                    }
+                }
+            }
         }
     }
     

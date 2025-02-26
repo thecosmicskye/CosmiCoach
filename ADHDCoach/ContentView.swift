@@ -158,9 +158,19 @@ struct ContentView: View {
             .onAppear {
                 // Connect the memory manager to the chat manager
                 chatManager.setMemoryManager(memoryManager)
+                print("Connected memory manager to chat manager")
                 
                 // Setup notification observer for chat history deletion
                 setupNotificationObserver()
+                
+                // Ensure memory is properly loaded
+                Task {
+                    await memoryManager.loadMemory()
+                    if let fileURL = memoryManager.getMemoryFileURL() {
+                        print("Memory file on app launch: \(FileManager.default.fileExists(atPath: fileURL.path))")
+                        print("Memory content length: \(memoryManager.memoryContent.count)")
+                    }
+                }
             }
         }
     }
