@@ -2,11 +2,14 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var memoryManager: MemoryManager
     @State private var apiKey = ""
     @AppStorage("check_basics_daily") private var checkBasicsDaily = true
     @AppStorage("token_limit") private var tokenLimit = 75000
     @State private var isTestingKey = false
     @State private var testResult: String? = nil
+    @State private var showingMemoryViewer = false
+    @State private var showingResetConfirmation = false
     
     init() {
         _apiKey = State(initialValue: UserDefaults.standard.string(forKey: "claude_api_key") ?? "")
@@ -128,13 +131,52 @@ struct SettingsView: View {
                 
                 Section(header: Text("Memory Management")) {
                     Button("View Memory File") {
-                        // This would navigate to a memory file viewer
+                        Task {
+                            await memoryManager.loadMemory()
+                            showingMemoryViewer = true
+                        }
+                    }
+                    .sheet(isPresented: $showingMemoryViewer) {
+                        NavigationStack {
+                            ScrollView {
+                                Text(memoryManager.memoryContent)
+                                    .padding()
+                                    .textSelection(.enabled)
+                            }
+                            .navigationTitle("Memory File")
+                            .toolbar {
+                                ToolbarItem(placement: .navigationBarTrailing) {
+                                    Button("Done") {
+                                        showingMemoryViewer = false
+                                    }
+                                }
+                            }
+                        }
                     }
                     
                     Button("Reset Memory") {
-                        // This would show a confirmation dialog
+                        showingResetConfirmation = true
                     }
                     .foregroundColor(.red)
+                    .confirmationDialog(
+                        "Reset Memory",
+                        isPresented: $showingResetConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Reset", role: .destructive) {
+                            Task {
+                                // Create a new memory file with default content
+                                if let fileURL = memoryManager.getMemoryFileURL(),
+                                   FileManager.default.fileExists(atPath: fileURL.path) {
+                                    try? FileManager.default.removeItem(at: fileURL)
+                                }
+                                await memoryManager.loadMemory() // This will recreate with default content
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This will delete all memory data. This action cannot be undone.")
+                    }
                 }
                 
                 Section(header: Text("About")) {
@@ -160,4 +202,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+        .environmentObject(MemoryManager())
 }
