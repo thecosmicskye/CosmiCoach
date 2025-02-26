@@ -65,12 +65,17 @@ class ChatManager: ObservableObject {
         // This handles cases where the app was closed during message streaming
         for (index, message) in messages.enumerated() {
             if !message.isComplete {
+                // Mark as complete
                 messages[index].isComplete = true
-                // If an incomplete message is very short, add a note
-                if message.content.isEmpty || message.content.count < 10 {
-                    messages[index].content += " [Message was interrupted]"
-                } else if !message.content.hasSuffix("[Message was interrupted]") {
-                    messages[index].content += " [Message was interrupted]"
+                
+                // Only add the interruption tag if it's not already there
+                if !message.content.hasSuffix("[Message was interrupted]") {
+                    // Add the tag only if there's actual content
+                    if !message.content.isEmpty {
+                        messages[index].content += " [Message was interrupted]"
+                    } else {
+                        messages[index].content = "[Message was interrupted]"
+                    }
                 }
             }
         }
@@ -81,6 +86,7 @@ class ChatManager: ObservableObject {
         
         // Clear any saved state in UserDefaults
         UserDefaults.standard.removeObject(forKey: "streaming_message_id")
+        UserDefaults.standard.removeObject(forKey: "last_streaming_content")
         UserDefaults.standard.set(false, forKey: "chat_processing_state")
         
         // Save changes
@@ -132,9 +138,12 @@ class ChatManager: ObservableObject {
     func updateStreamingMessage(content: String) {
         if let streamingId = currentStreamingMessageId,
            let index = messages.firstIndex(where: { $0.id == streamingId }) {
+            // Update the message content
             messages[index].content = content
             // Increment counter to trigger scroll updates
             streamingUpdateCount += 1
+            // Save messages to ensure they're persisted
+            saveMessages()
         }
     }
     
@@ -146,6 +155,8 @@ class ChatManager: ObservableObject {
             currentStreamingMessageId = nil
             // Trigger one final update for scrolling
             streamingUpdateCount += 1
+            // Save messages to persist the finalized state
+            saveMessages()
         }
     }
     
