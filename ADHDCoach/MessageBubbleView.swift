@@ -24,10 +24,18 @@ struct MessageBubbleView: View {
                         }
                     }
                 
-                Text(message.formattedTimestamp)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 4)
+                HStack {
+                    Text(message.formattedTimestamp)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    
+                    if !message.isComplete && !message.isUser {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .gray))
+                            .scaleEffect(0.7)
+                    }
+                }
+                .padding(.horizontal, 4)
             }
             
             if !message.isUser {

@@ -4,14 +4,19 @@ import Combine
 class ChatManager: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var isProcessing = false
+    @Published var currentStreamingMessageId: UUID?
+    @Published var streamingUpdateCount: Int = 0  // Track streaming updates for scrolling
     
     private var apiKey: String {
         return UserDefaults.standard.string(forKey: "claude_api_key") ?? ""
     }
     private let maxTokens = 75000
     private let apiURL = URL(string: "https://api.anthropic.com/v1/messages")!
+    private let streamingURL = URL(string: "https://api.anthropic.com/v1/messages")!
     private var memoryManager: MemoryManager?
     private var eventKitManager: EventKitManager?
+    private var currentStreamingMessage: String = ""
+    private var urlSession = URLSession.shared
     
     // System prompt that defines Claude's role
     private let systemPrompt = """
@@ -44,11 +49,42 @@ class ChatManager: ObservableObject {
         // Load previous messages from storage
         loadMessages()
         
+        // Reset any incomplete messages from previous sessions
+        resetIncompleteMessages()
+        
         // Add initial assistant message if this is the first time
         if messages.isEmpty {
             let welcomeMessage = "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?"
             addAssistantMessage(content: welcomeMessage)
         }
+    }
+    
+    @MainActor
+    private func resetIncompleteMessages() {
+        // Find any incomplete messages and mark them as complete
+        // This handles cases where the app was closed during message streaming
+        for (index, message) in messages.enumerated() {
+            if !message.isComplete {
+                messages[index].isComplete = true
+                // If an incomplete message is very short, add a note
+                if message.content.isEmpty || message.content.count < 10 {
+                    messages[index].content += " [Message was interrupted]"
+                } else if !message.content.hasSuffix("[Message was interrupted]") {
+                    messages[index].content += " [Message was interrupted]"
+                }
+            }
+        }
+        
+        // Reset streaming state
+        currentStreamingMessageId = nil
+        isProcessing = false
+        
+        // Clear any saved state in UserDefaults
+        UserDefaults.standard.removeObject(forKey: "streaming_message_id")
+        UserDefaults.standard.set(false, forKey: "chat_processing_state")
+        
+        // Save changes
+        saveMessages()
     }
     
     func setMemoryManager(_ manager: MemoryManager) {
@@ -67,10 +103,50 @@ class ChatManager: ObservableObject {
     }
     
     @MainActor
-    func addAssistantMessage(content: String) {
-        let message = ChatMessage(content: content, isUser: false)
-        messages.append(message)
+    func addAssistantMessage(content: String, isComplete: Bool = true) {
+        let message = ChatMessage(content: content, isUser: false, isComplete: isComplete)
+        
+        if let streamingId = currentStreamingMessageId, !isComplete {
+            // If we already have a streaming message, update it
+            if let index = messages.firstIndex(where: { $0.id == streamingId }) {
+                messages[index].content = content
+            } else {
+                // Otherwise create a new streaming message
+                messages.append(message)
+                currentStreamingMessageId = message.id
+            }
+        } else {
+            // For complete messages or new streaming messages
+            messages.append(message)
+            if !isComplete {
+                currentStreamingMessageId = message.id
+            } else {
+                currentStreamingMessageId = nil
+            }
+        }
+        
         saveMessages()
+    }
+    
+    @MainActor
+    func updateStreamingMessage(content: String) {
+        if let streamingId = currentStreamingMessageId,
+           let index = messages.firstIndex(where: { $0.id == streamingId }) {
+            messages[index].content = content
+            // Increment counter to trigger scroll updates
+            streamingUpdateCount += 1
+        }
+    }
+    
+    @MainActor
+    func finalizeStreamingMessage() {
+        if let streamingId = currentStreamingMessageId,
+           let index = messages.firstIndex(where: { $0.id == streamingId }) {
+            messages[index].isComplete = true
+            currentStreamingMessageId = nil
+            // Trigger one final update for scrolling
+            streamingUpdateCount += 1
+        }
     }
     
     @MainActor
@@ -78,6 +154,14 @@ class ChatManager: ObservableObject {
         // Save messages to UserDefaults for persistence
         if let encoded = try? JSONEncoder().encode(messages) {
             UserDefaults.standard.set(encoded, forKey: "chat_messages")
+            
+            // Save processing state for recovery after app restart
+            UserDefaults.standard.set(isProcessing, forKey: "chat_processing_state")
+            if let id = currentStreamingMessageId {
+                UserDefaults.standard.set(id.uuidString, forKey: "streaming_message_id")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "streaming_message_id")
+            }
         }
     }
     
@@ -87,6 +171,18 @@ class ChatManager: ObservableObject {
         if let data = UserDefaults.standard.data(forKey: "chat_messages"),
            let decoded = try? JSONDecoder().decode([ChatMessage].self, from: data) {
             messages = decoded
+            
+            // Load saved streaming state (if any)
+            if let savedStreamingIdString = UserDefaults.standard.string(forKey: "streaming_message_id"),
+               let savedStreamingId = UUID(uuidString: savedStreamingIdString) {
+                // Only set if the message actually exists
+                if messages.contains(where: { $0.id == savedStreamingId }) {
+                    currentStreamingMessageId = savedStreamingId
+                }
+            }
+            
+            // Load processing state, but we'll reset this in resetIncompleteMessages()
+            isProcessing = UserDefaults.standard.bool(forKey: "chat_processing_state")
         }
     }
     
@@ -125,9 +221,10 @@ class ChatManager: ObservableObject {
         
         // Create the request body with system as a top-level parameter
         let requestBody: [String: Any] = [
-            "model": "claude-3-7-sonnet-20250219",  // Use the correct model from API reference
+            "model": "claude-3-7-sonnet-20250219",
             "max_tokens": 4000,
-            "system": systemPrompt,  // System prompt as a top-level parameter
+            "system": systemPrompt,
+            "stream": true,
             "messages": [
                 ["role": "user", "content": [
                     ["type": "text", "text": """
@@ -153,94 +250,110 @@ class ChatManager: ObservableObject {
         ]
         
         // Create the request
-        var request = URLRequest(url: apiURL)
+        var request = URLRequest(url: streamingURL)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        
-        // Print the API key for debugging (safely)
-        if trimmedKey.count > 10 {
-            let prefix = trimmedKey.prefix(10)
-            let suffix = trimmedKey.suffix(4)
-            print("API key: \(prefix)...\(suffix) (length: \(trimmedKey.count))")
-        }
-        
-        // Use the API key with the correct header (x-api-key, not Authorization)
-        print("Using API key with x-api-key header")
         request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
         
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
             
-            let (data, response) = try await URLSession.shared.data(for: request)
+            // Initialize accumulated complete response and streaming message
+            var completeResponse = ""
+            await MainActor.run {
+                currentStreamingMessage = ""
+                addAssistantMessage(content: "", isComplete: false)
+            }
             
-            do {
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    await MainActor.run {
-                        self.addAssistantMessage(content: "Error: Invalid HTTP response")
-                        self.isProcessing = false
-                    }
-                    return
-                }
-                
-                if httpResponse.statusCode != 200 {
-                    // Try to extract error message from response
-                    let statusCode = httpResponse.statusCode
-                    var errorDetails = ""
-                    
-                    // Print response data for debugging
-                    if let responseString = String(data: data, encoding: .utf8) {
-                        print("API Error Response: \(responseString)")
-                    }
-                    
-                    if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                        print("Error JSON: \(errorJson)")
-                        
-                        if let error = errorJson["error"] as? [String: Any],
-                           let message = error["message"] as? String {
-                            errorDetails = ". \(message)"
-                        }
-                    }
-                    
-                    // Print API key length for debugging (don't print the actual key)
-                    print("API Key length: \(apiKey.count)")
-                    
-                    // Create the final error message
-                    let finalErrorMessage = "Error communicating with Claude API. Status code: \(statusCode)\(errorDetails)"
-                    
-                    await MainActor.run {
-                        self.addAssistantMessage(content: finalErrorMessage)
-                        self.isProcessing = false
-                    }
-                    return
-                }
-                
-                if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let content = json["content"] as? [[String: Any]],
-                   let firstContent = content.first,
-                   let text = firstContent["text"] as? String {
-                    
-                    // Process the response for any calendar or reminder modifications
-                    await processClaudeResponse(text)
-                    
-                    await MainActor.run {
-                        self.addAssistantMessage(content: text)
-                        self.isProcessing = false
-                    }
-                } else {
-                    await MainActor.run {
-                        self.addAssistantMessage(content: "Received an invalid response from Claude. Please try again.")
-                        self.isProcessing = false
-                    }
-                }
-            } catch {
+            // Create a URLSession data task with delegate
+            let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
                 await MainActor.run {
-                    self.addAssistantMessage(content: "Error: \(error.localizedDescription)")
+                    self.addAssistantMessage(content: "Error: Invalid HTTP response")
                     self.isProcessing = false
                 }
+                return
             }
+            
+            if httpResponse.statusCode != 200 {
+                var errorData = Data()
+                for try await byte in asyncBytes {
+                    errorData.append(byte)
+                }
+                
+                // Try to extract error message from response
+                let statusCode = httpResponse.statusCode
+                var errorDetails = ""
+                
+                if let responseString = String(data: errorData, encoding: .utf8) {
+                    print("API Error Response: \(responseString)")
+                    
+                    if let errorJson = try? JSONSerialization.jsonObject(with: errorData) as? [String: Any],
+                       let error = errorJson["error"] as? [String: Any],
+                       let message = error["message"] as? String {
+                        errorDetails = ". \(message)"
+                    }
+                }
+                
+                let finalErrorMessage = "Error communicating with Claude API. Status code: \(statusCode)\(errorDetails)"
+                
+                await MainActor.run {
+                    self.finalizeStreamingMessage()
+                    self.addAssistantMessage(content: finalErrorMessage)
+                    self.isProcessing = false
+                }
+                return
+            }
+            
+            // Process the streaming response
+            for try await line in asyncBytes.lines {
+                // Skip empty lines
+                guard !line.isEmpty else { continue }
+                
+                // SSE format has "data: " prefix
+                guard line.hasPrefix("data: ") else { continue }
+                
+                // Remove the "data: " prefix
+                let jsonStr = line.dropFirst(6)
+                
+                // Handle the stream end event
+                if jsonStr == "[DONE]" {
+                    break
+                }
+                
+                // Parse the JSON
+                if let data = jsonStr.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    
+                    // Extract message content
+                    if let contentDelta = json["delta"] as? [String: Any],
+                       let contentItems = contentDelta["text"] as? String {
+                        
+                        // Append to the complete response
+                        completeResponse += contentItems
+                        
+                        // Update the UI
+                        await MainActor.run {
+                            updateStreamingMessage(content: completeResponse)
+                        }
+                    }
+                }
+            }
+            
+            // Process the response for any calendar or reminder modifications
+            await processClaudeResponse(completeResponse)
+            
+            // Finalize the assistant message
+            await MainActor.run {
+                finalizeStreamingMessage()
+                isProcessing = false
+            }
+            
         } catch {
             await MainActor.run {
+                self.finalizeStreamingMessage()
                 self.addAssistantMessage(content: "Error: \(error.localizedDescription)")
                 self.isProcessing = false
             }
@@ -322,14 +435,14 @@ class ChatManager: ObservableObject {
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         
-        // Use the API key with the correct header (x-api-key, not Authorization)
-        print("Using API key with x-api-key header")
+        // Use the API key with the correct header
         request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
         
-        // Simple request body with correct format
+        // Simple request body with correct format, stream: false for simple testing
         let requestBody: [String: Any] = [
             "model": "claude-3-7-sonnet-20250219",
             "max_tokens": 10,
+            "stream": false,
             "messages": [
                 ["role": "user", "content": "Hello"]
             ]
