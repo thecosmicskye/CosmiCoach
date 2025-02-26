@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCalendarsUsageDescription</key>
+	<string>ADHD Coach needs access to your calendar to help you manage your schedule and provide context-aware coaching.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>ADHD Coach needs access to your reminders to help you manage your tasks and provide context-aware coaching.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+</dict>
+</plist>

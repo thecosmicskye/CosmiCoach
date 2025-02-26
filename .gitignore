@@ -1,0 +1,42 @@
+# macOS
+.DS_Store
+
+# Xcode
+ADHDCoach.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+ADHDCoach.xcodeproj/xcuserdata/
+ADHDCoach.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+*.env
+
+# API keys and secrets
+*.pem
+*.key
+api_keys.txt
+secrets.json

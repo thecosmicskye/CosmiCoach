@@ -1,0 +1,46 @@
+import SwiftUI
+
+struct MessageBubbleView: View {
+    let message: ChatMessage
+    
+    var body: some View {
+        HStack {
+            if message.isUser {
+                Spacer()
+            }
+            
+            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
+                Text(message.content)
+                    .padding(12)
+                    .background(message.isUser ? Color.blue : Color(.systemGray5))
+                    .foregroundColor(message.isUser ? .white : .primary)
+                    .cornerRadius(16)
+                    .textSelection(.enabled)  // Enable text selection for copying
+                    .contextMenu {
+                        Button(action: {
+                            UIPasteboard.general.string = message.content
+                        }) {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                    }
+                
+                Text(message.formattedTimestamp)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 4)
+            }
+            
+            if !message.isUser {
+                Spacer()
+            }
+        }
+    }
+}
+
+#Preview {
+    VStack {
+        MessageBubbleView(message: ChatMessage(content: "Hello, how can I help you today?", isUser: false))
+        MessageBubbleView(message: ChatMessage(content: "I'm feeling overwhelmed with my tasks", isUser: true))
+    }
+    .padding()
+}
