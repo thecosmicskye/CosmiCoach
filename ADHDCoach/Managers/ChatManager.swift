@@ -115,68 +115,74 @@ class ChatManager: ObservableObject {
     }
     
     @MainActor
-    func checkAndPreemptivelyQueryAPI() async {
-        // Check if automatic responses are enabled in settings
+    func checkAndSendAutomaticMessage() async {
+        // Check if automatic messages are enabled in settings
         guard UserDefaults.standard.bool(forKey: "enable_automatic_responses") else {
-            print("Preemptive query skipped: Automatic responses are disabled in settings")
+            print("Automatic message skipped: Automatic messages are disabled in settings")
             return
         }
         
         // Check if we have the API key
         guard !apiKey.isEmpty else {
-            print("Preemptive query skipped: No API key available")
+            print("Automatic message skipped: No API key available")
             return
         }
         
         // Check if this is app open (we have a last open time and it's recent)
         guard let lastOpen = lastAppOpenTime, Date().timeIntervalSince(lastOpen) < 30 else {
-            print("Preemptive query skipped: Not a recent app open")
+            print("Automatic message skipped: Not a recent app open")
             return
         }
         
         // Check if the app hasn't been opened for at least 5 minutes
         let lastSessionKey = "last_app_session_time"
+        
+        // Always store current time when checking - this fixes the bug where
+        // closing the app without fully terminating doesn't update the session time
+        let currentTime = Date().timeIntervalSince1970
+        
         if let lastSessionTimeInterval = UserDefaults.standard.object(forKey: lastSessionKey) as? TimeInterval {
             let lastSessionTime = Date(timeIntervalSince1970: lastSessionTimeInterval)
             let timeSinceLastSession = Date().timeIntervalSince(lastSessionTime)
             
-            // If it's been less than 5 minutes, don't preemptively query
+            // If it's been less than 5 minutes, don't send automatic message
             if timeSinceLastSession < 300 { // 300 seconds = 5 minutes
-                print("Preemptive query skipped: App was opened less than 5 minutes ago")
+                print("Automatic message skipped: App was opened less than 5 minutes ago")
                 return
             }
         }
         
         // Store current session time for future reference
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastSessionKey)
+        UserDefaults.standard.set(currentTime, forKey: lastSessionKey)
+        UserDefaults.standard.synchronize() // Force synchronize to ensure it's saved
         
-        // If we get here, all conditions are met - make the preemptive query
-        await preemptivelyQueryClaude()
+        // If we get here, all conditions are met - send the automatic message
+        await sendAutomaticMessage()
     }
     
     @MainActor
-    func checkAndPreemptivelyQueryAPIAfterHistoryDeletion() async {
-        // Check if automatic responses are enabled in settings
+    func checkAndSendAutomaticMessageAfterHistoryDeletion() async {
+        // Check if automatic messages are enabled in settings
         // For history deletion, we respect the setting but always provide a fallback message
-        let automaticResponsesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
+        let automaticMessagesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
         
-        if !automaticResponsesEnabled {
-            print("Preemptive query after history deletion skipped: Automatic responses are disabled in settings")
-            // Always show a welcome message when chat history is cleared, even if automatic responses are disabled
+        if !automaticMessagesEnabled {
+            print("Automatic message after history deletion skipped: Automatic messages are disabled in settings")
+            // Always show a welcome message when chat history is cleared, even if automatic messages are disabled
             addAssistantMessage(content: "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?")
             return
         }
         
         // Check if we have the API key
         guard !apiKey.isEmpty else {
-            print("Preemptive query after history deletion skipped: No API key available")
+            print("Automatic message after history deletion skipped: No API key available")
             // Fall back to a static welcome message if we can't query
             addAssistantMessage(content: "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?")
             return
         }
         
-        // If we get here, make the preemptive query 
-        await preemptivelyQueryClaude(isAfterHistoryDeletion: true)
+        // If we get here, send an automatic message
+        await sendAutomaticMessage(isAfterHistoryDeletion: true)
     }
     
     @MainActor
@@ -519,8 +525,8 @@ class ChatManager: ObservableObject {
         }.joined(separator: "\n\n")
     }
     
-    // Function to preemptively query Claude without user input
-    private func preemptivelyQueryClaude(isAfterHistoryDeletion: Bool = false) async {
+    // Function to send an automatic message without user input
+    private func sendAutomaticMessage(isAfterHistoryDeletion: Bool = false) async {
         // Get context data
         let calendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
         let reminders = await eventKitManager?.fetchReminders() ?? []
@@ -529,9 +535,9 @@ class ChatManager: ObservableObject {
         var memoryContent = "No memory available."
         if let manager = memoryManager {
             memoryContent = await manager.readMemory()
-            print("Memory content loaded for preemptive Claude request. Length: \(memoryContent.count)")
+            print("Memory content loaded for automatic message request. Length: \(memoryContent.count)")
         } else {
-            print("WARNING: Memory manager not available for preemptive query")
+            print("WARNING: Memory manager not available for automatic message")
         }
         
         // Format calendar events and reminders for context
@@ -543,7 +549,7 @@ class ChatManager: ObservableObject {
             return getRecentConversationHistory()
         }
         
-        // Set up the request with special context indicating this is preemptive
+        // Set up the request with special context indicating this is an automatic message
         let requestBody: [String: Any] = [
             "model": "claude-3-7-sonnet-20250219",
             "max_tokens": 4000,
@@ -567,7 +573,7 @@ class ChatManager: ObservableObject {
                     \(conversationHistory)
                     
                     USER MESSAGE:
-                    [THIS IS A PREEMPTIVE QUERY - \(isAfterHistoryDeletion ? "The user has just cleared their chat history." : "The user has just opened the app after not using it for at least 5 minutes.") There is no specific user message. Based on the time of day, calendar events, reminders, and what you know about the user, provide a helpful, proactive greeting or insight.]
+                    [THIS IS AN AUTOMATIC MESSAGE - \(isAfterHistoryDeletion ? "The user has just cleared their chat history." : "The user has just opened the app after not using it for at least 5 minutes.") There is no specific user message. Based on the time of day, calendar events, reminders, and what you know about the user, provide a helpful, proactive greeting or insight.]
                     """]
                 ]]
             ]
@@ -602,7 +608,7 @@ class ChatManager: ObservableObject {
                     self.finalizeStreamingMessage()
                     self.isProcessing = false
                 }
-                print("Preemptive query error: Invalid HTTP response")
+                print("Automatic message error: Invalid HTTP response")
                 return
             }
             
@@ -611,7 +617,7 @@ class ChatManager: ObservableObject {
                     self.finalizeStreamingMessage()
                     self.isProcessing = false
                 }
-                print("Preemptive query HTTP error: \(httpResponse.statusCode)")
+                print("Automatic message HTTP error: \(httpResponse.statusCode)")
                 return
             }
             
@@ -661,7 +667,7 @@ class ChatManager: ObservableObject {
             }
             
         } catch {
-            print("Preemptive query error: \(error.localizedDescription)")
+            print("Automatic message error: \(error.localizedDescription)")
             await MainActor.run {
                 self.finalizeStreamingMessage()
                 self.isProcessing = false
