@@ -28,8 +28,8 @@ struct ContentView: View {
             
             // Instead of static welcome message, try to do a preemptive query
             Task {
-                // Try preemptive query after chat history deletion
-                await chatManager.checkAndPreemptivelyQueryAPIAfterHistoryDeletion()
+                // Try sending automatic message after chat history deletion
+                await chatManager.checkAndSendAutomaticMessageAfterHistoryDeletion()
             }
         }
     }
@@ -173,8 +173,8 @@ struct ContentView: View {
                         print("Memory content length: \(memoryManager.memoryContent.count)")
                     }
                     
-                    // Check and potentially make a preemptive query to Claude
-                    await chatManager.checkAndPreemptivelyQueryAPI()
+                    // Check and potentially send an automatic message
+                    await chatManager.checkAndSendAutomaticMessage()
                 }
             }
         }

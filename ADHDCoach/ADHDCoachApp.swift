@@ -6,6 +6,9 @@ struct ADHDCoachApp: App {
     @StateObject private var eventKitManager = EventKitManager()
     @StateObject private var memoryManager = MemoryManager()
     
+    // Track when the app enters background to update session time
+    @Environment(\.scenePhase) private var scenePhase
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -19,6 +22,15 @@ struct ADHDCoachApp: App {
                     // Connect the EventKitManager to the ChatManager
                     chatManager.setEventKitManager(eventKitManager)
                 }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                // Update the last session time when app goes to background
+                // This ensures we have an accurate timestamp for the automatic messages feature
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "last_app_session_time")
+                UserDefaults.standard.synchronize()
+                print("App entered background - updated session timestamp")
+            }
         }
     }
 }
