@@ -2,11 +2,16 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var memoryManager: MemoryManager
     @State private var apiKey = ""
     @AppStorage("check_basics_daily") private var checkBasicsDaily = true
     @AppStorage("token_limit") private var tokenLimit = 75000
+    @AppStorage("enable_automatic_responses") private var enableAutomaticResponses = false
     @State private var isTestingKey = false
     @State private var testResult: String? = nil
+    @State private var showingMemoryViewer = false
+    @State private var showingResetConfirmation = false
+    @State private var showingDeleteChatConfirmation = false
     
     init() {
         _apiKey = State(initialValue: UserDefaults.standard.string(forKey: "claude_api_key") ?? "")
@@ -128,13 +133,118 @@ struct SettingsView: View {
                 
                 Section(header: Text("Memory Management")) {
                     Button("View Memory File") {
-                        // This would navigate to a memory file viewer
+                        Task {
+                            await memoryManager.loadMemory()
+                            showingMemoryViewer = true
+                        }
+                    }
+                    .sheet(isPresented: $showingMemoryViewer) {
+                        NavigationStack {
+                            ScrollView {
+                                Text(memoryManager.memoryContent)
+                                    .padding()
+                                    .textSelection(.enabled)
+                            }
+                            .navigationTitle("Memory File")
+                            .toolbar {
+                                ToolbarItem(placement: .navigationBarTrailing) {
+                                    Button("Done") {
+                                        showingMemoryViewer = false
+                                    }
+                                }
+                            }
+                        }
                     }
                     
                     Button("Reset Memory") {
-                        // This would show a confirmation dialog
+                        showingResetConfirmation = true
                     }
                     .foregroundColor(.red)
+                    .confirmationDialog(
+                        "Reset Memory",
+                        isPresented: $showingResetConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Reset", role: .destructive) {
+                            Task {
+                                // Create a new memory file with default content
+                                if let fileURL = memoryManager.getMemoryFileURL(),
+                                   FileManager.default.fileExists(atPath: fileURL.path) {
+                                    try? FileManager.default.removeItem(at: fileURL)
+                                }
+                                await memoryManager.loadMemory() // This will recreate with default content
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This will delete all memory data. This action cannot be undone.")
+                    }
+                }
+                
+                Section(header: Text("Chat Management")) {
+                    Button("Delete Chat History") {
+                        showingDeleteChatConfirmation = true
+                    }
+                    .foregroundColor(.red)
+                    .confirmationDialog(
+                        "Delete Chat History",
+                        isPresented: $showingDeleteChatConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Delete", role: .destructive) {
+                            // First log memory status before deletion
+                            if let fileURL = memoryManager.getMemoryFileURL() {
+                                print("Memory file exists before chat deletion: \(FileManager.default.fileExists(atPath: fileURL.path))")
+                                print("Memory file path: \(fileURL.path)")
+                            }
+                            
+                            // Clear chat messages from UserDefaults
+                            UserDefaults.standard.removeObject(forKey: "chat_messages")
+                            UserDefaults.standard.removeObject(forKey: "streaming_message_id")
+                            UserDefaults.standard.removeObject(forKey: "last_streaming_content")
+                            UserDefaults.standard.set(false, forKey: "chat_processing_state")
+                            
+                            // Post notification to refresh chat view
+                            NotificationCenter.default.post(name: NSNotification.Name("ChatHistoryDeleted"), object: nil)
+                            
+                            // Verify memory file still exists after chat deletion
+                            Task {
+                                // Ensure memory is loaded after chat deletion
+                                await memoryManager.loadMemory()
+                                
+                                if let fileURL = memoryManager.getMemoryFileURL() {
+                                    print("Memory file exists after chat deletion: \(FileManager.default.fileExists(atPath: fileURL.path))")
+                                    print("Memory content length after deletion: \(memoryManager.memoryContent.count)")
+                                }
+                                
+                                // Show confirmation toast or alert
+                                await MainActor.run {
+                                    let generator = UINotificationFeedbackGenerator()
+                                    generator.notificationOccurred(.success)
+                                    
+                                    testResult = "✅ Chat history deleted!"
+                                    
+                                    // Clear the success message after a delay
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                        if testResult == "✅ Chat history deleted!" {
+                                            testResult = nil
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("This will delete all Chat message data. This action cannot be undone.")
+                    }
+                }
+                
+                Section(header: Text("Experimental Features")) {
+                    Toggle("Automatic Messages", isOn: $enableAutomaticResponses)
+                    
+                    Text("ADHD Coach will automatically send you a message when you open the app (only if you've been away for at least 5 minutes).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 
                 Section(header: Text("About")) {
@@ -160,4 +270,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+        .environmentObject(MemoryManager())
 }
