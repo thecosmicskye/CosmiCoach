@@ -14,7 +14,7 @@ class MemoryManager: ObservableObject {
         }
     }
     
-    private func getMemoryFileURL() -> URL? {
+    func getMemoryFileURL() -> URL? {
         do {
             let documentsDirectory = try fileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             return documentsDirectory.appendingPathComponent(memoryFileName)
