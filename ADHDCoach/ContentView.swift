@@ -74,6 +74,13 @@ struct ContentView: View {
                                 proxy.scrollTo("bottomID", anchor: .bottom)
                             }
                         }
+                        // Also scroll when streaming updates occur
+                        .onChange(of: chatManager.streamingUpdateCount) { oldValue, newValue in
+                            // Scroll to bottom with animation during streaming
+                            withAnimation {
+                                proxy.scrollTo("bottomID", anchor: .bottom)
+                            }
+                        }
                     }
                 }
                 
