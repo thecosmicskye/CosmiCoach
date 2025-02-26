@@ -7,8 +7,6 @@ struct ContentView: View {
     @State private var messageText = ""
     @FocusState private var isInputFocused: Bool
     @State private var showingSettings = false
-    @State private var isTestingKey = false
-    @State private var testResult: String? = nil
     @State private var scrollViewHeight: CGFloat = 0
     
     // Add observer for chat history deletion
@@ -37,28 +35,6 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Test result banner
-                if let result = testResult {
-                    HStack {
-                        Text(result)
-                            .font(.caption)
-                            .foregroundColor(result.hasPrefix("✅") ? .green : .red)
-                            .padding(8)
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            testResult = nil
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray)
-                        }
-                    }
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-                    .padding(.horizontal)
-                }
-                
                 // Chat messages list
                 GeometryReader { geometry in
                     ScrollViewReader { proxy in
@@ -126,31 +102,12 @@ struct ContentView: View {
             }
             .navigationTitle("ADHD Coach")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack {
-                        Button(action: {
-                            Task {
-                                isTestingKey = true
-                                testResult = nil
-                                testResult = await chatManager.testApiKey()
-                                isTestingKey = false
-                            }
-                        }) {
-                            if isTestingKey {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle())
-                            } else {
-                                Image(systemName: "key")
-                                    .font(.system(size: 22))
-                            }
-                        }
-                        
-                        Button(action: {
-                            showingSettings = true
-                        }) {
-                            Image(systemName: "gear")
-                                .font(.system(size: 22))
-                        }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: {
+                        showingSettings = true
+                    }) {
+                        Image(systemName: "gear")
+                            .font(.system(size: 22))
                     }
                 }
             }
