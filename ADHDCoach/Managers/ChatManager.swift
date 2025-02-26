@@ -225,6 +225,30 @@ class ChatManager: ObservableObject {
         }
     }
     
+    // This method both updates the UI and returns the accumulated content
+    // It's isolated to the MainActor to avoid concurrency issues
+    @MainActor
+    func appendToStreamingMessage(newContent: String) -> String {
+        if let streamingId = currentStreamingMessageId,
+           let index = messages.firstIndex(where: { $0.id == streamingId }) {
+            // Append the new content to the existing content
+            let updatedContent = messages[index].content + newContent
+            
+            // Update the message
+            messages[index].content = updatedContent
+            
+            // Increment counter to trigger scroll updates
+            streamingUpdateCount += 1
+            
+            // Save messages to ensure they're persisted
+            saveMessages()
+            
+            // Return the updated content
+            return updatedContent
+        }
+        return ""
+    }
+    
     @MainActor
     func finalizeStreamingMessage() {
         if let streamingId = currentStreamingMessageId,
@@ -354,8 +378,7 @@ class ChatManager: ObservableObject {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
             
-            // Initialize accumulated complete response and streaming message
-            var completeResponse = ""
+            // Initialize streaming message
             await MainActor.run {
                 currentStreamingMessage = ""
                 addAssistantMessage(content: "", isComplete: false)
@@ -402,6 +425,9 @@ class ChatManager: ObservableObject {
                 return
             }
             
+            // Track the full response for post-processing
+            var fullResponse = ""
+            
             // Process the streaming response
             for try await line in asyncBytes.lines {
                 // Skip empty lines
@@ -426,22 +452,23 @@ class ChatManager: ObservableObject {
                     if let contentDelta = json["delta"] as? [String: Any],
                        let contentItems = contentDelta["text"] as? String {
                         
-                        // Append to the complete response
-                        completeResponse += contentItems
-                        
-                        // Update the UI
-                        await MainActor.run {
-                            updateStreamingMessage(content: completeResponse)
+                        // Send the new content to the MainActor for UI updates
+                        // and get back the full accumulated content
+                        let updatedContent = await MainActor.run {
+                            return appendToStreamingMessage(newContent: contentItems)
                         }
+                        
+                        // Keep track of the full response for post-processing
+                        fullResponse = updatedContent
                     }
                 }
             }
             
             // Process the response for any calendar, reminder, or memory modifications
-            await processClaudeResponse(completeResponse)
+            await processClaudeResponse(fullResponse)
             
             // Look for memory update patterns and apply them
-            await processMemoryUpdates(completeResponse)
+            await processMemoryUpdates(fullResponse)
             
             // Finalize the assistant message
             await MainActor.run {
@@ -587,8 +614,7 @@ class ChatManager: ObservableObject {
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
             
-            // Initialize accumulated complete response and streaming message
-            var completeResponse = ""
+            // Initialize streaming message
             await MainActor.run {
                 currentStreamingMessage = ""
                 addAssistantMessage(content: "", isComplete: false)
@@ -615,6 +641,9 @@ class ChatManager: ObservableObject {
                 return
             }
             
+            // Track the full response for post-processing
+            var fullResponse = ""
+            
             // Process the streaming response
             for try await line in asyncBytes.lines {
                 // Skip empty lines
@@ -639,20 +668,21 @@ class ChatManager: ObservableObject {
                     if let contentDelta = json["delta"] as? [String: Any],
                        let contentItems = contentDelta["text"] as? String {
                         
-                        // Append to the complete response
-                        completeResponse += contentItems
-                        
-                        // Update the UI
-                        await MainActor.run {
-                            updateStreamingMessage(content: completeResponse)
+                        // Send the new content to the MainActor for UI updates
+                        // and get back the full accumulated content
+                        let updatedContent = await MainActor.run {
+                            return appendToStreamingMessage(newContent: contentItems)
                         }
+                        
+                        // Keep track of the full response for post-processing
+                        fullResponse = updatedContent
                     }
                 }
             }
             
             // Process the response like normal
-            await processClaudeResponse(completeResponse)
-            await processMemoryUpdates(completeResponse)
+            await processClaudeResponse(fullResponse)
+            await processMemoryUpdates(fullResponse)
             
             // Finalize the assistant message
             await MainActor.run {

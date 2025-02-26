@@ -238,7 +238,7 @@ class EventKitManager: ObservableObject {
         }
         
         // Use default reminder list
-        if let calendar = await eventStore.defaultCalendarForNewReminders() {
+        if let calendar = eventStore.defaultCalendarForNewReminders() {
             reminder.calendar = calendar
         }
         
