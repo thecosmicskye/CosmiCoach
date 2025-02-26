@@ -11,6 +11,29 @@ struct ContentView: View {
     @State private var testResult: String? = nil
     @State private var scrollViewHeight: CGFloat = 0
     
+    // Add observer for chat history deletion
+    init() {
+        // This is needed because @EnvironmentObject isn't available in init
+    }
+    
+    // Helper function to reset chat when notification is received
+    private func setupNotificationObserver() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ChatHistoryDeleted"),
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            // This will be called when chat history is deleted
+            chatManager.messages = []
+            
+            // Instead of static welcome message, try to do a preemptive query
+            Task {
+                // Try preemptive query after chat history deletion
+                await chatManager.checkAndPreemptivelyQueryAPIAfterHistoryDeletion()
+            }
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -137,6 +160,22 @@ struct ContentView: View {
             .onAppear {
                 // Connect the memory manager to the chat manager
                 chatManager.setMemoryManager(memoryManager)
+                print("Connected memory manager to chat manager")
+                
+                // Setup notification observer for chat history deletion
+                setupNotificationObserver()
+                
+                // Ensure memory is properly loaded
+                Task {
+                    await memoryManager.loadMemory()
+                    if let fileURL = memoryManager.getMemoryFileURL() {
+                        print("Memory file on app launch: \(FileManager.default.fileExists(atPath: fileURL.path))")
+                        print("Memory content length: \(memoryManager.memoryContent.count)")
+                    }
+                    
+                    // Check and potentially make a preemptive query to Claude
+                    await chatManager.checkAndPreemptivelyQueryAPI()
+                }
             }
         }
     }
