@@ -11,6 +11,27 @@ struct ContentView: View {
     @State private var testResult: String? = nil
     @State private var scrollViewHeight: CGFloat = 0
     
+    // Add observer for chat history deletion
+    init() {
+        // This is needed because @EnvironmentObject isn't available in init
+    }
+    
+    // Helper function to reset chat when notification is received
+    private func setupNotificationObserver() {
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ChatHistoryDeleted"),
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            // This will be called when chat history is deleted
+            chatManager.messages = []
+            
+            // Add initial assistant message
+            let welcomeMessage = "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?"
+            chatManager.addAssistantMessage(content: welcomeMessage)
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -137,6 +158,9 @@ struct ContentView: View {
             .onAppear {
                 // Connect the memory manager to the chat manager
                 chatManager.setMemoryManager(memoryManager)
+                
+                // Setup notification observer for chat history deletion
+                setupNotificationObserver()
             }
         }
     }
