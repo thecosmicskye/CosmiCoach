@@ -191,6 +191,12 @@ struct SettingsView: View {
                         titleVisibility: .visible
                     ) {
                         Button("Delete", role: .destructive) {
+                            // First log memory status before deletion
+                            if let fileURL = memoryManager.getMemoryFileURL() {
+                                print("Memory file exists before chat deletion: \(FileManager.default.fileExists(atPath: fileURL.path))")
+                                print("Memory file path: \(fileURL.path)")
+                            }
+                            
                             // Clear chat messages from UserDefaults
                             UserDefaults.standard.removeObject(forKey: "chat_messages")
                             UserDefaults.standard.removeObject(forKey: "streaming_message_id")
@@ -200,16 +206,29 @@ struct SettingsView: View {
                             // Post notification to refresh chat view
                             NotificationCenter.default.post(name: NSNotification.Name("ChatHistoryDeleted"), object: nil)
                             
-                            // Show confirmation toast or alert
-                            let generator = UINotificationFeedbackGenerator()
-                            generator.notificationOccurred(.success)
-                            
-                            testResult = "✅ Chat history deleted!"
-                            
-                            // Clear the success message after a delay
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                                if testResult == "✅ Chat history deleted!" {
-                                    testResult = nil
+                            // Verify memory file still exists after chat deletion
+                            Task {
+                                // Ensure memory is loaded after chat deletion
+                                await memoryManager.loadMemory()
+                                
+                                if let fileURL = memoryManager.getMemoryFileURL() {
+                                    print("Memory file exists after chat deletion: \(FileManager.default.fileExists(atPath: fileURL.path))")
+                                    print("Memory content length after deletion: \(memoryManager.memoryContent.count)")
+                                }
+                                
+                                // Show confirmation toast or alert
+                                await MainActor.run {
+                                    let generator = UINotificationFeedbackGenerator()
+                                    generator.notificationOccurred(.success)
+                                    
+                                    testResult = "✅ Chat history deleted!"
+                                    
+                                    // Clear the success message after a delay
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                        if testResult == "✅ Chat history deleted!" {
+                                            testResult = nil
+                                        }
+                                    }
                                 }
                             }
                         }

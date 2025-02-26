@@ -10,7 +10,16 @@ class MemoryManager: ObservableObject {
     init() {
         // Load memory content on initialization
         Task {
+            print("MemoryManager initializing...")
             await loadMemory()
+            // Log memory file status
+            if let fileURL = getMemoryFileURL() {
+                print("Memory file loaded successfully: \(FileManager.default.fileExists(atPath: fileURL.path))")
+                print("Memory file path: \(fileURL.path)")
+                print("Memory content length: \(memoryContent.count)")
+            } else {
+                print("Error: Could not determine memory file URL during initialization")
+            }
         }
     }
     
@@ -97,7 +106,9 @@ class MemoryManager: ObservableObject {
         // The diff format is simplified for this example
         // In a real implementation, you'd want a more robust diff parsing system
         
+        print("Applying diff to memory file...")
         let currentContent = await readMemory()
+        print("Current memory content length: \(currentContent.count)")
         
         // Simple line-by-line diff application
         // Format expected: 
@@ -107,19 +118,41 @@ class MemoryManager: ObservableObject {
         
         var newContent = currentContent
         let diffLines = diff.split(separator: "\n")
+        print("Processing \(diffLines.count) diff lines")
+        
+        var addedLines = 0
+        var removedLines = 0
         
         for line in diffLines {
             if line.hasPrefix("+") {
                 // Addition
                 let addedLine = String(line.dropFirst())
                 newContent += "\n" + addedLine
+                addedLines += 1
             } else if line.hasPrefix("-") {
                 // Removal
                 let removedLine = String(line.dropFirst())
                 newContent = newContent.replacingOccurrences(of: removedLine, with: "")
+                removedLines += 1
             }
         }
         
-        return await updateMemory(newContent: newContent)
+        print("Diff applied: \(addedLines) lines added, \(removedLines) lines removed")
+        print("New memory content length: \(newContent.count)")
+        
+        // Verify we still have content after applying the diff
+        guard !newContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            print("ERROR: Diff application would result in empty memory file - aborting")
+            return false
+        }
+        
+        // Only update if there were actual changes
+        if newContent != currentContent {
+            print("Memory content changed - updating file")
+            return await updateMemory(newContent: newContent)
+        } else {
+            print("No changes to memory content - skipping update")
+            return true
+        }
     }
 }
