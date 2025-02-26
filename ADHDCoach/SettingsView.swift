@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var apiKey = ""
     @AppStorage("check_basics_daily") private var checkBasicsDaily = true
     @AppStorage("token_limit") private var tokenLimit = 75000
+    @AppStorage("enable_automatic_responses") private var enableAutomaticResponses = false
     @State private var isTestingKey = false
     @State private var testResult: String? = nil
     @State private var showingMemoryViewer = false
@@ -236,6 +237,14 @@ struct SettingsView: View {
                     } message: {
                         Text("This will delete all Chat message data. This action cannot be undone.")
                     }
+                }
+                
+                Section(header: Text("Experimental Features")) {
+                    Toggle("Automatic Messages", isOn: $enableAutomaticResponses)
+                    
+                    Text("ADHD Coach will automatically send you a message when you open the app (only if you've been away for at least 5 minutes).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 
                 Section(header: Text("About")) {
