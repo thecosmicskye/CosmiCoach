@@ -17,6 +17,7 @@ class ChatManager: ObservableObject {
     private var eventKitManager: EventKitManager?
     private var currentStreamingMessage: String = ""
     private var urlSession = URLSession.shared
+    private var lastAppOpenTime: Date?
     
     // System prompt that defines Claude's role
     private let systemPrompt = """
@@ -66,6 +67,9 @@ class ChatManager: ObservableObject {
             let welcomeMessage = "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?"
             addAssistantMessage(content: welcomeMessage)
         }
+        
+        // Record the time the app was opened
+        lastAppOpenTime = Date()
     }
     
     @MainActor
@@ -108,6 +112,71 @@ class ChatManager: ObservableObject {
     
     func setEventKitManager(_ manager: EventKitManager) {
         self.eventKitManager = manager
+    }
+    
+    @MainActor
+    func checkAndPreemptivelyQueryAPI() async {
+        // Check if automatic responses are enabled in settings
+        guard UserDefaults.standard.bool(forKey: "enable_automatic_responses") else {
+            print("Preemptive query skipped: Automatic responses are disabled in settings")
+            return
+        }
+        
+        // Check if we have the API key
+        guard !apiKey.isEmpty else {
+            print("Preemptive query skipped: No API key available")
+            return
+        }
+        
+        // Check if this is app open (we have a last open time and it's recent)
+        guard let lastOpen = lastAppOpenTime, Date().timeIntervalSince(lastOpen) < 30 else {
+            print("Preemptive query skipped: Not a recent app open")
+            return
+        }
+        
+        // Check if the app hasn't been opened for at least 5 minutes
+        let lastSessionKey = "last_app_session_time"
+        if let lastSessionTimeInterval = UserDefaults.standard.object(forKey: lastSessionKey) as? TimeInterval {
+            let lastSessionTime = Date(timeIntervalSince1970: lastSessionTimeInterval)
+            let timeSinceLastSession = Date().timeIntervalSince(lastSessionTime)
+            
+            // If it's been less than 5 minutes, don't preemptively query
+            if timeSinceLastSession < 300 { // 300 seconds = 5 minutes
+                print("Preemptive query skipped: App was opened less than 5 minutes ago")
+                return
+            }
+        }
+        
+        // Store current session time for future reference
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastSessionKey)
+        
+        // If we get here, all conditions are met - make the preemptive query
+        await preemptivelyQueryClaude()
+    }
+    
+    @MainActor
+    func checkAndPreemptivelyQueryAPIAfterHistoryDeletion() async {
+        // Check if automatic responses are enabled in settings
+        // For history deletion, we respect the setting but always provide a fallback message
+        let automaticResponsesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
+        
+        if !automaticResponsesEnabled {
+            print("Preemptive query after history deletion skipped: Automatic responses are disabled in settings")
+            // Always show a welcome message when chat history is cleared, even if automatic responses are disabled
+            addAssistantMessage(content: "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?")
+            return
+        }
+        
+        // Check if we have the API key
+        guard !apiKey.isEmpty else {
+            print("Preemptive query after history deletion skipped: No API key available")
+            // Fall back to a static welcome message if we can't query
+            addAssistantMessage(content: "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?")
+            return
+        }
+        
+        // If we get here, make the preemptive query 
+        await preemptivelyQueryClaude(isAfterHistoryDeletion: true)
     }
     
     @MainActor
@@ -448,6 +517,156 @@ class ChatManager: ObservableObject {
             let time = formatDate(message.timestamp)
             return "[\(time)] \(role): \(message.content)"
         }.joined(separator: "\n\n")
+    }
+    
+    // Function to preemptively query Claude without user input
+    private func preemptivelyQueryClaude(isAfterHistoryDeletion: Bool = false) async {
+        // Get context data
+        let calendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
+        let reminders = await eventKitManager?.fetchReminders() ?? []
+        
+        // Prepare context for Claude
+        var memoryContent = "No memory available."
+        if let manager = memoryManager {
+            memoryContent = await manager.readMemory()
+            print("Memory content loaded for preemptive Claude request. Length: \(memoryContent.count)")
+        } else {
+            print("WARNING: Memory manager not available for preemptive query")
+        }
+        
+        // Format calendar events and reminders for context
+        let calendarContext = formatCalendarEvents(calendarEvents)
+        let remindersContext = formatReminders(reminders)
+        
+        // Get recent conversation history
+        let conversationHistory = await MainActor.run {
+            return getRecentConversationHistory()
+        }
+        
+        // Set up the request with special context indicating this is preemptive
+        let requestBody: [String: Any] = [
+            "model": "claude-3-7-sonnet-20250219",
+            "max_tokens": 4000,
+            "system": systemPrompt,
+            "stream": true,
+            "messages": [
+                ["role": "user", "content": [
+                    ["type": "text", "text": """
+                    Current time: \(formatCurrentDateTime())
+                    
+                    USER MEMORY:
+                    \(memoryContent)
+                    
+                    CALENDAR EVENTS:
+                    \(calendarContext)
+                    
+                    REMINDERS:
+                    \(remindersContext)
+                    
+                    CONVERSATION HISTORY:
+                    \(conversationHistory)
+                    
+                    USER MESSAGE:
+                    [THIS IS A PREEMPTIVE QUERY - \(isAfterHistoryDeletion ? "The user has just cleared their chat history." : "The user has just opened the app after not using it for at least 5 minutes.") There is no specific user message. Based on the time of day, calendar events, reminders, and what you know about the user, provide a helpful, proactive greeting or insight.]
+                    """]
+                ]]
+            ]
+        ]
+        
+        await MainActor.run {
+            isProcessing = true
+        }
+        
+        // Create the request
+        var request = URLRequest(url: streamingURL)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            
+            // Initialize accumulated complete response and streaming message
+            var completeResponse = ""
+            await MainActor.run {
+                currentStreamingMessage = ""
+                addAssistantMessage(content: "", isComplete: false)
+            }
+            
+            // Handle the streaming response like normal
+            let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                await MainActor.run {
+                    self.finalizeStreamingMessage()
+                    self.isProcessing = false
+                }
+                print("Preemptive query error: Invalid HTTP response")
+                return
+            }
+            
+            if httpResponse.statusCode != 200 {
+                await MainActor.run {
+                    self.finalizeStreamingMessage()
+                    self.isProcessing = false
+                }
+                print("Preemptive query HTTP error: \(httpResponse.statusCode)")
+                return
+            }
+            
+            // Process the streaming response
+            for try await line in asyncBytes.lines {
+                // Skip empty lines
+                guard !line.isEmpty else { continue }
+                
+                // SSE format has "data: " prefix
+                guard line.hasPrefix("data: ") else { continue }
+                
+                // Remove the "data: " prefix
+                let jsonStr = line.dropFirst(6)
+                
+                // Handle the stream end event
+                if jsonStr == "[DONE]" {
+                    break
+                }
+                
+                // Parse the JSON
+                if let data = jsonStr.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    
+                    // Extract message content
+                    if let contentDelta = json["delta"] as? [String: Any],
+                       let contentItems = contentDelta["text"] as? String {
+                        
+                        // Append to the complete response
+                        completeResponse += contentItems
+                        
+                        // Update the UI
+                        await MainActor.run {
+                            updateStreamingMessage(content: completeResponse)
+                        }
+                    }
+                }
+            }
+            
+            // Process the response like normal
+            await processClaudeResponse(completeResponse)
+            await processMemoryUpdates(completeResponse)
+            
+            // Finalize the assistant message
+            await MainActor.run {
+                finalizeStreamingMessage()
+                isProcessing = false
+            }
+            
+        } catch {
+            print("Preemptive query error: \(error.localizedDescription)")
+            await MainActor.run {
+                self.finalizeStreamingMessage()
+                self.isProcessing = false
+            }
+        }
     }
     
     // Simple function to test the API key

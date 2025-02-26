@@ -26,9 +26,11 @@ struct ContentView: View {
             // This will be called when chat history is deleted
             chatManager.messages = []
             
-            // Add initial assistant message
-            let welcomeMessage = "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?"
-            chatManager.addAssistantMessage(content: welcomeMessage)
+            // Instead of static welcome message, try to do a preemptive query
+            Task {
+                // Try preemptive query after chat history deletion
+                await chatManager.checkAndPreemptivelyQueryAPIAfterHistoryDeletion()
+            }
         }
     }
     
@@ -170,6 +172,9 @@ struct ContentView: View {
                         print("Memory file on app launch: \(FileManager.default.fileExists(atPath: fileURL.path))")
                         print("Memory content length: \(memoryManager.memoryContent.count)")
                     }
+                    
+                    // Check and potentially make a preemptive query to Claude
+                    await chatManager.checkAndPreemptivelyQueryAPI()
                 }
             }
         }
