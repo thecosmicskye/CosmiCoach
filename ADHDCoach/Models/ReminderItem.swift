@@ -26,8 +26,10 @@ struct ReminderItem: Identifiable {
         self.notes = notes 
         self.isCompleted = isCompleted
         
-        // Create a mock calendar for testing
+        // Create a mock calendar for testing - using a synchronous approach
         let eventStore = EKEventStore()
-        self.list = eventStore.defaultCalendarForNewReminders() ?? EKCalendar(for: .reminder, eventStore: eventStore)
+        let calendar = EKCalendar(for: .reminder, eventStore: eventStore)
+        calendar.title = "Test Calendar"
+        self.list = calendar
     }
 }

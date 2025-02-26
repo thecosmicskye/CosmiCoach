@@ -39,7 +39,7 @@ final class ReminderItemTests: XCTestCase {
         XCTAssertFalse(reminder.isCompleted)
     }
     
-    func testInitializationFromEKReminder() {
+    func testInitializationFromEKReminder() async throws {
         // Given
         let eventStore = EKEventStore()
         let ekReminder = EKReminder(eventStore: eventStore)
@@ -54,7 +54,7 @@ final class ReminderItemTests: XCTestCase {
         ekReminder.isCompleted = true
         
         // We need to set a calendar for the reminder to have a valid calendarItemIdentifier
-        if let calendar = eventStore.defaultCalendarForNewReminders() {
+        if let calendar = await eventStore.defaultCalendarForNewReminders() {
             ekReminder.calendar = calendar
         }
         
@@ -79,7 +79,7 @@ final class ReminderItemTests: XCTestCase {
         }
     }
     
-    func testInitializationFromEKReminderWithNilFields() {
+    func testInitializationFromEKReminderWithNilFields() async throws {
         // Given
         let eventStore = EKEventStore()
         let ekReminder = EKReminder(eventStore: eventStore)
@@ -90,7 +90,7 @@ final class ReminderItemTests: XCTestCase {
         ekReminder.isCompleted = false
         
         // We need to set a calendar for the reminder to have a valid calendarItemIdentifier
-        if let calendar = eventStore.defaultCalendarForNewReminders() {
+        if let calendar = await eventStore.defaultCalendarForNewReminders() {
             ekReminder.calendar = calendar
         }
         
