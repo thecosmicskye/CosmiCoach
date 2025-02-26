@@ -6,8 +6,8 @@ final class MemoryManagerTests: XCTestCase {
     let testFileManager = FileManager.default
     var testFileURL: URL!
     
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         memoryManager = MemoryManager()
         
         // Create a test-specific URL for the memory file
@@ -24,7 +24,7 @@ final class MemoryManagerTests: XCTestCase {
         }
     }
     
-    override func tearDown() {
+    override func tearDown() async throws {
         memoryManager = nil
         
         // Clean up the test file
@@ -36,7 +36,7 @@ final class MemoryManagerTests: XCTestCase {
             print("Error cleaning up test file: \(error.localizedDescription)")
         }
         
-        super.tearDown()
+        try await super.tearDown()
     }
     
     func testInitialMemoryCreation() async {
@@ -127,10 +127,8 @@ final class MemoryManagerTests: XCTestCase {
                 self.testURL = testURL
                 super.init()
                 
-                // Set initial memory content
-                Task {
-                    await updateMemory(newContent: initialContent)
-                }
+                // Set initial memory content synchronously
+                self.memoryContent = initialContent
             }
             
             override func getMemoryFileURL() -> URL? {
@@ -183,10 +181,8 @@ final class MemoryManagerTests: XCTestCase {
                 self.testURL = testURL
                 super.init()
                 
-                // Set initial memory content
-                Task {
-                    await updateMemory(newContent: initialContent)
-                }
+                // Set initial memory content synchronously
+                self.memoryContent = initialContent
             }
             
             override func getMemoryFileURL() -> URL? {
@@ -238,10 +234,8 @@ final class MemoryManagerTests: XCTestCase {
                 self.testURL = testURL
                 super.init()
                 
-                // Set initial memory content
-                Task {
-                    await updateMemory(newContent: initialContent)
-                }
+                // Set initial memory content synchronously
+                self.memoryContent = initialContent
             }
             
             override func getMemoryFileURL() -> URL? {
@@ -294,10 +288,8 @@ final class MemoryManagerTests: XCTestCase {
                 self.testURL = testURL
                 super.init()
                 
-                // Set initial memory content
-                Task {
-                    await updateMemory(newContent: initialContent)
-                }
+                // Set initial memory content synchronously
+                self.memoryContent = initialContent
             }
             
             override func getMemoryFileURL() -> URL? {

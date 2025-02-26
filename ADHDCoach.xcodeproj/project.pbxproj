@@ -21,7 +21,6 @@
 		2AD2B6092D6EFDFA00782E3F /* ReminderItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B6002D6EFDDA00782E3F /* ReminderItemTests.swift */; };
 		2AD2B60A2D6EFDFA00782E3F /* ChatManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FC2D6EFDDA00782E3F /* ChatManagerTests.swift */; };
 		2AD2B60B2D6EFDFA00782E3F /* ChatMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FD2D6EFDDA00782E3F /* ChatMessageTests.swift */; };
-		2AD2B60C2D6EFDFA00782E3F /* CalendarEventTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FB2D6EFDDA00782E3F /* CalendarEventTests.swift */; };
 		2AD2B60D2D6EFDFA00782E3F /* EventKitManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FE2D6EFDDA00782E3F /* EventKitManagerTests.swift */; };
 		2AF38BCC2D6EE8C600756FD8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -49,7 +48,6 @@
 		2A2A2A332A2A2A332A2A2A33 /* MemoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryManager.swift; sourceTree = "<group>"; };
 		2A2A2A342A2A2A342A2A2A34 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		2A7B3FFF2D6EFCFC004CF1E4 /* ADHDCoachTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ADHDCoachTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		2AD2B5FB2D6EFDDA00782E3F /* CalendarEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarEventTests.swift; sourceTree = "<group>"; };
 		2AD2B5FC2D6EFDDA00782E3F /* ChatManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatManagerTests.swift; sourceTree = "<group>"; };
 		2AD2B5FD2D6EFDDA00782E3F /* ChatMessageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageTests.swift; sourceTree = "<group>"; };
 		2AD2B5FE2D6EFDDA00782E3F /* EventKitManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventKitManagerTests.swift; sourceTree = "<group>"; };
@@ -80,7 +78,6 @@
 		2AD2B6012D6EFDDA00782E3F /* ADHDCoachTests */ = {
 			isa = PBXGroup;
 			children = (
-				2AD2B5FB2D6EFDDA00782E3F /* CalendarEventTests.swift */,
 				2AD2B5FC2D6EFDDA00782E3F /* ChatManagerTests.swift */,
 				2AD2B5FD2D6EFDDA00782E3F /* ChatMessageTests.swift */,
 				2AD2B5FE2D6EFDDA00782E3F /* EventKitManagerTests.swift */,
@@ -248,7 +245,6 @@
 				2AD2B6092D6EFDFA00782E3F /* ReminderItemTests.swift in Sources */,
 				2AD2B60A2D6EFDFA00782E3F /* ChatManagerTests.swift in Sources */,
 				2AD2B60B2D6EFDFA00782E3F /* ChatMessageTests.swift in Sources */,
-				2AD2B60C2D6EFDFA00782E3F /* CalendarEventTests.swift in Sources */,
 				2AD2B60D2D6EFDFA00782E3F /* EventKitManagerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

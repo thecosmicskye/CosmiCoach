@@ -6,17 +6,17 @@ final class EventKitManagerTests: XCTestCase {
     
     var eventKitManager: EventKitManagerMock!
     
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         eventKitManager = EventKitManagerMock()
     }
     
-    override func tearDown() {
+    override func tearDown() async throws {
         eventKitManager = nil
-        super.tearDown()
+        try await super.tearDown()
     }
     
-    func testCheckPermissions() {
+    func testCheckPermissions() async {
         // When
         eventKitManager.checkPermissions()
         
@@ -24,7 +24,7 @@ final class EventKitManagerTests: XCTestCase {
         XCTAssertTrue(true)
     }
     
-    func testFetchUpcomingEvents() {
+    func testFetchUpcomingEvents() async {
         // Given
         let event1 = CalendarEvent(id: "event-1", title: "Test Event 1", startDate: Date(), endDate: Date().addingTimeInterval(3600), notes: "Notes 1")
         let event2 = CalendarEvent(id: "event-2", title: "Test Event 2", startDate: Date(), endDate: Date().addingTimeInterval(7200), notes: "Notes 2")
@@ -40,7 +40,7 @@ final class EventKitManagerTests: XCTestCase {
         XCTAssertEqual(events[1].id, "event-2")
     }
     
-    func testAddCalendarEvent() {
+    func testAddCalendarEvent() async {
         // Given
         let title = "New Test Event"
         let startDate = Date()
@@ -61,7 +61,7 @@ final class EventKitManagerTests: XCTestCase {
         XCTAssertEqual(addedEvent.notes, notes)
     }
     
-    func testUpdateCalendarEvent() {
+    func testUpdateCalendarEvent() async {
         // Given
         let event = CalendarEvent(id: "event-id", title: "Original Title", startDate: Date(), endDate: Date().addingTimeInterval(3600), notes: "Original notes")
         eventKitManager.mockCalendarEvents = [event]
@@ -85,7 +85,7 @@ final class EventKitManagerTests: XCTestCase {
         XCTAssertEqual(updatedEvent.notes, newNotes)
     }
     
-    func testDeleteCalendarEvent() {
+    func testDeleteCalendarEvent() async {
         // Given
         let event1 = CalendarEvent(id: "event-1", title: "Event 1", startDate: Date(), endDate: Date().addingTimeInterval(3600), notes: nil)
         let event2 = CalendarEvent(id: "event-2", title: "Event 2", startDate: Date(), endDate: Date().addingTimeInterval(3600), notes: nil)
@@ -101,15 +101,15 @@ final class EventKitManagerTests: XCTestCase {
         XCTAssertEqual(eventKitManager.mockCalendarEvents[0].id, "event-2")
     }
     
-    func testFetchReminders() {
+    func testFetchReminders() async {
         // Given
         let reminder1 = ReminderItem(id: "reminder-1", title: "Test Reminder 1", dueDate: Date(), notes: "Notes 1", isCompleted: false)
         let reminder2 = ReminderItem(id: "reminder-2", title: "Test Reminder 2", dueDate: Date().addingTimeInterval(86400), notes: "Notes 2", isCompleted: true)
         
         eventKitManager.mockReminders = [reminder1, reminder2]
         
-        // When - use the non-async version for testing
-        let reminders = eventKitManager.fetchReminders()
+        // When - use the async version now
+        let reminders = await eventKitManager.fetchReminders()
         
         // Then
         XCTAssertEqual(reminders.count, 2)
@@ -117,14 +117,14 @@ final class EventKitManagerTests: XCTestCase {
         XCTAssertEqual(reminders[1].id, "reminder-2")
     }
     
-    func testAddReminder() {
+    func testAddReminder() async {
         // Given
         let title = "New Test Reminder"
         let dueDate = Date().addingTimeInterval(86400)
         let notes = "Test reminder notes"
         
-        // When
-        let success = eventKitManager.addReminder(title: title, dueDate: dueDate, notes: notes)
+        // When - use async version
+        let success = await eventKitManager.addReminderAsync(title: title, dueDate: dueDate, notes: notes)
         
         // Then
         XCTAssertTrue(success)
@@ -137,7 +137,7 @@ final class EventKitManagerTests: XCTestCase {
         XCTAssertFalse(addedReminder.isCompleted)
     }
     
-    func testUpdateReminder() {
+    func testUpdateReminder() async {
         // Given
         let reminder = ReminderItem(id: "reminder-id", title: "Original Title", dueDate: Date(), notes: "Original notes", isCompleted: false)
         eventKitManager.mockReminders = [reminder]
@@ -147,8 +147,8 @@ final class EventKitManagerTests: XCTestCase {
         let newNotes = "Updated notes"
         let newCompletionStatus = true
         
-        // When - use the non-async version for testing
-        let success = eventKitManager.updateReminder(id: "reminder-id", title: newTitle, dueDate: newDueDate, notes: newNotes, isCompleted: newCompletionStatus)
+        // When - use the async version now
+        let success = await eventKitManager.updateReminder(id: "reminder-id", title: newTitle, dueDate: newDueDate, notes: newNotes, isCompleted: newCompletionStatus)
         
         // Then
         XCTAssertTrue(success)
@@ -161,15 +161,15 @@ final class EventKitManagerTests: XCTestCase {
         XCTAssertEqual(updatedReminder.isCompleted, newCompletionStatus)
     }
     
-    func testDeleteReminder() {
+    func testDeleteReminder() async {
         // Given
         let reminder1 = ReminderItem(id: "reminder-1", title: "Reminder 1", dueDate: Date(), notes: nil, isCompleted: false)
         let reminder2 = ReminderItem(id: "reminder-2", title: "Reminder 2", dueDate: Date().addingTimeInterval(86400), notes: nil, isCompleted: false)
         
         eventKitManager.mockReminders = [reminder1, reminder2]
         
-        // When - use the non-async version for testing
-        let success = eventKitManager.deleteReminder(id: "reminder-1")
+        // When - use the async version now
+        let success = await eventKitManager.deleteReminder(id: "reminder-1")
         
         // Then
         XCTAssertTrue(success)
@@ -231,6 +231,12 @@ class EventKitManagerMock: EventKitManager {
     }
     
     override func addReminder(title: String, dueDate: Date? = nil, notes: String? = nil) -> Bool {
+        let newReminder = ReminderItem(id: "mock-reminder-\(UUID().uuidString)", title: title, dueDate: dueDate, notes: notes, isCompleted: false)
+        mockReminders.append(newReminder)
+        return true
+    }
+    
+    override func addReminderAsync(title: String, dueDate: Date? = nil, notes: String? = nil) async -> Bool {
         let newReminder = ReminderItem(id: "mock-reminder-\(UUID().uuidString)", title: title, dueDate: dueDate, notes: notes, isCompleted: false)
         mockReminders.append(newReminder)
         return true

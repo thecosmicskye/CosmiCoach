@@ -214,6 +214,21 @@ class EventKitManager: ObservableObject {
     func addReminder(title: String, dueDate: Date? = nil, notes: String? = nil) -> Bool {
         guard reminderAccessGranted else { return false }
         
+        var success = false
+        let semaphore = DispatchSemaphore(value: 0)
+        
+        Task {
+            success = await addReminderAsync(title: title, dueDate: dueDate, notes: notes)
+            semaphore.signal()
+        }
+        
+        _ = semaphore.wait(timeout: .now() + 5.0)
+        return success
+    }
+    
+    func addReminderAsync(title: String, dueDate: Date? = nil, notes: String? = nil) async -> Bool {
+        guard reminderAccessGranted else { return false }
+        
         let reminder = EKReminder(eventStore: eventStore)
         reminder.title = title
         reminder.notes = notes
@@ -223,7 +238,9 @@ class EventKitManager: ObservableObject {
         }
         
         // Use default reminder list
-        reminder.calendar = eventStore.defaultCalendarForNewReminders()
+        if let calendar = await eventStore.defaultCalendarForNewReminders() {
+            reminder.calendar = calendar
+        }
         
         do {
             try eventStore.save(reminder, commit: true)

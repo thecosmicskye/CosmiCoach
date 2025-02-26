@@ -31,7 +31,7 @@ final class ChatManagerTests: XCTestCase {
             UserDefaults.standard.removeObject(forKey: "chat_processing_state")
         }
         
-        await super.tearDown()
+        try await super.tearDown()
     }
     
     func testAddUserMessage() async throws {
@@ -276,6 +276,10 @@ class EventKitManagerForChatTests: EventKitManager {
         return calendarEvents
     }
     
+    override func fetchReminders() async -> [ReminderItem] {
+        return reminders
+    }
+    
     override func fetchReminders() -> [ReminderItem] {
         return reminders
     }
@@ -304,8 +308,25 @@ class EventKitManagerForChatTests: EventKitManager {
         return true
     }
     
+    override func addReminderAsync(title: String, dueDate: Date? = nil, notes: String? = nil) async -> Bool {
+        reminderAddCalled = true
+        let reminder = ReminderItem(id: "mock-reminder-\(UUID().uuidString)", title: title, dueDate: dueDate, notes: notes, isCompleted: false)
+        reminders.append(reminder)
+        return true
+    }
+    
+    override func updateReminder(id: String, title: String? = nil, dueDate: Date? = nil, notes: String? = nil, isCompleted: Bool? = nil) async -> Bool {
+        reminderModifyCalled = true
+        return true
+    }
+    
     override func updateReminder(id: String, title: String? = nil, dueDate: Date? = nil, notes: String? = nil, isCompleted: Bool? = nil) -> Bool {
         reminderModifyCalled = true
+        return true
+    }
+    
+    override func deleteReminder(id: String) async -> Bool {
+        reminderDeleteCalled = true
         return true
     }
     
