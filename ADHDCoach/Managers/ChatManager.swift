@@ -780,6 +780,43 @@ class ChatManager: ObservableObject {
         }
     }
     
+    // Function to test an API key passed in as parameter
+    func testAPIKey(_ key: String) async -> Bool {
+        // Create a simple request to test the API key
+        let url = URL(string: "https://api.anthropic.com/v1/messages")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        
+        // Use the provided API key
+        request.addValue(key, forHTTPHeaderField: "x-api-key")
+        
+        // Simple request body with correct format, stream: false for simple testing
+        let requestBody: [String: Any] = [
+            "model": "claude-3-7-sonnet-20250219",
+            "max_tokens": 10,
+            "stream": false,
+            "messages": [
+                ["role": "user", "content": "Hello"]
+            ]
+        ]
+        
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                return httpResponse.statusCode == 200
+            }
+            return false
+        } catch {
+            print("API key test error: \(error.localizedDescription)")
+            return false
+        }
+    }
+    
     private func processMemoryUpdates(_ response: String) async {
         // Check if we have a memory manager
         guard let memManager = await MainActor.run(body: { [weak self] in
