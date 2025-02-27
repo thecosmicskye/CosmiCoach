@@ -39,8 +39,10 @@ class ChatManager: ObservableObject {
     [CALENDAR_MODIFY] Event ID | New title | New start time | New end time | New notes (optional)
     [CALENDAR_DELETE] Event ID
 
-    [REMINDER_ADD] Title | Due date/time | Notes (optional)
-    [REMINDER_MODIFY] Reminder ID | New title | New due date/time | New notes (optional)
+    [REMINDER_ADD] Title | Due date/time or "No due date" | Notes (optional) | List name (optional)
+    [REMINDER_MODIFY] Reminder ID | New title | New due date/time or "No due date" | New notes (optional) | List name (optional)
+    
+    Example: [REMINDER_ADD] Call doctor | No due date | Schedule appointment | Personal
     [REMINDER_DELETE] Reminder ID
 
     You have access to the user's memory which contains information about them that persists between conversations. This information is organized into categories:
@@ -547,6 +549,7 @@ class ChatManager: ObservableObject {
             Due: \(reminder.dueDate != nil ? formatDate(reminder.dueDate!) : "No due date")
             Completed: \(reminder.isCompleted ? "Yes" : "No")
             Notes: \(reminder.notes ?? "None")
+            List: \(reminder.listName)
             """
         }.joined(separator: "\n\n")
     }
@@ -869,24 +872,48 @@ class ChatManager: ObservableObject {
         }
         
         // Process all reminder add commands in the response
-        let reminderAddPattern = "\\[REMINDER_ADD\\] (.*?) \\| (.*?)( \\| (.*?))?$"
+        let reminderAddPattern = "\\[REMINDER_ADD\\] (.*?) \\| (.*?)( \\| (.*?))?( \\| (.*?))?$"
         if let regex = try? NSRegularExpression(pattern: reminderAddPattern, options: .anchorsMatchLines) {
             let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
             
             for match in matches {
                 let title = response[Range(match.range(at: 1), in: response)!]
                 let dueDateString = String(response[Range(match.range(at: 2), in: response)!])
-                let notes = match.range(at: 4).location != NSNotFound ? String(response[Range(match.range(at: 4), in: response)!]) : nil
                 
-                // Parse due date
-                guard let dueDate = dateFormatter.date(from: dueDateString) else {
-                    print("Error parsing due date: \(dueDateString)")
-                    continue
+                // Extract notes and list name
+                let notes: String?
+                let listName: String?
+                
+                if match.range(at: 4).location != NSNotFound {
+                    notes = String(response[Range(match.range(at: 4), in: response)!])
+                    
+                    // Check if there's a list name
+                    if match.range(at: 6).location != NSNotFound {
+                        listName = String(response[Range(match.range(at: 6), in: response)!])
+                    } else {
+                        listName = nil
+                    }
+                } else {
+                    notes = nil
+                    listName = nil
+                }
+                
+                // Handle the case when "No due date" is specified
+                let dueDate: Date?
+                if dueDateString.lowercased() == "no due date" {
+                    dueDate = nil
+                } else {
+                    // Parse due date for normal cases
+                    guard let parsedDate = dateFormatter.date(from: dueDateString) else {
+                        print("Error parsing due date: \(dueDateString)")
+                        continue
+                    }
+                    dueDate = parsedDate
                 }
                 
                 // Add the reminder
                 let success = await MainActor.run {
-                    return eventKitManager.addReminder(title: String(title), dueDate: dueDate, notes: notes)
+                    return eventKitManager.addReminder(title: String(title), dueDate: dueDate, notes: notes, listName: listName)
                 }
                 
                 if success {
@@ -955,7 +982,7 @@ class ChatManager: ObservableObject {
         }
         
         // Process reminder modify commands
-        let reminderModifyPattern = "\\[REMINDER_MODIFY\\] (.*?) \\| (.*?) \\| (.*?)( \\| (.*?))?$"
+        let reminderModifyPattern = "\\[REMINDER_MODIFY\\] (.*?) \\| (.*?) \\| (.*?)( \\| (.*?))?( \\| (.*?))?$"
         if let regex = try? NSRegularExpression(pattern: reminderModifyPattern, options: .anchorsMatchLines) {
             let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
             
@@ -963,16 +990,40 @@ class ChatManager: ObservableObject {
                 let reminderId = String(response[Range(match.range(at: 1), in: response)!])
                 let newTitle = String(response[Range(match.range(at: 2), in: response)!])
                 let dueDateString = String(response[Range(match.range(at: 3), in: response)!])
-                let notes = match.range(at: 5).location != NSNotFound ? String(response[Range(match.range(at: 5), in: response)!]) : nil
                 
-                // Parse due date
-                guard let dueDate = dateFormatter.date(from: dueDateString) else {
-                    print("Error parsing due date: \(dueDateString)")
-                    continue
+                // Extract notes and list name
+                let notes: String?
+                let listName: String?
+                
+                if match.range(at: 5).location != NSNotFound {
+                    notes = String(response[Range(match.range(at: 5), in: response)!])
+                    
+                    // Check if there's a list name
+                    if match.range(at: 7).location != NSNotFound {
+                        listName = String(response[Range(match.range(at: 7), in: response)!])
+                    } else {
+                        listName = nil
+                    }
+                } else {
+                    notes = nil
+                    listName = nil
+                }
+                
+                // Handle the case when "No due date" is specified
+                let dueDate: Date?
+                if dueDateString.lowercased() == "no due date" {
+                    dueDate = nil
+                } else {
+                    // Parse due date for normal cases
+                    guard let parsedDate = dateFormatter.date(from: dueDateString) else {
+                        print("Error parsing due date: \(dueDateString)")
+                        continue
+                    }
+                    dueDate = parsedDate
                 }
                 
                 // Update the reminder
-                let success = await eventKitManager.updateReminder(id: reminderId, title: newTitle, dueDate: dueDate, notes: notes)
+                let success = await eventKitManager.updateReminder(id: reminderId, title: newTitle, dueDate: dueDate, notes: notes, listName: listName)
                 
                 if success {
                     print("Successfully updated reminder: \(newTitle)")
