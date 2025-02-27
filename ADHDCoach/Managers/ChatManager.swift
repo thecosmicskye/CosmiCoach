@@ -78,6 +78,7 @@ class ChatManager: ObservableObject {
     
     @MainActor
     init() {
+        print("⏱️ ChatManager initializing")
         // Load previous messages from storage
         loadMessages()
         
@@ -92,6 +93,21 @@ class ChatManager: ObservableObject {
         
         // Record the time the app was opened
         lastAppOpenTime = Date()
+        print("⏱️ ChatManager initialized - lastAppOpenTime set to: \(lastAppOpenTime!)")
+        
+        // Check automatic message settings
+        let automaticMessagesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
+        print("⏱️ ChatManager init - Automatic messages enabled: \(automaticMessagesEnabled)")
+        
+        // Check the API key availability
+        let hasApiKey = !apiKey.isEmpty
+        print("⏱️ ChatManager init - API key available: \(hasApiKey)")
+        
+        // Set a default value for automatic messages if not already set
+        if UserDefaults.standard.object(forKey: "enable_automatic_responses") == nil {
+            print("⏱️ ChatManager init - Setting default value for enable_automatic_responses to TRUE")
+            UserDefaults.standard.set(true, forKey: "enable_automatic_responses")
+        }
     }
     
     @MainActor
@@ -136,49 +152,68 @@ class ChatManager: ObservableObject {
         self.eventKitManager = manager
     }
     
+    func getLastAppOpenTime() -> Date? {
+        return lastAppOpenTime
+    }
+    
     @MainActor
     func checkAndSendAutomaticMessage() async {
+        print("⏱️ AUTOMATIC MESSAGE CHECK START - \(Date())")
+        
         // Check if automatic messages are enabled in settings
-        guard UserDefaults.standard.bool(forKey: "enable_automatic_responses") else {
-            print("Automatic message skipped: Automatic messages are disabled in settings")
+        let automaticMessagesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
+        print("⏱️ Automatic messages enabled in settings: \(automaticMessagesEnabled)")
+        guard automaticMessagesEnabled else {
+            print("⏱️ Automatic message skipped: Automatic messages are disabled in settings")
             return
         }
         
         // Check if we have the API key
-        guard !apiKey.isEmpty else {
-            print("Automatic message skipped: No API key available")
+        let hasApiKey = !apiKey.isEmpty
+        print("⏱️ API key available: \(hasApiKey)")
+        guard hasApiKey else {
+            print("⏱️ Automatic message skipped: No API key available")
             return
         }
         
-        // Check if this is app open (we have a last open time and it's recent)
-        guard let lastOpen = lastAppOpenTime, Date().timeIntervalSince(lastOpen) < 30 else {
-            print("Automatic message skipped: Not a recent app open")
-            return
-        }
+        // Always update lastAppOpenTime to ensure background->active transitions work properly
+        lastAppOpenTime = Date()
+        print("⏱️ Updated lastAppOpenTime to current time: \(lastAppOpenTime!)")
         
-        // Check if the app hasn't been opened for at least 5 minutes
+        // Check if the app hasn't been opened for at least 5 minutes (temporarily changed from 5 minutes)
         let lastSessionKey = "last_app_session_time"
         
         // Always store current time when checking - this fixes the bug where
         // closing the app without fully terminating doesn't update the session time
         let currentTime = Date().timeIntervalSince1970
+        print("⏱️ Current time: \(Date(timeIntervalSince1970: currentTime))")
+        
+        // IMPORTANT: Get the current store time BEFORE updating it
+        var timeSinceLastSession: TimeInterval = 999999 // Default to a large value to ensure we run
         
         if let lastSessionTimeInterval = UserDefaults.standard.object(forKey: lastSessionKey) as? TimeInterval {
             let lastSessionTime = Date(timeIntervalSince1970: lastSessionTimeInterval)
-            let timeSinceLastSession = Date().timeIntervalSince(lastSessionTime)
+            timeSinceLastSession = Date().timeIntervalSince(lastSessionTime)
             
-            // If it's been less than 5 minutes, don't send automatic message
-            if timeSinceLastSession < 300 { // 300 seconds = 5 minutes
-                print("Automatic message skipped: App was opened less than 5 minutes ago")
-                return
-            }
+            print("⏱️ Last session time: \(lastSessionTime)")
+            print("⏱️ Time since last session: \(timeSinceLastSession) seconds")
+        } else {
+            print("⏱️ No previous session time found in UserDefaults")
         }
         
         // Store current session time for future reference
         UserDefaults.standard.set(currentTime, forKey: lastSessionKey)
         UserDefaults.standard.synchronize() // Force synchronize to ensure it's saved
+        print("⏱️ Updated session timestamp in UserDefaults: \(Date(timeIntervalSince1970: currentTime))")
+        
+        // Check if app was opened less than 5 minutes ago
+        if timeSinceLastSession < 300 { // 300 seconds = 5 minutes
+            print("⏱️ Automatic message skipped: App was opened less than 5 minutes ago (timeSinceLastSession = \(timeSinceLastSession))")
+            return
+        }
         
         // If we get here, all conditions are met - send the automatic message
+        print("⏱️ All conditions met - sending automatic message")
         await sendAutomaticMessage()
     }
     
@@ -577,17 +612,22 @@ class ChatManager: ObservableObject {
     
     // Function to send an automatic message without user input
     private func sendAutomaticMessage(isAfterHistoryDeletion: Bool = false) async {
+        print("⏱️ SENDING AUTOMATIC MESSAGE - \(isAfterHistoryDeletion ? "After history deletion" : "After app open")")
+        
         // Get context data
         let calendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
+        print("⏱️ Retrieved \(calendarEvents.count) calendar events for automatic message")
+        
         let reminders = await eventKitManager?.fetchReminders() ?? []
+        print("⏱️ Retrieved \(reminders.count) reminders for automatic message")
         
         // Prepare context for Claude
         var memoryContent = "No memory available."
         if let manager = memoryManager {
             memoryContent = await manager.readMemory()
-            print("Memory content loaded for automatic message request. Length: \(memoryContent.count)")
+            print("⏱️ Memory content loaded for automatic message. Length: \(memoryContent.count)")
         } else {
-            print("WARNING: Memory manager not available for automatic message")
+            print("⏱️ WARNING: Memory manager not available for automatic message")
         }
         
         // Format calendar events and reminders for context
@@ -598,6 +638,7 @@ class ChatManager: ObservableObject {
         let conversationHistory = await MainActor.run {
             return getRecentConversationHistory()
         }
+        print("⏱️ Got conversation history for automatic message. Length: \(conversationHistory.count)")
         
         // Set up the request with special context indicating this is an automatic message
         let requestBody: [String: Any] = [
@@ -631,6 +672,7 @@ class ChatManager: ObservableObject {
         
         await MainActor.run {
             isProcessing = true
+            print("⏱️ Set isProcessing to true for automatic message")
         }
         
         // Create the request
@@ -642,13 +684,16 @@ class ChatManager: ObservableObject {
         
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            print("⏱️ Prepared request body for automatic message")
             
             // Initialize streaming message
             await MainActor.run {
                 currentStreamingMessage = ""
                 addAssistantMessage(content: "", isComplete: false)
+                print("⏱️ Added empty assistant message for streaming")
             }
             
+            print("⏱️ Sending automatic message request to Claude API...")
             // Handle the streaming response like normal
             let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
             
@@ -657,21 +702,24 @@ class ChatManager: ObservableObject {
                     self.finalizeStreamingMessage()
                     self.isProcessing = false
                 }
-                print("Automatic message error: Invalid HTTP response")
+                print("⏱️ Automatic message error: Invalid HTTP response")
                 return
             }
+            
+            print("⏱️ Received response from Claude API with status code: \(httpResponse.statusCode)")
             
             if httpResponse.statusCode != 200 {
                 await MainActor.run {
                     self.finalizeStreamingMessage()
                     self.isProcessing = false
                 }
-                print("Automatic message HTTP error: \(httpResponse.statusCode)")
+                print("⏱️ Automatic message HTTP error: \(httpResponse.statusCode)")
                 return
             }
             
             // Track the full response for post-processing
             var fullResponse = ""
+            print("⏱️ Beginning to process streaming response for automatic message")
             
             // Process the streaming response
             for try await line in asyncBytes.lines {
@@ -686,6 +734,7 @@ class ChatManager: ObservableObject {
                 
                 // Handle the stream end event
                 if jsonStr == "[DONE]" {
+                    print("⏱️ Received [DONE] event, stream complete")
                     break
                 }
                 
@@ -709,6 +758,7 @@ class ChatManager: ObservableObject {
                 }
             }
             
+            print("⏱️ Automatic message streaming complete, processing response actions")
             // Process the response like normal
             await processClaudeResponse(fullResponse)
             await processMemoryUpdates(fullResponse)
@@ -717,10 +767,11 @@ class ChatManager: ObservableObject {
             await MainActor.run {
                 finalizeStreamingMessage()
                 isProcessing = false
+                print("⏱️ Automatic message complete and finalized")
             }
             
         } catch {
-            print("Automatic message error: \(error.localizedDescription)")
+            print("⏱️ Automatic message error: \(error.localizedDescription)")
             await MainActor.run {
                 self.finalizeStreamingMessage()
                 self.isProcessing = false
