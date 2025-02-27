@@ -9,6 +9,10 @@ struct ReminderItem: Identifiable {
     let isCompleted: Bool
     let list: EKCalendar
     
+    var listName: String {
+        return list.title
+    }
+    
     init(from ekReminder: EKReminder) {
         self.id = ekReminder.calendarItemIdentifier
         self.title = ekReminder.title ?? "Untitled Reminder"

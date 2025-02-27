@@ -176,6 +176,11 @@ class EventKitManager: ObservableObject {
     
     // MARK: - Reminders Methods
     
+    func fetchReminderLists() -> [EKCalendar] {
+        guard reminderAccessGranted else { return [] }
+        return eventStore.calendars(for: .reminder)
+    }
+    
     func fetchReminders() async -> [ReminderItem] {
         guard reminderAccessGranted else { return [] }
         
@@ -211,14 +216,14 @@ class EventKitManager: ObservableObject {
         return result
     }
     
-    func addReminder(title: String, dueDate: Date? = nil, notes: String? = nil) -> Bool {
+    func addReminder(title: String, dueDate: Date? = nil, notes: String? = nil, listName: String? = nil) -> Bool {
         guard reminderAccessGranted else { return false }
         
         var success = false
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
-            success = await addReminderAsync(title: title, dueDate: dueDate, notes: notes)
+            success = await addReminderAsync(title: title, dueDate: dueDate, notes: notes, listName: listName)
             semaphore.signal()
         }
         
@@ -226,7 +231,7 @@ class EventKitManager: ObservableObject {
         return success
     }
     
-    func addReminderAsync(title: String, dueDate: Date? = nil, notes: String? = nil) async -> Bool {
+    func addReminderAsync(title: String, dueDate: Date? = nil, notes: String? = nil, listName: String? = nil) async -> Bool {
         guard reminderAccessGranted else { return false }
         
         let reminder = EKReminder(eventStore: eventStore)
@@ -237,9 +242,23 @@ class EventKitManager: ObservableObject {
             reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
         }
         
-        // Use default reminder list
-        if let calendar = eventStore.defaultCalendarForNewReminders() {
-            reminder.calendar = calendar
+        // Set the reminder list based on the provided list name or use default
+        if let listName = listName {
+            let reminderLists = fetchReminderLists()
+            if let matchingList = reminderLists.first(where: { $0.title.lowercased() == listName.lowercased() }) {
+                reminder.calendar = matchingList
+            } else {
+                // If no matching list is found, use default
+                if let calendar = eventStore.defaultCalendarForNewReminders() {
+                    reminder.calendar = calendar
+                }
+                print("Reminder list '\(listName)' not found, using default list")
+            }
+        } else {
+            // Use default reminder list if no list name provided
+            if let calendar = eventStore.defaultCalendarForNewReminders() {
+                reminder.calendar = calendar
+            }
         }
         
         do {
@@ -260,7 +279,7 @@ class EventKitManager: ObservableObject {
         }
     }
     
-    func updateReminder(id: String, title: String? = nil, dueDate: Date? = nil, notes: String? = nil, isCompleted: Bool? = nil) async -> Bool {
+    func updateReminder(id: String, title: String? = nil, dueDate: Date? = nil, notes: String? = nil, isCompleted: Bool? = nil, listName: String? = nil) async -> Bool {
         guard reminderAccessGranted else { return false }
         
         // Fetch the reminder by ID
@@ -275,6 +294,9 @@ class EventKitManager: ObservableObject {
         
         if let dueDate = dueDate {
             reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
+        } else if dueDate == nil && title != nil {
+            // If dueDate is explicitly set to nil (not just omitted), clear the due date
+            reminder.dueDateComponents = nil
         }
         
         if let notes = notes {
@@ -283,6 +305,16 @@ class EventKitManager: ObservableObject {
         
         if let isCompleted = isCompleted {
             reminder.isCompleted = isCompleted
+        }
+        
+        // Change the reminder list if specified
+        if let listName = listName {
+            let reminderLists = fetchReminderLists()
+            if let matchingList = reminderLists.first(where: { $0.title.lowercased() == listName.lowercased() }) {
+                reminder.calendar = matchingList
+            } else {
+                print("Reminder list '\(listName)' not found, keeping the current list")
+            }
         }
         
         do {
@@ -295,12 +327,12 @@ class EventKitManager: ObservableObject {
     }
     
     // For backward compatibility
-    func updateReminder(id: String, title: String? = nil, dueDate: Date? = nil, notes: String? = nil, isCompleted: Bool? = nil) -> Bool {
+    func updateReminder(id: String, title: String? = nil, dueDate: Date? = nil, notes: String? = nil, isCompleted: Bool? = nil, listName: String? = nil) -> Bool {
         var result = false
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
-            result = await updateReminder(id: id, title: title, dueDate: dueDate, notes: notes, isCompleted: isCompleted)
+            result = await updateReminder(id: id, title: title, dueDate: dueDate, notes: notes, isCompleted: isCompleted, listName: listName)
             semaphore.signal()
         }
         
