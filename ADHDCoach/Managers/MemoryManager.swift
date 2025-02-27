@@ -374,21 +374,85 @@ class MemoryManager: ObservableObject {
         return addedCount > 0 || removedCount > 0
     }
     
-    // Process more structured memory instructions in a new format for Claude
+    // Process structured memory instructions in JSON format for Claude
     func processMemoryInstructions(instructions: String) async -> Bool {
         print("Processing structured memory instructions...")
         
-        // Format:
-        // [MEMORY_ADD] Content | Category | Importance
-        // [MEMORY_REMOVE] Memory ID OR Content to match
+        // Create a JSON decoder
+        let decoder = JSONDecoder()
         
-        let addPattern = "\\[MEMORY_ADD\\] (.*?) \\| (.*?)( \\| (\\d))?$"
-        let removePattern = "\\[MEMORY_REMOVE\\] (.*)$"
+        // Process MEMORY_ADD commands
+        let memoryAddPattern = "\\[MEMORY_ADD\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/MEMORY_ADD\\]"
+        let memoryRemovePattern = "\\[MEMORY_REMOVE\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/MEMORY_REMOVE\\]"
+        
+        // Also support legacy format for backward compatibility
+        let legacyAddPattern = "\\[MEMORY_ADD\\] (.*?) \\| (.*?)( \\| (\\d))?$"
+        let legacyRemovePattern = "\\[MEMORY_REMOVE\\] (.*)$"
         
         var addedCount = 0
         var removedCount = 0
         
-        if let addRegex = try? NSRegularExpression(pattern: addPattern, options: .anchorsMatchLines) {
+        // Process JSON-based MEMORY_ADD commands
+        if let regex = try? NSRegularExpression(pattern: memoryAddPattern, options: []) {
+            let matches = regex.matches(in: instructions, range: NSRange(instructions.startIndex..., in: instructions))
+            
+            for match in matches {
+                if let jsonRange = Range(match.range(at: 1), in: instructions) {
+                    let jsonString = String(instructions[jsonRange])
+                    
+                    do {
+                        let command = try decoder.decode(MemoryAddCommand.self, from: jsonString.data(using: .utf8)!)
+                        
+                        // Skip if content is likely a calendar event or reminder
+                        if isCalendarOrReminderItem(content: command.content) {
+                            print("Skipping memory instruction: Content appears to be a calendar event or reminder: \(command.content)")
+                            continue
+                        }
+                        
+                        // Map string to category
+                        let category = MemoryCategory.allCases.first { $0.rawValue.lowercased() == command.category.lowercased() } ?? .notes
+                        
+                        // Use provided importance or default to 3
+                        let importance = command.importance ?? 3
+                        
+                        try await addMemory(content: command.content, category: category, importance: importance)
+                        addedCount += 1
+                        print("Added memory: \(command.content)")
+                    } catch {
+                        print("Error decoding memory add command: \(error)")
+                    }
+                }
+            }
+        }
+        
+        // Process JSON-based MEMORY_REMOVE commands
+        if let regex = try? NSRegularExpression(pattern: memoryRemovePattern, options: []) {
+            let matches = regex.matches(in: instructions, range: NSRange(instructions.startIndex..., in: instructions))
+            
+            for match in matches {
+                if let jsonRange = Range(match.range(at: 1), in: instructions) {
+                    let jsonString = String(instructions[jsonRange])
+                    
+                    do {
+                        let command = try decoder.decode(MemoryRemoveCommand.self, from: jsonString.data(using: .utf8)!)
+                        
+                        // Content match
+                        if let memoryToRemove = await MainActor.run(body: {
+                            return memories.first(where: { $0.content == command.content })
+                        }) {
+                            try await deleteMemory(id: memoryToRemove.id)
+                            removedCount += 1
+                            print("Removed memory: \(command.content)")
+                        }
+                    } catch {
+                        print("Error decoding memory remove command: \(error)")
+                    }
+                }
+            }
+        }
+        
+        // Process legacy format for backward compatibility
+        if let addRegex = try? NSRegularExpression(pattern: legacyAddPattern, options: .anchorsMatchLines) {
             let matches = addRegex.matches(in: instructions, range: NSRange(instructions.startIndex..., in: instructions))
             
             for match in matches {
@@ -396,7 +460,7 @@ class MemoryManager: ObservableObject {
                 
                 // Skip if content is likely a calendar event or reminder
                 if isCalendarOrReminderItem(content: content) {
-                    print("Skipping memory instruction: Content appears to be a calendar event or reminder: \(content)")
+                    print("Skipping legacy memory instruction: Content appears to be a calendar event or reminder: \(content)")
                     continue
                 }
                 
@@ -410,13 +474,14 @@ class MemoryManager: ObservableObject {
                 do {
                     try await addMemory(content: content, category: category, importance: importance)
                     addedCount += 1
+                    print("Added memory (legacy format): \(content)")
                 } catch {
-                    print("Error adding memory: \(error.localizedDescription)")
+                    print("Error adding memory (legacy format): \(error.localizedDescription)")
                 }
             }
         }
         
-        if let removeRegex = try? NSRegularExpression(pattern: removePattern, options: .anchorsMatchLines) {
+        if let removeRegex = try? NSRegularExpression(pattern: legacyRemovePattern, options: .anchorsMatchLines) {
             let matches = removeRegex.matches(in: instructions, range: NSRange(instructions.startIndex..., in: instructions))
             
             for match in matches {
@@ -428,8 +493,9 @@ class MemoryManager: ObservableObject {
                     do {
                         try await deleteMemory(id: uuid)
                         removedCount += 1
+                        print("Removed memory by ID (legacy format): \(uuid)")
                     } catch {
-                        print("Error removing memory by ID: \(error.localizedDescription)")
+                        print("Error removing memory by ID (legacy format): \(error.localizedDescription)")
                     }
                 } else {
                     // Content match
@@ -439,8 +505,9 @@ class MemoryManager: ObservableObject {
                         do {
                             try await deleteMemory(id: memoryToRemove.id)
                             removedCount += 1
+                            print("Removed memory by content (legacy format): \(target)")
                         } catch {
-                            print("Error removing memory by content: \(error.localizedDescription)")
+                            print("Error removing memory by content (legacy format): \(error.localizedDescription)")
                         }
                     }
                 }

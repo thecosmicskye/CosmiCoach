@@ -1,6 +1,58 @@
 import Foundation
 import Combine
 
+// Models for JSON-based command parsing
+// Calendar Commands
+struct CalendarAddCommand: Decodable {
+    let title: String
+    let start: String
+    let end: String
+    let notes: String?
+}
+
+struct CalendarModifyCommand: Decodable {
+    let id: String
+    let title: String?
+    let start: String?
+    let end: String?
+    let notes: String?
+}
+
+struct CalendarDeleteCommand: Decodable {
+    let id: String
+}
+
+// Reminder Commands
+struct ReminderAddCommand: Decodable {
+    let title: String
+    let due: String?
+    let notes: String?
+    let list: String?
+}
+
+struct ReminderModifyCommand: Decodable {
+    let id: String
+    let title: String?
+    let due: String?
+    let notes: String?
+    let list: String?
+}
+
+struct ReminderDeleteCommand: Decodable {
+    let id: String
+}
+
+// Memory Commands
+struct MemoryAddCommand: Decodable {
+    let content: String
+    let category: String
+    let importance: Int?
+}
+
+struct MemoryRemoveCommand: Decodable {
+    let content: String
+}
+
 class ChatManager: ObservableObject {
     @Published var messages: [ChatMessage] = []
     @Published var isProcessing = false
@@ -35,16 +87,61 @@ class ChatManager: ObservableObject {
     8. Be empathetic and understanding of ADHD challenges
     9. Maintain important user information in structured memory categories
 
-    To modify calendar or reminders, use the following format:
-    [CALENDAR_ADD] Title | Start time | End time | Notes (optional)
-    [CALENDAR_MODIFY] Event ID | New title | New start time | New end time | New notes (optional)
-    [CALENDAR_DELETE] Event ID
+    To modify calendar or reminders, use the following JSON format:
 
-    [REMINDER_ADD] Title | Due date/time or "No due date" | Notes (optional) | List name (optional)
-    [REMINDER_MODIFY] Reminder ID | New title | New due date/time or "No due date" | New notes (optional) | List name (optional)
-    
-    Example: [REMINDER_ADD] Call doctor | No due date | Schedule appointment | Personal
-    [REMINDER_DELETE] Reminder ID
+    [CALENDAR_ADD]
+    {
+      "title": "Meeting with Doctor",     // REQUIRED
+      "start": "Mar 15, 2025 at 2:00 PM", // REQUIRED
+      "end": "Mar 15, 2025 at 3:00 PM",   // REQUIRED
+      "notes": "Discuss medication options" // OPTIONAL
+    }
+    [/CALENDAR_ADD]
+
+    [CALENDAR_MODIFY]
+    {
+      "id": "EVENT-ID-123",              // REQUIRED
+      "title": "Updated Meeting Title",   // OPTIONAL
+      "start": "Mar 16, 2025 at 3:00 PM", // OPTIONAL
+      "end": "Mar 16, 2025 at 4:00 PM",   // OPTIONAL
+      "notes": "New meeting notes"        // OPTIONAL
+    }
+    [/CALENDAR_MODIFY]
+
+    [CALENDAR_DELETE]
+    {
+      "id": "EVENT-ID-123"  // REQUIRED
+    }
+    [/CALENDAR_DELETE]
+
+    [REMINDER_ADD]
+    {
+      "title": "Call doctor",             // REQUIRED
+      "due": "Mar 15, 2025 at 2:00 PM",   // OPTIONAL
+      "notes": "Schedule appointment",     // OPTIONAL
+      "list": "Personal"                  // OPTIONAL
+    }
+    [/REMINDER_ADD]
+
+    [REMINDER_MODIFY]
+    {
+      "id": "REMINDER-ID-123",           // REQUIRED
+      "title": "Updated reminder title",  // OPTIONAL
+      "due": "Mar 16, 2025 at 3:00 PM",   // OPTIONAL
+      "notes": "Updated notes",           // OPTIONAL
+      "list": "Work"                      // OPTIONAL
+    }
+    [/REMINDER_MODIFY]
+
+    [REMINDER_DELETE]
+    {
+      "id": "REMINDER-ID-123"  // REQUIRED
+    }
+    [/REMINDER_DELETE]
+
+    Examples:
+    - To add a reminder without a due date: Use "due": null or omit the "due" field
+    - To modify only specific fields: Only include the fields you want to change
 
     You have access to the user's memory which contains information about them that persists between conversations. This information is organized into categories:
     - Personal Information: Basic information about the user
@@ -55,16 +152,38 @@ class ChatManager: ObservableObject {
     - Goals: Short and long-term goals
     - Miscellaneous Notes: Other information to remember
 
-    To add or update memories, use the following format:
-    [MEMORY_ADD] Content | Category | Importance (1-5, optional)
+    To add or update memories, use the following JSON format:
+    [MEMORY_ADD]
+    {
+      "content": "User takes 20mg Adderall at 8am daily", // REQUIRED
+      "category": "Medications",                          // REQUIRED
+      "importance": 5                                     // OPTIONAL (default: 3)
+    }
+    [/MEMORY_ADD]
     
     Examples:
-    [MEMORY_ADD] User takes 20mg Adderall at 8am daily | Medications | 5
-    [MEMORY_ADD] User prefers short, direct answers | Preferences | 4
-    [MEMORY_ADD] User struggles with morning routines | Behavior Patterns | 3
+    [MEMORY_ADD]
+    {
+      "content": "User prefers short, direct answers",
+      "category": "Preferences",
+      "importance": 4
+    }
+    [/MEMORY_ADD]
+    
+    [MEMORY_ADD]
+    {
+      "content": "User struggles with morning routines",
+      "category": "Behavior Patterns",
+      "importance": 3
+    }
+    [/MEMORY_ADD]
     
     To remove outdated memories:
-    [MEMORY_REMOVE] Exact content to match and remove
+    [MEMORY_REMOVE]
+    {
+      "content": "Exact content to match and remove"  // REQUIRED
+    }
+    [/MEMORY_REMOVE]
     
     Important:
     - Memories with higher importance (4-5) are most critical to refer to
@@ -1008,278 +1127,371 @@ class ChatManager: ObservableObject {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
         
-        // Process all calendar add commands in the response
-        let calendarAddPattern = "\\[CALENDAR_ADD\\] (.*?) \\| (.*?) \\| (.*?)( \\| (.*?))?$"
-        if let regex = try? NSRegularExpression(pattern: calendarAddPattern, options: .anchorsMatchLines) {
-            let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
-            
-            for match in matches {
-                let title = response[Range(match.range(at: 1), in: response)!]
-                let startDateString = String(response[Range(match.range(at: 2), in: response)!])
-                let endDateString = String(response[Range(match.range(at: 3), in: response)!])
-                let notes = match.range(at: 5).location != NSNotFound ? String(response[Range(match.range(at: 5), in: response)!]) : nil
-                
-                // Parse dates
-                guard let startDate = dateFormatter.date(from: startDateString) else {
-                    print("Error parsing start date: \(startDateString)")
-                    continue
-                }
-                
-                guard let endDate = dateFormatter.date(from: endDateString) else {
-                    print("Error parsing end date: \(endDateString)")
-                    continue
-                }
-                
-                // Add the calendar event
-                let success = await MainActor.run {
-                    // Get the ID of the current message being processed
-                    let messageId = self.messages.last?.id
-                    
-                    return eventKitManager.addCalendarEvent(
-                        title: String(title), 
-                        startDate: startDate, 
-                        endDate: endDate, 
-                        notes: notes,
-                        messageId: messageId,
-                        chatManager: self
-                    )
-                }
-                
-                if success {
-                    print("📅 ChatManager: Successfully added calendar event - \(title)")
-                } else {
-                    print("📅 ChatManager: Failed to add calendar event - \(title)")
-                }
-            }
-        }
+        // Create a JSON decoder
+        let decoder = JSONDecoder()
         
-        // Process all reminder add commands in the response
-        let reminderAddPattern = "\\[REMINDER_ADD\\] (.*?) \\| (.*?)( \\| (.*?))?( \\| (.*?))?$"
-        if let regex = try? NSRegularExpression(pattern: reminderAddPattern, options: .anchorsMatchLines) {
+        // Process CALENDAR_ADD commands
+        let calendarAddPattern = "\\[CALENDAR_ADD\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/CALENDAR_ADD\\]"
+        if let regex = try? NSRegularExpression(pattern: calendarAddPattern, options: []) {
             let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
             
             for match in matches {
-                let title = response[Range(match.range(at: 1), in: response)!]
-                let dueDateString = String(response[Range(match.range(at: 2), in: response)!])
-                
-                // Extract notes and list name
-                let notes: String?
-                let listName: String?
-                
-                if match.range(at: 4).location != NSNotFound {
-                    notes = String(response[Range(match.range(at: 4), in: response)!])
+                if let jsonRange = Range(match.range(at: 1), in: response) {
+                    let jsonString = String(response[jsonRange])
                     
-                    // Check if there's a list name
-                    if match.range(at: 6).location != NSNotFound {
-                        listName = String(response[Range(match.range(at: 6), in: response)!])
-                    } else {
-                        listName = nil
+                    do {
+                        let command = try decoder.decode(CalendarAddCommand.self, from: jsonString.data(using: .utf8)!)
+                        
+                        // Parse dates
+                        guard let startDate = dateFormatter.date(from: command.start) else {
+                            print("Error parsing start date: \(command.start)")
+                            continue
+                        }
+                        
+                        guard let endDate = dateFormatter.date(from: command.end) else {
+                            print("Error parsing end date: \(command.end)")
+                            continue
+                        }
+                        
+                        // Make copies of the variables to avoid capturing them in the closure
+                        let startDateCopy = startDate
+                        let endDateCopy = endDate
+                        let notesCopy = command.notes
+                        let titleCopy = command.title
+                        
+                        // Add the calendar event
+                        let success = await MainActor.run {
+                            // Get the ID of the current message being processed
+                            let messageId = self.messages.last?.id
+                            
+                            return eventKitManager.addCalendarEvent(
+                                title: titleCopy,
+                                startDate: startDateCopy,
+                                endDate: endDateCopy,
+                                notes: notesCopy,
+                                messageId: messageId,
+                                chatManager: self
+                            )
+                        }
+                        
+                        if success {
+                            print("📅 ChatManager: Successfully added calendar event - \(command.title)")
+                        } else {
+                            print("📅 ChatManager: Failed to add calendar event - \(command.title)")
+                        }
+                    } catch {
+                        print("Error decoding calendar add command: \(error)")
                     }
-                } else {
-                    notes = nil
-                    listName = nil
                 }
-                
-                // Handle the case when "No due date" is specified
-                let dueDate: Date?
-                if dueDateString.lowercased() == "no due date" {
-                    dueDate = nil
-                } else {
-                    // Parse due date for normal cases
-                    guard let parsedDate = dateFormatter.date(from: dueDateString) else {
-                        print("Error parsing due date: \(dueDateString)")
-                        continue
+            }
+        }
+        
+        // Process CALENDAR_MODIFY commands
+        let calendarModifyPattern = "\\[CALENDAR_MODIFY\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/CALENDAR_MODIFY\\]"
+        if let regex = try? NSRegularExpression(pattern: calendarModifyPattern, options: []) {
+            let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
+            
+            for match in matches {
+                if let jsonRange = Range(match.range(at: 1), in: response) {
+                    let jsonString = String(response[jsonRange])
+                    
+                    do {
+                        let command = try decoder.decode(CalendarModifyCommand.self, from: jsonString.data(using: .utf8)!)
+                        
+                        // Parse dates if provided
+                        var startDate: Date? = nil
+                        if let startString = command.start {
+                            guard let parsedDate = dateFormatter.date(from: startString) else {
+                                print("Error parsing start date: \(startString)")
+                                continue
+                            }
+                            startDate = parsedDate
+                        }
+                        
+                        var endDate: Date? = nil
+                        if let endString = command.end {
+                            guard let parsedDate = dateFormatter.date(from: endString) else {
+                                print("Error parsing end date: \(endString)")
+                                continue
+                            }
+                            endDate = parsedDate
+                        }
+                        
+                        // Make copies of the variables to avoid capturing them in the closure
+                        let startDateCopy = startDate
+                        let endDateCopy = endDate
+                        let idCopy = command.id
+                        let titleCopy = command.title
+                        let notesCopy = command.notes
+                        
+                        // Update the calendar event
+                        let success = await MainActor.run {
+                            // Get the ID of the current message being processed
+                            let messageId = self.messages.last?.id
+                            
+                            return eventKitManager.updateCalendarEvent(
+                                id: idCopy,
+                                title: titleCopy,
+                                startDate: startDateCopy,
+                                endDate: endDateCopy,
+                                notes: notesCopy,
+                                messageId: messageId,
+                                chatManager: self
+                            )
+                        }
+                        
+                        if success {
+                            print("📅 ChatManager: Successfully updated calendar event with ID - \(command.id)")
+                        } else {
+                            print("📅 ChatManager: Failed to update calendar event with ID - \(command.id)")
+                        }
+                    } catch {
+                        print("Error decoding calendar modify command: \(error)")
                     }
-                    dueDate = parsedDate
-                }
-                
-                // Add the reminder
-                let success = await MainActor.run {
-                    // Get the ID of the current message being processed
-                    let messageId = self.messages.last?.id
-                    
-                    return eventKitManager.addReminder(
-                        title: String(title), 
-                        dueDate: dueDate, 
-                        notes: notes, 
-                        listName: listName,
-                        messageId: messageId,
-                        chatManager: self
-                    )
-                }
-                
-                if success {
-                    print("📅 ChatManager: Successfully added reminder - \(title)")
-                } else {
-                    print("📅 ChatManager: Failed to add reminder - \(title)")
                 }
             }
         }
         
-        // Process calendar modify commands
-        let calendarModifyPattern = "\\[CALENDAR_MODIFY\\] (.*?) \\| (.*?) \\| (.*?) \\| (.*?)( \\| (.*?))?$"
-        if let regex = try? NSRegularExpression(pattern: calendarModifyPattern, options: .anchorsMatchLines) {
+        // Process CALENDAR_DELETE commands
+        let calendarDeletePattern = "\\[CALENDAR_DELETE\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/CALENDAR_DELETE\\]"
+        if let regex = try? NSRegularExpression(pattern: calendarDeletePattern, options: []) {
             let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
             
             for match in matches {
-                let eventId = String(response[Range(match.range(at: 1), in: response)!])
-                let newTitle = String(response[Range(match.range(at: 2), in: response)!])
-                let startDateString = String(response[Range(match.range(at: 3), in: response)!])
-                let endDateString = String(response[Range(match.range(at: 4), in: response)!])
-                let notes = match.range(at: 6).location != NSNotFound ? String(response[Range(match.range(at: 6), in: response)!]) : nil
-                
-                // Parse dates
-                guard let startDate = dateFormatter.date(from: startDateString) else {
-                    print("Error parsing start date: \(startDateString)")
-                    continue
-                }
-                
-                guard let endDate = dateFormatter.date(from: endDateString) else {
-                    print("Error parsing end date: \(endDateString)")
-                    continue
-                }
-                
-                // Update the calendar event
-                let success = await MainActor.run {
-                    // Get the ID of the current message being processed
-                    let messageId = self.messages.last?.id
+                if let jsonRange = Range(match.range(at: 1), in: response) {
+                    let jsonString = String(response[jsonRange])
                     
-                    return eventKitManager.updateCalendarEvent(
-                        id: eventId, 
-                        title: newTitle, 
-                        startDate: startDate, 
-                        endDate: endDate, 
-                        notes: notes,
-                        messageId: messageId,
-                        chatManager: self
-                    )
-                }
-                
-                if success {
-                    print("📅 ChatManager: Successfully updated calendar event - \(newTitle)")
-                } else {
-                    print("📅 ChatManager: Failed to update calendar event - \(newTitle)")
-                }
-            }
-        }
-        
-        // Process calendar delete commands
-        let calendarDeletePattern = "\\[CALENDAR_DELETE\\] (.*?)$"
-        if let regex = try? NSRegularExpression(pattern: calendarDeletePattern, options: .anchorsMatchLines) {
-            let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
-            
-            for match in matches {
-                let eventId = String(response[Range(match.range(at: 1), in: response)!])
-                
-                // Delete the calendar event
-                let success = await MainActor.run {
-                    // Get the ID of the current message being processed
-                    let messageId = self.messages.last?.id
-                    
-                    return eventKitManager.deleteCalendarEvent(
-                        id: eventId,
-                        messageId: messageId,
-                        chatManager: self
-                    )
-                }
-                
-                if success {
-                    print("📅 ChatManager: Successfully deleted calendar event with ID - \(eventId)")
-                } else {
-                    print("📅 ChatManager: Failed to delete calendar event with ID - \(eventId)")
-                }
-            }
-        }
-        
-        // Process reminder modify commands
-        let reminderModifyPattern = "\\[REMINDER_MODIFY\\] (.*?) \\| (.*?) \\| (.*?)( \\| (.*?))?( \\| (.*?))?$"
-        if let regex = try? NSRegularExpression(pattern: reminderModifyPattern, options: .anchorsMatchLines) {
-            let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
-            
-            for match in matches {
-                let reminderId = String(response[Range(match.range(at: 1), in: response)!])
-                let newTitle = String(response[Range(match.range(at: 2), in: response)!])
-                let dueDateString = String(response[Range(match.range(at: 3), in: response)!])
-                
-                // Extract notes and list name
-                let notes: String?
-                let listName: String?
-                
-                if match.range(at: 5).location != NSNotFound {
-                    notes = String(response[Range(match.range(at: 5), in: response)!])
-                    
-                    // Check if there's a list name
-                    if match.range(at: 7).location != NSNotFound {
-                        listName = String(response[Range(match.range(at: 7), in: response)!])
-                    } else {
-                        listName = nil
+                    do {
+                        let command = try decoder.decode(CalendarDeleteCommand.self, from: jsonString.data(using: .utf8)!)
+                        
+                        // Make a copy of the ID to avoid capturing it in the closure
+                        let idCopy = command.id
+                        
+                        // Delete the calendar event
+                        let success = await MainActor.run {
+                            // Get the ID of the current message being processed
+                            let messageId = self.messages.last?.id
+                            
+                            return eventKitManager.deleteCalendarEvent(
+                                id: idCopy,
+                                messageId: messageId,
+                                chatManager: self
+                            )
+                        }
+                        
+                        if success {
+                            print("📅 ChatManager: Successfully deleted calendar event with ID - \(command.id)")
+                        } else {
+                            print("📅 ChatManager: Failed to delete calendar event with ID - \(command.id)")
+                        }
+                    } catch {
+                        print("Error decoding calendar delete command: \(error)")
                     }
-                } else {
-                    notes = nil
-                    listName = nil
-                }
-                
-                // Handle the case when "No due date" is specified
-                let dueDate: Date?
-                if dueDateString.lowercased() == "no due date" {
-                    dueDate = nil
-                } else {
-                    // Parse due date for normal cases
-                    guard let parsedDate = dateFormatter.date(from: dueDateString) else {
-                        print("Error parsing due date: \(dueDateString)")
-                        continue
-                    }
-                    dueDate = parsedDate
-                }
-                
-                // Update the reminder
-                let success = await MainActor.run {
-                    // Get the ID of the current message being processed
-                    let messageId = self.messages.last?.id
-                    
-                    return eventKitManager.updateReminder(
-                        id: reminderId, 
-                        title: newTitle, 
-                        dueDate: dueDate, 
-                        notes: notes, 
-                        listName: listName,
-                        messageId: messageId,
-                        chatManager: self
-                    )
-                }
-                
-                if success {
-                    print("📅 ChatManager: Successfully updated reminder - \(newTitle)")
-                } else {
-                    print("📅 ChatManager: Failed to update reminder - \(newTitle)")
                 }
             }
         }
         
-        // Process reminder delete commands
-        let reminderDeletePattern = "\\[REMINDER_DELETE\\] (.*?)$"
-        if let regex = try? NSRegularExpression(pattern: reminderDeletePattern, options: .anchorsMatchLines) {
+        // Process REMINDER_ADD commands
+        let reminderAddPattern = "\\[REMINDER_ADD\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/REMINDER_ADD\\]"
+        if let regex = try? NSRegularExpression(pattern: reminderAddPattern, options: []) {
             let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
             
             for match in matches {
-                let reminderId = String(response[Range(match.range(at: 1), in: response)!])
-                
-                // Delete the reminder
-                let success = await MainActor.run {
-                    // Get the ID of the current message being processed
-                    let messageId = self.messages.last?.id
+                if let jsonRange = Range(match.range(at: 1), in: response) {
+                    let jsonString = String(response[jsonRange])
                     
-                    return eventKitManager.deleteReminder(
-                        id: reminderId,
-                        messageId: messageId,
-                        chatManager: self
-                    )
+                    do {
+                        let command = try decoder.decode(ReminderAddCommand.self, from: jsonString.data(using: .utf8)!)
+                        
+                        // Parse due date if provided
+                        var dueDate: Date? = nil
+                        if let dueString = command.due {
+                            if dueString.lowercased() == "null" || dueString.lowercased() == "no due date" {
+                                dueDate = nil
+                            } else {
+                                guard let parsedDate = dateFormatter.date(from: dueString) else {
+                                    print("Error parsing due date: \(dueString)")
+                                    continue
+                                }
+                                dueDate = parsedDate
+                            }
+                        }
+                        
+                        // Make copies of the variables to avoid capturing them in the closure
+                        let dueDateCopy = dueDate
+                        let titleCopy = command.title
+                        let notesCopy = command.notes
+                        let listCopy = command.list
+                        
+                        // Add the reminder
+                        let success = await MainActor.run {
+                            // Get the ID of the current message being processed
+                            let messageId = self.messages.last?.id
+                            
+                            return eventKitManager.addReminder(
+                                title: titleCopy,
+                                dueDate: dueDateCopy,
+                                notes: notesCopy,
+                                listName: listCopy,
+                                messageId: messageId,
+                                chatManager: self
+                            )
+                        }
+                        
+                        if success {
+                            print("📅 ChatManager: Successfully added reminder - \(command.title)")
+                        } else {
+                            print("📅 ChatManager: Failed to add reminder - \(command.title)")
+                        }
+                    } catch {
+                        print("Error decoding reminder add command: \(error)")
+                    }
                 }
-                
-                if success {
-                    print("📅 ChatManager: Successfully deleted reminder with ID - \(reminderId)")
-                } else {
-                    print("📅 ChatManager: Failed to delete reminder with ID - \(reminderId)")
+            }
+        }
+        
+        // Process REMINDER_MODIFY commands
+        let reminderModifyPattern = "\\[REMINDER_MODIFY\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/REMINDER_MODIFY\\]"
+        if let regex = try? NSRegularExpression(pattern: reminderModifyPattern, options: []) {
+            let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
+            
+            for match in matches {
+                if let jsonRange = Range(match.range(at: 1), in: response) {
+                    let jsonString = String(response[jsonRange])
+                    
+                    do {
+                        let command = try decoder.decode(ReminderModifyCommand.self, from: jsonString.data(using: .utf8)!)
+                        
+                        // Parse due date if provided
+                        var dueDate: Date? = nil
+                        if let dueString = command.due {
+                            if dueString.lowercased() == "null" || dueString.lowercased() == "no due date" {
+                                dueDate = nil
+                            } else {
+                                guard let parsedDate = dateFormatter.date(from: dueString) else {
+                                    print("Error parsing due date: \(dueString)")
+                                    continue
+                                }
+                                dueDate = parsedDate
+                            }
+                        }
+                        
+                        // Make copies of the variables to avoid capturing them in the closure
+                        let dueDateCopy = dueDate
+                        let idCopy = command.id
+                        let titleCopy = command.title
+                        let notesCopy = command.notes
+                        let listCopy = command.list
+                        
+                        // Update the reminder
+                        let success = await MainActor.run {
+                            // Get the ID of the current message being processed
+                            let messageId = self.messages.last?.id
+                            
+                            return eventKitManager.updateReminder(
+                                id: idCopy,
+                                title: titleCopy,
+                                dueDate: dueDateCopy,
+                                notes: notesCopy,
+                                listName: listCopy,
+                                messageId: messageId,
+                                chatManager: self
+                            )
+                        }
+                        
+                        if success {
+                            print("📅 ChatManager: Successfully updated reminder with ID - \(command.id)")
+                        } else {
+                            print("📅 ChatManager: Failed to update reminder with ID - \(command.id)")
+                        }
+                    } catch {
+                        print("Error decoding reminder modify command: \(error)")
+                    }
+                }
+            }
+        }
+        
+        // Process REMINDER_DELETE commands
+        let reminderDeletePattern = "\\[REMINDER_DELETE\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/REMINDER_DELETE\\]"
+        if let regex = try? NSRegularExpression(pattern: reminderDeletePattern, options: []) {
+            let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
+            
+            for match in matches {
+                if let jsonRange = Range(match.range(at: 1), in: response) {
+                    let jsonString = String(response[jsonRange])
+                    
+                    do {
+                        let command = try decoder.decode(ReminderDeleteCommand.self, from: jsonString.data(using: .utf8)!)
+                        
+                        // Make a copy of the ID to avoid capturing it in the closure
+                        let idCopy = command.id
+                        
+                        // Delete the reminder
+                        let success = await MainActor.run {
+                            // Get the ID of the current message being processed
+                            let messageId = self.messages.last?.id
+                            
+                            return eventKitManager.deleteReminder(
+                                id: idCopy,
+                                messageId: messageId,
+                                chatManager: self
+                            )
+                        }
+                        
+                        if success {
+                            print("📅 ChatManager: Successfully deleted reminder with ID - \(command.id)")
+                        } else {
+                            print("📅 ChatManager: Failed to delete reminder with ID - \(command.id)")
+                        }
+                    } catch {
+                        print("Error decoding reminder delete command: \(error)")
+                    }
+                }
+            }
+        }
+        
+        // Process MEMORY_ADD commands
+        let memoryAddPattern = "\\[MEMORY_ADD\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/MEMORY_ADD\\]"
+        if let regex = try? NSRegularExpression(pattern: memoryAddPattern, options: []) {
+            let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
+            
+            for match in matches {
+                if let jsonRange = Range(match.range(at: 1), in: response) {
+                    let jsonString = String(response[jsonRange])
+                    
+                    do {
+                        let command = try decoder.decode(MemoryAddCommand.self, from: jsonString.data(using: .utf8)!)
+                        
+                        // Process memory add command
+                        // This will be handled by the memoryManager.processMemoryInstructions method
+                        // We don't need to do anything here as it's already processed in processMemoryUpdates
+                        print("📝 ChatManager: Found memory add command - \(command.content)")
+                    } catch {
+                        print("Error decoding memory add command: \(error)")
+                    }
+                }
+            }
+        }
+        
+        // Process MEMORY_REMOVE commands
+        let memoryRemovePattern = "\\[MEMORY_REMOVE\\]\\s*(\\{[\\s\\S]*?\\})\\s*\\[\\/MEMORY_REMOVE\\]"
+        if let regex = try? NSRegularExpression(pattern: memoryRemovePattern, options: []) {
+            let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
+            
+            for match in matches {
+                if let jsonRange = Range(match.range(at: 1), in: response) {
+                    let jsonString = String(response[jsonRange])
+                    
+                    do {
+                        let command = try decoder.decode(MemoryRemoveCommand.self, from: jsonString.data(using: .utf8)!)
+                        
+                        // Process memory remove command
+                        // This will be handled by the memoryManager.processMemoryInstructions method
+                        // We don't need to do anything here as it's already processed in processMemoryUpdates
+                        print("📝 ChatManager: Found memory remove command - \(command.content)")
+                    } catch {
+                        print("Error decoding memory remove command: \(error)")
+                    }
                 }
             }
         }
