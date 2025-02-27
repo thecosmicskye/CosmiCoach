@@ -53,8 +53,7 @@ struct ADHDCoachApp: App {
                     .environmentObject(chatManager)
             }
         }
-        .onChange(of: scenePhase) { newPhase in
-            let oldPhase = scenePhase
+        .onChange(of: scenePhase) { oldPhase, newPhase in
             print("⏱️ App scene phase changed: \(oldPhase) -> \(newPhase)")
             
             if newPhase == .background {

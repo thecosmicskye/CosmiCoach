@@ -103,75 +103,259 @@ class EventKitManager: ObservableObject {
         return events.map { CalendarEvent(from: $0) }
     }
     
-    func addCalendarEvent(title: String, startDate: Date, endDate: Date, notes: String? = nil) -> Bool {
-        guard calendarAccessGranted else { return false }
-        
-        let event = EKEvent(eventStore: eventStore)
-        event.title = title
-        event.startDate = startDate
-        event.endDate = endDate
-        event.notes = notes
-        
-        // Use default calendar
-        event.calendar = eventStore.defaultCalendarForNewEvents
-        
-        do {
-            try eventStore.save(event, span: .thisEvent)
-            return true
-        } catch {
-            print("Failed to save event: \(error.localizedDescription)")
-            return false
-        }
-    }
-    
-    func updateCalendarEvent(id: String, title: String? = nil, startDate: Date? = nil, endDate: Date? = nil, notes: String? = nil) -> Bool {
-        guard calendarAccessGranted else { return false }
-        
-        guard let event = eventStore.event(withIdentifier: id) else {
-            print("Event not found with ID: \(id)")
+    func addCalendarEvent(title: String, startDate: Date, endDate: Date, notes: String? = nil, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
+        print("📅 EventKitManager: Adding calendar event - \(title)")
+        guard calendarAccessGranted else {
+            print("📅 EventKitManager: Calendar access not granted, cannot add event")
             return false
         }
         
-        if let title = title {
+        // Create operation status message if we have a message ID and chat manager
+        var statusMessageId: UUID?
+        var success = false
+        let semaphore = DispatchSemaphore(value: 0)
+        
+        Task {
+            // Create operation status message on the main actor
+            if let messageId = messageId, let chatManager = chatManager {
+                statusMessageId = await MainActor.run {
+                    let statusMessage = chatManager.addOperationStatusMessage(
+                        forMessageId: messageId,
+                        operationType: "Adding Calendar Event",
+                        status: .inProgress
+                    )
+                    return statusMessage.id
+                }
+            }
+            
+            let event = EKEvent(eventStore: self.eventStore)
             event.title = title
-        }
-        
-        if let startDate = startDate {
             event.startDate = startDate
-        }
-        
-        if let endDate = endDate {
             event.endDate = endDate
-        }
-        
-        if let notes = notes {
             event.notes = notes
+            
+            // Use default calendar
+            event.calendar = self.eventStore.defaultCalendarForNewEvents
+            
+            do {
+                try self.eventStore.save(event, span: .thisEvent)
+                print("📅 EventKitManager: Successfully added calendar event - \(title)")
+                success = true
+                
+                // Update status message to success
+                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .success
+                        )
+                    }
+                }
+            } catch {
+                print("📅 EventKitManager: Failed to save event: \(error.localizedDescription)")
+                success = false
+                
+                // Update status message to failure
+                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .failure,
+                            details: error.localizedDescription
+                        )
+                    }
+                }
+            }
+            
+            semaphore.signal()
         }
         
-        do {
-            try eventStore.save(event, span: .thisEvent)
-            return true
-        } catch {
-            print("Failed to update event: \(error.localizedDescription)")
-            return false
-        }
+        _ = semaphore.wait(timeout: .now() + 5.0)
+        return success
     }
     
-    func deleteCalendarEvent(id: String) -> Bool {
-        guard calendarAccessGranted else { return false }
-        
-        guard let event = eventStore.event(withIdentifier: id) else {
-            print("Event not found with ID: \(id)")
+    func updateCalendarEvent(id: String, title: String? = nil, startDate: Date? = nil, endDate: Date? = nil, notes: String? = nil, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
+        print("📅 EventKitManager: Updating calendar event with ID - \(id)")
+        guard calendarAccessGranted else {
+            print("📅 EventKitManager: Calendar access not granted, cannot update event")
             return false
         }
         
-        do {
-            try eventStore.remove(event, span: .thisEvent)
-            return true
-        } catch {
-            print("Failed to delete event: \(error.localizedDescription)")
+        // Create operation status message if we have a message ID and chat manager
+        var statusMessageId: UUID?
+        var success = false
+        let semaphore = DispatchSemaphore(value: 0)
+        
+        Task {
+            // Create operation status message on the main actor
+            if let messageId = messageId, let chatManager = chatManager {
+                statusMessageId = await MainActor.run {
+                    let statusMessage = chatManager.addOperationStatusMessage(
+                        forMessageId: messageId,
+                        operationType: "Updating Calendar Event",
+                        status: .inProgress
+                    )
+                    return statusMessage.id
+                }
+            }
+            
+            guard let event = self.eventStore.event(withIdentifier: id) else {
+                print("Event not found with ID: \(id)")
+                
+                // Update status message to failure
+                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .failure,
+                            details: "Event not found with ID: \(id)"
+                        )
+                    }
+                }
+                
+                success = false
+                semaphore.signal()
+                return
+            }
+            
+            if let title = title {
+                event.title = title
+            }
+            
+            if let startDate = startDate {
+                event.startDate = startDate
+            }
+            
+            if let endDate = endDate {
+                event.endDate = endDate
+            }
+            
+            if let notes = notes {
+                event.notes = notes
+            }
+            
+            do {
+                try self.eventStore.save(event, span: .thisEvent)
+                success = true
+                
+                // Update status message to success
+                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .success
+                        )
+                    }
+                }
+            } catch {
+                print("Failed to update event: \(error.localizedDescription)")
+                success = false
+                
+                // Update status message to failure
+                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .failure,
+                            details: error.localizedDescription
+                        )
+                    }
+                }
+            }
+            
+            semaphore.signal()
+        }
+        
+        _ = semaphore.wait(timeout: .now() + 5.0)
+        return success
+    }
+    
+    func deleteCalendarEvent(id: String, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
+        print("📅 EventKitManager: Deleting calendar event with ID - \(id)")
+        guard calendarAccessGranted else {
+            print("📅 EventKitManager: Calendar access not granted, cannot delete event")
             return false
         }
+        
+        // Create operation status message if we have a message ID and chat manager
+        var statusMessageId: UUID?
+        var success = false
+        let semaphore = DispatchSemaphore(value: 0)
+        
+        Task {
+            // Create operation status message on the main actor
+            if let messageId = messageId, let chatManager = chatManager {
+                statusMessageId = await MainActor.run {
+                    let statusMessage = chatManager.addOperationStatusMessage(
+                        forMessageId: messageId,
+                        operationType: "Deleting Calendar Event",
+                        status: .inProgress
+                    )
+                    return statusMessage.id
+                }
+            }
+            
+            guard let event = self.eventStore.event(withIdentifier: id) else {
+                print("Event not found with ID: \(id)")
+                
+                // Update status message to failure
+                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .failure,
+                            details: "Event not found with ID: \(id)"
+                        )
+                    }
+                }
+                
+                success = false
+                semaphore.signal()
+                return
+            }
+            
+            do {
+                try self.eventStore.remove(event, span: .thisEvent)
+                success = true
+                
+                // Update status message to success
+                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .success
+                        )
+                    }
+                }
+            } catch {
+                print("Failed to delete event: \(error.localizedDescription)")
+                success = false
+                
+                // Update status message to failure
+                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .failure,
+                            details: error.localizedDescription
+                        )
+                    }
+                }
+            }
+            
+            semaphore.signal()
+        }
+        
+        _ = semaphore.wait(timeout: .now() + 5.0)
+        return success
     }
     
     // MARK: - Reminders Methods
@@ -216,14 +400,55 @@ class EventKitManager: ObservableObject {
         return result
     }
     
-    func addReminder(title: String, dueDate: Date? = nil, notes: String? = nil, listName: String? = nil) -> Bool {
-        guard reminderAccessGranted else { return false }
+    func addReminder(title: String, dueDate: Date? = nil, notes: String? = nil, listName: String? = nil, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
+        print("📅 EventKitManager: Adding reminder - \(title)")
+        guard reminderAccessGranted else {
+            print("📅 EventKitManager: Reminder access not granted, cannot add reminder")
+            return false
+        }
         
+        // Create operation status message if we have a message ID and chat manager
+        var statusMessageId: UUID?
         var success = false
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
+            // Create operation status message on the main actor
+            if let messageId = messageId, let chatManager = chatManager {
+                statusMessageId = await MainActor.run {
+                    let statusMessage = chatManager.addOperationStatusMessage(
+                        forMessageId: messageId,
+                        operationType: "Adding Reminder",
+                        status: .inProgress
+                    )
+                    return statusMessage.id
+                }
+            }
+            
             success = await addReminderAsync(title: title, dueDate: dueDate, notes: notes, listName: listName)
+            
+            // Update status message based on result
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                if success {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .success
+                        )
+                    }
+                } else {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .failure,
+                            details: "Failed to add reminder"
+                        )
+                    }
+                }
+            }
+            
             semaphore.signal()
         }
         
@@ -232,7 +457,11 @@ class EventKitManager: ObservableObject {
     }
     
     func addReminderAsync(title: String, dueDate: Date? = nil, notes: String? = nil, listName: String? = nil) async -> Bool {
-        guard reminderAccessGranted else { return false }
+        print("📅 EventKitManager: Adding reminder async - \(title)")
+        guard reminderAccessGranted else {
+            print("📅 EventKitManager: Reminder access not granted, cannot add reminder")
+            return false
+        }
         
         let reminder = EKReminder(eventStore: eventStore)
         reminder.title = title
@@ -252,7 +481,7 @@ class EventKitManager: ObservableObject {
                 if let calendar = eventStore.defaultCalendarForNewReminders() {
                     reminder.calendar = calendar
                 }
-                print("Reminder list '\(listName)' not found, using default list")
+                print("📅 EventKitManager: Reminder list '\(listName)' not found, using default list")
             }
         } else {
             // Use default reminder list if no list name provided
@@ -263,9 +492,10 @@ class EventKitManager: ObservableObject {
         
         do {
             try eventStore.save(reminder, commit: true)
+            print("📅 EventKitManager: Successfully added reminder - \(title)")
             return true
         } catch {
-            print("Failed to save reminder: \(error.localizedDescription)")
+            print("📅 EventKitManager: Failed to save reminder: \(error.localizedDescription)")
             return false
         }
     }
@@ -280,11 +510,15 @@ class EventKitManager: ObservableObject {
     }
     
     func updateReminder(id: String, title: String? = nil, dueDate: Date? = nil, notes: String? = nil, isCompleted: Bool? = nil, listName: String? = nil) async -> Bool {
-        guard reminderAccessGranted else { return false }
+        print("📅 EventKitManager: Updating reminder async with ID - \(id)")
+        guard reminderAccessGranted else {
+            print("📅 EventKitManager: Reminder access not granted, cannot update reminder")
+            return false
+        }
         
         // Fetch the reminder by ID
         guard let reminder = await fetchReminderById(id: id) else {
-            print("Reminder not found with ID: \(id)")
+            print("📅 EventKitManager: Reminder not found with ID: \(id)")
             return false
         }
         
@@ -313,26 +547,70 @@ class EventKitManager: ObservableObject {
             if let matchingList = reminderLists.first(where: { $0.title.lowercased() == listName.lowercased() }) {
                 reminder.calendar = matchingList
             } else {
-                print("Reminder list '\(listName)' not found, keeping the current list")
+                print("📅 EventKitManager: Reminder list '\(listName)' not found, keeping the current list")
             }
         }
         
         do {
             try eventStore.save(reminder, commit: true)
+            print("📅 EventKitManager: Successfully updated reminder with ID - \(id)")
             return true
         } catch {
-            print("Failed to update reminder: \(error.localizedDescription)")
+            print("📅 EventKitManager: Failed to update reminder: \(error.localizedDescription)")
             return false
         }
     }
     
     // For backward compatibility
-    func updateReminder(id: String, title: String? = nil, dueDate: Date? = nil, notes: String? = nil, isCompleted: Bool? = nil, listName: String? = nil) -> Bool {
+    func updateReminder(id: String, title: String? = nil, dueDate: Date? = nil, notes: String? = nil, isCompleted: Bool? = nil, listName: String? = nil, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
+        print("📅 EventKitManager: Updating reminder with ID - \(id)")
+        guard reminderAccessGranted else {
+            print("📅 EventKitManager: Reminder access not granted, cannot update reminder")
+            return false
+        }
+        
+        // Create operation status message if we have a message ID and chat manager
+        var statusMessageId: UUID?
         var result = false
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
+            // Create operation status message on the main actor
+            if let messageId = messageId, let chatManager = chatManager {
+                statusMessageId = await MainActor.run {
+                    let statusMessage = chatManager.addOperationStatusMessage(
+                        forMessageId: messageId,
+                        operationType: "Updating Reminder",
+                        status: .inProgress
+                    )
+                    return statusMessage.id
+                }
+            }
+            
             result = await updateReminder(id: id, title: title, dueDate: dueDate, notes: notes, isCompleted: isCompleted, listName: listName)
+            
+            // Update status message based on result
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                if result {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .success
+                        )
+                    }
+                } else {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .failure,
+                            details: "Failed to update reminder"
+                        )
+                    }
+                }
+            }
+            
             semaphore.signal()
         }
         
@@ -341,30 +619,78 @@ class EventKitManager: ObservableObject {
     }
     
     func deleteReminder(id: String) async -> Bool {
-        guard reminderAccessGranted else { return false }
+        print("📅 EventKitManager: Deleting reminder async with ID - \(id)")
+        guard reminderAccessGranted else {
+            print("📅 EventKitManager: Reminder access not granted, cannot delete reminder")
+            return false
+        }
         
         // Fetch the reminder by ID
         guard let reminder = await fetchReminderById(id: id) else {
-            print("Reminder not found with ID: \(id)")
+            print("📅 EventKitManager: Reminder not found with ID: \(id)")
             return false
         }
         
         do {
             try eventStore.remove(reminder, commit: true)
+            print("📅 EventKitManager: Successfully deleted reminder with ID - \(id)")
             return true
         } catch {
-            print("Failed to delete reminder: \(error.localizedDescription)")
+            print("📅 EventKitManager: Failed to delete reminder: \(error.localizedDescription)")
             return false
         }
     }
     
     // For backward compatibility
-    func deleteReminder(id: String) -> Bool {
+    func deleteReminder(id: String, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
+        print("📅 EventKitManager: Deleting reminder with ID - \(id)")
+        guard reminderAccessGranted else {
+            print("📅 EventKitManager: Reminder access not granted, cannot delete reminder")
+            return false
+        }
+        
+        // Create operation status message if we have a message ID and chat manager
+        var statusMessageId: UUID?
         var result = false
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
+            // Create operation status message on the main actor
+            if let messageId = messageId, let chatManager = chatManager {
+                statusMessageId = await MainActor.run {
+                    let statusMessage = chatManager.addOperationStatusMessage(
+                        forMessageId: messageId,
+                        operationType: "Deleting Reminder",
+                        status: .inProgress
+                    )
+                    return statusMessage.id
+                }
+            }
+            
             result = await deleteReminder(id: id)
+            
+            // Update status message based on result
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                if result {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .success
+                        )
+                    }
+                } else {
+                    await MainActor.run {
+                        chatManager.updateOperationStatusMessage(
+                            forMessageId: messageId,
+                            statusMessageId: statusMessageId,
+                            status: .failure,
+                            details: "Failed to delete reminder"
+                        )
+                    }
+                }
+            }
+            
             semaphore.signal()
         }
         
