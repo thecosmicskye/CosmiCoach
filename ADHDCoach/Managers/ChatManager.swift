@@ -6,6 +6,7 @@ class ChatManager: ObservableObject {
     @Published var isProcessing = false
     @Published var currentStreamingMessageId: UUID?
     @Published var streamingUpdateCount: Int = 0  // Track streaming updates for scrolling
+    @Published var operationStatusMessages: [UUID: [OperationStatusMessage]] = [:]  // Maps message IDs to their operation status messages
     
     private var apiKey: String {
         return UserDefaults.standard.string(forKey: "claude_api_key") ?? ""
@@ -339,6 +340,11 @@ class ChatManager: ObservableObject {
                 UserDefaults.standard.removeObject(forKey: "streaming_message_id")
             }
         }
+        
+        // Save operation status messages
+        if let encoded = try? JSONEncoder().encode(operationStatusMessages) {
+            UserDefaults.standard.set(encoded, forKey: "operation_status_messages")
+        }
     }
     
     @MainActor
@@ -359,6 +365,84 @@ class ChatManager: ObservableObject {
             
             // Load processing state, but we'll reset this in resetIncompleteMessages()
             isProcessing = UserDefaults.standard.bool(forKey: "chat_processing_state")
+        }
+        
+        // Load operation status messages
+        if let data = UserDefaults.standard.data(forKey: "operation_status_messages"),
+           let decoded = try? JSONDecoder().decode([UUID: [OperationStatusMessage]].self, from: data) {
+            operationStatusMessages = decoded
+        }
+    }
+    
+    // MARK: - Operation Status Methods
+    
+    /// Returns all operation status messages associated with a specific chat message
+    @MainActor
+    func statusMessagesForMessage(_ message: ChatMessage) -> [OperationStatusMessage] {
+        return operationStatusMessages[message.id] ?? []
+    }
+    
+    /// Adds a new operation status message for a specific chat message
+    @MainActor
+    func addOperationStatusMessage(forMessageId messageId: UUID, operationType: String, status: OperationStatus = .inProgress, details: String? = nil) -> OperationStatusMessage {
+        let statusMessage = OperationStatusMessage(
+            operationType: operationType,
+            status: status,
+            details: details
+        )
+        
+        // Initialize the array if it doesn't exist
+        if operationStatusMessages[messageId] == nil {
+            operationStatusMessages[messageId] = []
+        }
+        
+        // Add the status message
+        operationStatusMessages[messageId]?.append(statusMessage)
+        
+        // Save to persistence
+        saveMessages()
+        
+        return statusMessage
+    }
+    
+    /// Updates an existing operation status message
+    @MainActor
+    func updateOperationStatusMessage(forMessageId messageId: UUID, statusMessageId: UUID, status: OperationStatus, details: String? = nil) {
+        // Find the status message
+        if var statusMessages = operationStatusMessages[messageId],
+           let index = statusMessages.firstIndex(where: { $0.id == statusMessageId }) {
+            // Update the status
+            statusMessages[index].status = status
+            
+            // Update details if provided
+            if let details = details {
+                statusMessages[index].details = details
+            }
+            
+            // Save the updated array
+            operationStatusMessages[messageId] = statusMessages
+            
+            // Save to persistence
+            saveMessages()
+        }
+    }
+    
+    /// Removes an operation status message
+    @MainActor
+    func removeOperationStatusMessage(forMessageId messageId: UUID, statusMessageId: UUID) {
+        // Find and remove the status message
+        if var statusMessages = operationStatusMessages[messageId] {
+            statusMessages.removeAll(where: { $0.id == statusMessageId })
+            
+            // Update the array or remove it if empty
+            if statusMessages.isEmpty {
+                operationStatusMessages.removeValue(forKey: messageId)
+            } else {
+                operationStatusMessages[messageId] = statusMessages
+            }
+            
+            // Save to persistence
+            saveMessages()
         }
     }
     
@@ -948,13 +1032,23 @@ class ChatManager: ObservableObject {
                 
                 // Add the calendar event
                 let success = await MainActor.run {
-                    return eventKitManager.addCalendarEvent(title: String(title), startDate: startDate, endDate: endDate, notes: notes)
+                    // Get the ID of the current message being processed
+                    let messageId = self.messages.last?.id
+                    
+                    return eventKitManager.addCalendarEvent(
+                        title: String(title), 
+                        startDate: startDate, 
+                        endDate: endDate, 
+                        notes: notes,
+                        messageId: messageId,
+                        chatManager: self
+                    )
                 }
                 
                 if success {
-                    print("Successfully added calendar event: \(title)")
+                    print("📅 ChatManager: Successfully added calendar event - \(title)")
                 } else {
-                    print("Failed to add calendar event: \(title)")
+                    print("📅 ChatManager: Failed to add calendar event - \(title)")
                 }
             }
         }
@@ -1001,13 +1095,23 @@ class ChatManager: ObservableObject {
                 
                 // Add the reminder
                 let success = await MainActor.run {
-                    return eventKitManager.addReminder(title: String(title), dueDate: dueDate, notes: notes, listName: listName)
+                    // Get the ID of the current message being processed
+                    let messageId = self.messages.last?.id
+                    
+                    return eventKitManager.addReminder(
+                        title: String(title), 
+                        dueDate: dueDate, 
+                        notes: notes, 
+                        listName: listName,
+                        messageId: messageId,
+                        chatManager: self
+                    )
                 }
                 
                 if success {
-                    print("Successfully added reminder: \(title)")
+                    print("📅 ChatManager: Successfully added reminder - \(title)")
                 } else {
-                    print("Failed to add reminder: \(title)")
+                    print("📅 ChatManager: Failed to add reminder - \(title)")
                 }
             }
         }
@@ -1037,13 +1141,24 @@ class ChatManager: ObservableObject {
                 
                 // Update the calendar event
                 let success = await MainActor.run {
-                    return eventKitManager.updateCalendarEvent(id: eventId, title: newTitle, startDate: startDate, endDate: endDate, notes: notes)
+                    // Get the ID of the current message being processed
+                    let messageId = self.messages.last?.id
+                    
+                    return eventKitManager.updateCalendarEvent(
+                        id: eventId, 
+                        title: newTitle, 
+                        startDate: startDate, 
+                        endDate: endDate, 
+                        notes: notes,
+                        messageId: messageId,
+                        chatManager: self
+                    )
                 }
                 
                 if success {
-                    print("Successfully updated calendar event: \(newTitle)")
+                    print("📅 ChatManager: Successfully updated calendar event - \(newTitle)")
                 } else {
-                    print("Failed to update calendar event: \(newTitle)")
+                    print("📅 ChatManager: Failed to update calendar event - \(newTitle)")
                 }
             }
         }
@@ -1058,13 +1173,20 @@ class ChatManager: ObservableObject {
                 
                 // Delete the calendar event
                 let success = await MainActor.run {
-                    return eventKitManager.deleteCalendarEvent(id: eventId)
+                    // Get the ID of the current message being processed
+                    let messageId = self.messages.last?.id
+                    
+                    return eventKitManager.deleteCalendarEvent(
+                        id: eventId,
+                        messageId: messageId,
+                        chatManager: self
+                    )
                 }
                 
                 if success {
-                    print("Successfully deleted calendar event with ID: \(eventId)")
+                    print("📅 ChatManager: Successfully deleted calendar event with ID - \(eventId)")
                 } else {
-                    print("Failed to delete calendar event with ID: \(eventId)")
+                    print("📅 ChatManager: Failed to delete calendar event with ID - \(eventId)")
                 }
             }
         }
@@ -1111,12 +1233,25 @@ class ChatManager: ObservableObject {
                 }
                 
                 // Update the reminder
-                let success = await eventKitManager.updateReminder(id: reminderId, title: newTitle, dueDate: dueDate, notes: notes, listName: listName)
+                let success = await MainActor.run {
+                    // Get the ID of the current message being processed
+                    let messageId = self.messages.last?.id
+                    
+                    return eventKitManager.updateReminder(
+                        id: reminderId, 
+                        title: newTitle, 
+                        dueDate: dueDate, 
+                        notes: notes, 
+                        listName: listName,
+                        messageId: messageId,
+                        chatManager: self
+                    )
+                }
                 
                 if success {
-                    print("Successfully updated reminder: \(newTitle)")
+                    print("📅 ChatManager: Successfully updated reminder - \(newTitle)")
                 } else {
-                    print("Failed to update reminder: \(newTitle)")
+                    print("📅 ChatManager: Failed to update reminder - \(newTitle)")
                 }
             }
         }
@@ -1130,12 +1265,21 @@ class ChatManager: ObservableObject {
                 let reminderId = String(response[Range(match.range(at: 1), in: response)!])
                 
                 // Delete the reminder
-                let success = await eventKitManager.deleteReminder(id: reminderId)
+                let success = await MainActor.run {
+                    // Get the ID of the current message being processed
+                    let messageId = self.messages.last?.id
+                    
+                    return eventKitManager.deleteReminder(
+                        id: reminderId,
+                        messageId: messageId,
+                        chatManager: self
+                    )
+                }
                 
                 if success {
-                    print("Successfully deleted reminder with ID: \(reminderId)")
+                    print("📅 ChatManager: Successfully deleted reminder with ID - \(reminderId)")
                 } else {
-                    print("Failed to delete reminder with ID: \(reminderId)")
+                    print("📅 ChatManager: Failed to delete reminder with ID - \(reminderId)")
                 }
             }
         }
