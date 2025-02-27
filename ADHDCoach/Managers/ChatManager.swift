@@ -32,7 +32,7 @@ class ChatManager: ObservableObject {
     6. Use the provided calendar events and reminders to give context-aware advice
     7. You can create, modify, or delete calendar events and reminders by using specific formatting
     8. Be empathetic and understanding of ADHD challenges
-    9. Keep important information in the memory file so you can reference it in future conversations
+    9. Maintain important user information in structured memory categories
 
     To modify calendar or reminders, use the following format:
     [CALENDAR_ADD] Title | Start time | End time | Notes (optional)
@@ -43,15 +43,35 @@ class ChatManager: ObservableObject {
     [REMINDER_MODIFY] Reminder ID | New title | New due date/time | New notes (optional)
     [REMINDER_DELETE] Reminder ID
 
-    You have access to the user's memory file which contains information about them that persists between conversations. You should update this file when you learn important information about the user, their preferences, or patterns you observe. 
+    You have access to the user's memory which contains information about them that persists between conversations. This information is organized into categories:
+    - Personal Information: Basic information about the user
+    - Preferences: User preferences and likes/dislikes
+    - Behavior Patterns: Patterns in user behavior and task completion
+    - Daily Basics: Tracking of daily basics like eating and drinking water
+    - Medications: Medication information and tracking
+    - Goals: Short and long-term goals
+    - Miscellaneous Notes: Other information to remember
+
+    To add or update memories, use the following format:
+    [MEMORY_ADD] Content | Category | Importance (1-5, optional)
     
-    To update the memory file, use the following format:
-    [MEMORY_UPDATE]
-    +This line will be added to the memory file
-    -This line will be removed from the memory file
-    [/MEMORY_UPDATE]
+    Examples:
+    [MEMORY_ADD] User takes 20mg Adderall at 8am daily | Medications | 5
+    [MEMORY_ADD] User prefers short, direct answers | Preferences | 4
+    [MEMORY_ADD] User struggles with morning routines | Behavior Patterns | 3
     
-    Be careful not to remove too much content at once. Focus on adding new information or updating specific sections. The memory file content is visible at the top of each conversation under USER MEMORY.
+    To remove outdated memories:
+    [MEMORY_REMOVE] Exact content to match and remove
+    
+    Important:
+    - Memories with higher importance (4-5) are most critical to refer to
+    - Don't add redundant memories - check existing memories first 
+    - Update memories when information changes rather than creating duplicates
+    - Delete outdated information in memories
+    - When adding specific facts, add them as separate memory items instead of combining multiple facts
+    - The memory content is visible at the top of each conversation under USER MEMORY INFORMATION
+    - DO NOT add calendar events or reminders as memories
+    - Avoid duplicating memories
     """
     
     @MainActor
@@ -115,68 +135,74 @@ class ChatManager: ObservableObject {
     }
     
     @MainActor
-    func checkAndPreemptivelyQueryAPI() async {
-        // Check if automatic responses are enabled in settings
+    func checkAndSendAutomaticMessage() async {
+        // Check if automatic messages are enabled in settings
         guard UserDefaults.standard.bool(forKey: "enable_automatic_responses") else {
-            print("Preemptive query skipped: Automatic responses are disabled in settings")
+            print("Automatic message skipped: Automatic messages are disabled in settings")
             return
         }
         
         // Check if we have the API key
         guard !apiKey.isEmpty else {
-            print("Preemptive query skipped: No API key available")
+            print("Automatic message skipped: No API key available")
             return
         }
         
         // Check if this is app open (we have a last open time and it's recent)
         guard let lastOpen = lastAppOpenTime, Date().timeIntervalSince(lastOpen) < 30 else {
-            print("Preemptive query skipped: Not a recent app open")
+            print("Automatic message skipped: Not a recent app open")
             return
         }
         
         // Check if the app hasn't been opened for at least 5 minutes
         let lastSessionKey = "last_app_session_time"
+        
+        // Always store current time when checking - this fixes the bug where
+        // closing the app without fully terminating doesn't update the session time
+        let currentTime = Date().timeIntervalSince1970
+        
         if let lastSessionTimeInterval = UserDefaults.standard.object(forKey: lastSessionKey) as? TimeInterval {
             let lastSessionTime = Date(timeIntervalSince1970: lastSessionTimeInterval)
             let timeSinceLastSession = Date().timeIntervalSince(lastSessionTime)
             
-            // If it's been less than 5 minutes, don't preemptively query
+            // If it's been less than 5 minutes, don't send automatic message
             if timeSinceLastSession < 300 { // 300 seconds = 5 minutes
-                print("Preemptive query skipped: App was opened less than 5 minutes ago")
+                print("Automatic message skipped: App was opened less than 5 minutes ago")
                 return
             }
         }
         
         // Store current session time for future reference
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: lastSessionKey)
+        UserDefaults.standard.set(currentTime, forKey: lastSessionKey)
+        UserDefaults.standard.synchronize() // Force synchronize to ensure it's saved
         
-        // If we get here, all conditions are met - make the preemptive query
-        await preemptivelyQueryClaude()
+        // If we get here, all conditions are met - send the automatic message
+        await sendAutomaticMessage()
     }
     
     @MainActor
-    func checkAndPreemptivelyQueryAPIAfterHistoryDeletion() async {
-        // Check if automatic responses are enabled in settings
+    func checkAndSendAutomaticMessageAfterHistoryDeletion() async {
+        // Check if automatic messages are enabled in settings
         // For history deletion, we respect the setting but always provide a fallback message
-        let automaticResponsesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
+        let automaticMessagesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
         
-        if !automaticResponsesEnabled {
-            print("Preemptive query after history deletion skipped: Automatic responses are disabled in settings")
-            // Always show a welcome message when chat history is cleared, even if automatic responses are disabled
+        if !automaticMessagesEnabled {
+            print("Automatic message after history deletion skipped: Automatic messages are disabled in settings")
+            // Always show a welcome message when chat history is cleared, even if automatic messages are disabled
             addAssistantMessage(content: "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?")
             return
         }
         
         // Check if we have the API key
         guard !apiKey.isEmpty else {
-            print("Preemptive query after history deletion skipped: No API key available")
+            print("Automatic message after history deletion skipped: No API key available")
             // Fall back to a static welcome message if we can't query
             addAssistantMessage(content: "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?")
             return
         }
         
-        // If we get here, make the preemptive query 
-        await preemptivelyQueryClaude(isAfterHistoryDeletion: true)
+        // If we get here, send an automatic message
+        await sendAutomaticMessage(isAfterHistoryDeletion: true)
     }
     
     @MainActor
@@ -546,8 +572,8 @@ class ChatManager: ObservableObject {
         }.joined(separator: "\n\n")
     }
     
-    // Function to preemptively query Claude without user input
-    private func preemptivelyQueryClaude(isAfterHistoryDeletion: Bool = false) async {
+    // Function to send an automatic message without user input
+    private func sendAutomaticMessage(isAfterHistoryDeletion: Bool = false) async {
         // Get context data
         let calendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
         let reminders = await eventKitManager?.fetchReminders() ?? []
@@ -556,9 +582,9 @@ class ChatManager: ObservableObject {
         var memoryContent = "No memory available."
         if let manager = memoryManager {
             memoryContent = await manager.readMemory()
-            print("Memory content loaded for preemptive Claude request. Length: \(memoryContent.count)")
+            print("Memory content loaded for automatic message request. Length: \(memoryContent.count)")
         } else {
-            print("WARNING: Memory manager not available for preemptive query")
+            print("WARNING: Memory manager not available for automatic message")
         }
         
         // Format calendar events and reminders for context
@@ -570,7 +596,7 @@ class ChatManager: ObservableObject {
             return getRecentConversationHistory()
         }
         
-        // Set up the request with special context indicating this is preemptive
+        // Set up the request with special context indicating this is an automatic message
         let requestBody: [String: Any] = [
             "model": "claude-3-7-sonnet-20250219",
             "max_tokens": 4000,
@@ -594,7 +620,7 @@ class ChatManager: ObservableObject {
                     \(conversationHistory)
                     
                     USER MESSAGE:
-                    [THIS IS A PREEMPTIVE QUERY - \(isAfterHistoryDeletion ? "The user has just cleared their chat history." : "The user has just opened the app after not using it for at least 5 minutes.") There is no specific user message. Based on the time of day, calendar events, reminders, and what you know about the user, provide a helpful, proactive greeting or insight.]
+                    [THIS IS AN AUTOMATIC MESSAGE - \(isAfterHistoryDeletion ? "The user has just cleared their chat history." : "The user has just opened the app after not using it for at least 5 minutes.") There is no specific user message. Based on the time of day, calendar events, reminders, and what you know about the user, provide a helpful, proactive greeting or insight.]
                     """]
                 ]]
             ]
@@ -628,7 +654,7 @@ class ChatManager: ObservableObject {
                     self.finalizeStreamingMessage()
                     self.isProcessing = false
                 }
-                print("Preemptive query error: Invalid HTTP response")
+                print("Automatic message error: Invalid HTTP response")
                 return
             }
             
@@ -637,7 +663,7 @@ class ChatManager: ObservableObject {
                     self.finalizeStreamingMessage()
                     self.isProcessing = false
                 }
-                print("Preemptive query HTTP error: \(httpResponse.statusCode)")
+                print("Automatic message HTTP error: \(httpResponse.statusCode)")
                 return
             }
             
@@ -691,7 +717,7 @@ class ChatManager: ObservableObject {
             }
             
         } catch {
-            print("Preemptive query error: \(error.localizedDescription)")
+            print("Automatic message error: \(error.localizedDescription)")
             await MainActor.run {
                 self.finalizeStreamingMessage()
                 self.isProcessing = false
@@ -760,12 +786,9 @@ class ChatManager: ObservableObject {
             return
         }
         
-        // Look for memory update commands in the format:
-        // [MEMORY_UPDATE]
-        // +Added line
-        // -Removed line
-        // [/MEMORY_UPDATE]
+        // Support both old and new memory update formats for backward compatibility
         
+        // 1. Check for old format memory updates
         let memoryUpdatePattern = "\\[MEMORY_UPDATE\\]([\\s\\S]*?)\\[\\/MEMORY_UPDATE\\]"
         if let regex = try? NSRegularExpression(pattern: memoryUpdatePattern, options: []) {
             let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
@@ -773,18 +796,27 @@ class ChatManager: ObservableObject {
             for match in matches {
                 if let updateRange = Range(match.range(at: 1), in: response) {
                     let diffContent = String(response[updateRange])
-                    print("Found memory update instruction: \(diffContent.count) characters")
+                    print("Found legacy memory update instruction: \(diffContent.count) characters")
                     
                     // Apply the diff to the memory file
                     let success = await memManager.applyDiff(diff: diffContent.trimmingCharacters(in: .whitespacesAndNewlines))
                     
                     if success {
-                        print("Successfully updated memory file")
+                        print("Successfully applied legacy memory update")
                     } else {
-                        print("Failed to update memory file")
+                        print("Failed to apply legacy memory update")
                     }
                 }
             }
+        }
+        
+        // 2. Check for new structured memory instructions
+        // Process the new structured memory format
+        // This uses the new method in MemoryManager
+        let success = await memManager.processMemoryInstructions(instructions: response)
+        
+        if success {
+            print("Successfully processed structured memory instructions")
         }
     }
     
