@@ -68,6 +68,7 @@ class ChatManager: ObservableObject {
     private let streamingURL = URL(string: "https://api.anthropic.com/v1/messages")!
     private var memoryManager: MemoryManager?
     private var eventKitManager: EventKitManager?
+    private var locationManager: LocationManager?
     private var currentStreamingMessage: String = ""
     private var urlSession = URLSession.shared
     private var lastAppOpenTime: Date?
@@ -86,6 +87,9 @@ class ChatManager: ObservableObject {
     7. You can create, modify, or delete calendar events and reminders by using specific formatting
     8. Be empathetic and understanding of ADHD challenges
     9. Maintain important user information in structured memory categories
+    10. When location information is provided, use it for context, but only mention it when relevant
+        - For example, if the user said they're commuting and you see they're at a transit hub, you can acknowledge they're on track
+        - Don't explicitly comment on location unless it's helpful in context
 
     To modify calendar or reminders, use the following JSON format:
 
@@ -270,6 +274,10 @@ class ChatManager: ObservableObject {
     
     func setEventKitManager(_ manager: EventKitManager) {
         self.eventKitManager = manager
+    }
+    
+    func setLocationManager(_ manager: LocationManager) {
+        self.locationManager = manager
     }
     
     func getLastAppOpenTime() -> Date? {
@@ -599,6 +607,9 @@ class ChatManager: ObservableObject {
         let calendarContext = formatCalendarEvents(calendarEvents)
         let remindersContext = formatReminders(reminders)
         
+        // Get location information if enabled
+        let locationContext = await getLocationContext()
+        
         // Get recent conversation history (limited by token count)
         let conversationHistory = await MainActor.run {
             return getRecentConversationHistory()
@@ -623,6 +634,8 @@ class ChatManager: ObservableObject {
                     
                     REMINDERS:
                     \(remindersContext)
+                    
+                    \(locationContext)
                     
                     CONVERSATION HISTORY:
                     \(conversationHistory)
@@ -800,6 +813,54 @@ class ChatManager: ObservableObject {
         return formatter.string(from: date)
     }
     
+    private func getLocationContext() async -> String {
+        let enableLocationAwareness = UserDefaults.standard.bool(forKey: "enable_location_awareness")
+        print("📍 getLocationContext - Location awareness enabled: \(enableLocationAwareness)")
+        
+        guard enableLocationAwareness else {
+            print("📍 getLocationContext - Location awareness feature is disabled")
+            return ""
+        }
+        
+        guard let locationManager = await MainActor.run(body: { [weak self] in self?.locationManager }) else {
+            print("📍 getLocationContext - LocationManager is nil")
+            return ""
+        }
+        
+        let accessGranted = await MainActor.run(body: { locationManager.locationAccessGranted })
+        print("📍 getLocationContext - Location access granted: \(accessGranted)")
+        
+        guard accessGranted else {
+            print("📍 getLocationContext - Location permission not granted")
+            return ""
+        }
+        
+        let location = await MainActor.run(body: { locationManager.currentLocation })
+        print("📍 getLocationContext - Current location: \(String(describing: location))")
+        
+        guard let location = location else {
+            print("📍 getLocationContext - No location data available")
+            return ""
+        }
+        
+        // Ensure we have a description
+        if let locationDescription = await MainActor.run(body: { locationManager.locationDescription }) {
+            print("📍 getLocationContext - Using location description: \(locationDescription)")
+            return """
+            USER LOCATION:
+            \(locationDescription)
+            """
+        } else {
+            // Fallback to coordinates if description isn't available
+            let locationText = "Coordinates: \(location.coordinate.latitude), \(location.coordinate.longitude)"
+            print("📍 getLocationContext - Using location coordinates: \(locationText)")
+            return """
+            USER LOCATION:
+            \(locationText)
+            """
+        }
+    }
+    
     @MainActor
     private func getRecentConversationHistory() -> String {
         // Get the most recent messages that fit within token limit
@@ -837,6 +898,9 @@ class ChatManager: ObservableObject {
         let calendarContext = formatCalendarEvents(calendarEvents)
         let remindersContext = formatReminders(reminders)
         
+        // Get location information if enabled
+        let locationContext = await getLocationContext()
+        
         // Get recent conversation history
         let conversationHistory = await MainActor.run {
             return getRecentConversationHistory()
@@ -862,6 +926,8 @@ class ChatManager: ObservableObject {
                     
                     REMINDERS:
                     \(remindersContext)
+                    
+                    \(locationContext)
                     
                     CONVERSATION HISTORY:
                     \(conversationHistory)
