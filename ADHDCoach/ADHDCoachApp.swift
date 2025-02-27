@@ -5,7 +5,9 @@ struct ADHDCoachApp: App {
     @StateObject private var chatManager = ChatManager()
     @StateObject private var eventKitManager = EventKitManager()
     @StateObject private var memoryManager = MemoryManager()
+    @StateObject private var locationManager = LocationManager()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("enable_location_awareness") private var enableLocationAwareness = false
     
     // Track when the app enters background to update session time
     @Environment(\.scenePhase) private var scenePhase
@@ -30,12 +32,19 @@ struct ADHDCoachApp: App {
                     .environmentObject(chatManager)
                     .environmentObject(eventKitManager)
                     .environmentObject(memoryManager)
+                    .environmentObject(locationManager)
                     .onAppear {
                         // Request permissions when app launches
                         eventKitManager.requestAccess()
                         
-                        // Connect the EventKitManager to the ChatManager
+                        // Request location permissions if feature is enabled
+                        if enableLocationAwareness {
+                            locationManager.requestAccess()
+                        }
+                        
+                        // Connect the managers to the ChatManager
                         chatManager.setEventKitManager(eventKitManager)
+                        chatManager.setLocationManager(locationManager)
                         
                         // Debug: Verify last session time
                         print("⏱️ ADHDCoachApp.body.onAppear - Checking last session time")
@@ -51,6 +60,7 @@ struct ADHDCoachApp: App {
             } else {
                 OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
                     .environmentObject(chatManager)
+                    .environmentObject(locationManager)
             }
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
@@ -85,6 +95,18 @@ struct ADHDCoachApp: App {
                             Task {
                                 print("⏱️ App-level - Starting direct automatic message check at \(Date())")
                                 await memoryManager.loadMemory()
+                                
+                                // Update location if enabled
+                                if enableLocationAwareness && locationManager.locationAccessGranted {
+                                    locationManager.startUpdatingLocation()
+                                    print("📍 Location updates started - Location awareness is enabled")
+                                } else if enableLocationAwareness && !locationManager.locationAccessGranted {
+                                    print("📍 Location permission denied but location awareness is enabled")
+                                    locationManager.requestAccess()
+                                } else {
+                                    print("📍 Location updates not started - Location awareness is disabled")
+                                }
+                                
                                 await chatManager.checkAndSendAutomaticMessage()
                                 print("⏱️ App-level - Completed automatic message check at \(Date())")
                             }

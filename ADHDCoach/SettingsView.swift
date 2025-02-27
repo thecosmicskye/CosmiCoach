@@ -3,10 +3,12 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var memoryManager: MemoryManager
+    @EnvironmentObject private var locationManager: LocationManager
     @State private var apiKey = ""
     @AppStorage("check_basics_daily") private var checkBasicsDaily = true
     @AppStorage("token_limit") private var tokenLimit = 75000
     @AppStorage("enable_automatic_responses") private var enableAutomaticResponses = false
+    @AppStorage("enable_location_awareness") private var enableLocationAwareness = false
     @State private var isTestingKey = false
     @State private var testResult: String? = nil
     @State private var showingMemoryViewer = false
@@ -252,6 +254,22 @@ struct SettingsView: View {
                     Text("Cosmic Coach will automatically send you a message when you open the app (only if you've been away for at least 5 minutes).")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    
+                    Toggle("Location Awareness", isOn: $enableLocationAwareness)
+                        .onChange(of: enableLocationAwareness) { oldValue, newValue in
+                            if newValue {
+                                // When enabled, immediately request location access
+                                print("📍 Location awareness toggled ON - requesting access")
+                                locationManager.requestAccess()
+                            } else {
+                                print("📍 Location awareness toggled OFF - stopping updates")
+                                locationManager.stopUpdatingLocation()
+                            }
+                        }
+                    
+                    Text("Cosmic Coach will use your location in its context window.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 
                 Section(header: Text("About")) {
@@ -278,4 +296,5 @@ struct SettingsView: View {
 #Preview {
     SettingsView()
         .environmentObject(MemoryManager())
+        .environmentObject(LocationManager())
 }
