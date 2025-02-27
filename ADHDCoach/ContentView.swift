@@ -83,14 +83,14 @@ struct ContentView: View {
                                     proxy.scrollTo("bottomID", anchor: .bottom)
                                 }
                             }
-                            .onChange(of: chatManager.messages.count) { _ in
+                            .onChange(of: chatManager.messages.count) { oldCount, newCount in
                                 // Scroll to bottom with animation when messages change
                                 withAnimation {
                                     proxy.scrollTo("bottomID", anchor: .bottom)
                                 }
                             }
                             // Also scroll when streaming updates occur
-                            .onChange(of: chatManager.streamingUpdateCount) { _ in
+                            .onChange(of: chatManager.streamingUpdateCount) { oldCount, newCount in
                                 // Scroll to bottom with animation during streaming
                                 withAnimation {
                                     proxy.scrollTo("bottomID", anchor: .bottom)
@@ -115,6 +115,7 @@ struct ContentView: View {
                         .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing)
                     }
                     .padding()
+                }
             }
             .navigationTitle("Cosmic Coach")
             .toolbar {
@@ -189,8 +190,7 @@ struct ContentView: View {
                 // This is a different lifecycle event than onAppear
                 print("⏱️ ContentView.task - Running")
             }
-            .onChange(of: scenePhase) { newPhase in
-                let oldPhase = scenePhase
+            .onChange(of: scenePhase) { oldPhase, newPhase in
                 print("⏱️ ContentView.onChange(scenePhase) - \(oldPhase) -> \(newPhase)")
                 
                 // Check for transition to active state (from any state)
