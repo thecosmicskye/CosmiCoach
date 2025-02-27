@@ -5,23 +5,29 @@ struct ADHDCoachApp: App {
     @StateObject private var chatManager = ChatManager()
     @StateObject private var eventKitManager = EventKitManager()
     @StateObject private var memoryManager = MemoryManager()
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     
     // Track when the app enters background to update session time
     @Environment(\.scenePhase) private var scenePhase
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(chatManager)
-                .environmentObject(eventKitManager)
-                .environmentObject(memoryManager)
-                .onAppear {
-                    // Request permissions when app launches
-                    eventKitManager.requestAccess()
-                    
-                    // Connect the EventKitManager to the ChatManager
-                    chatManager.setEventKitManager(eventKitManager)
-                }
+            if hasCompletedOnboarding {
+                ContentView()
+                    .environmentObject(chatManager)
+                    .environmentObject(eventKitManager)
+                    .environmentObject(memoryManager)
+                    .onAppear {
+                        // Request permissions when app launches
+                        eventKitManager.requestAccess()
+                        
+                        // Connect the EventKitManager to the ChatManager
+                        chatManager.setEventKitManager(eventKitManager)
+                    }
+            } else {
+                OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
+                    .environmentObject(chatManager)
+            }
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background {
