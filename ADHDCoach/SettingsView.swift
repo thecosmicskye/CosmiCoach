@@ -39,8 +39,9 @@ struct SettingsView: View {
         
         // Simple request body
         let requestBody: [String: Any] = [
-            "model": "claude-3-7-sonnet-20240229",
+            "model": "claude-3-7-sonnet-20250219",
             "max_tokens": 10,
+            "stream": false,
             "messages": [
                 ["role": "user", "content": "Hello"]
             ]
@@ -56,10 +57,16 @@ struct SettingsView: View {
                     testResult = "✅ API key is valid!"
                 } else {
                     // Try to extract error message
-                    if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                       let error = errorJson["error"] as? [String: Any],
-                       let message = error["message"] as? String {
-                        testResult = "❌ Error: \(message)"
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("API Error Response: \(responseString)")
+                        
+                        if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let error = errorJson["error"] as? [String: Any],
+                           let message = error["message"] as? String {
+                            testResult = "❌ Error: \(message)"
+                        } else {
+                            testResult = "❌ Error: Status code \(httpResponse.statusCode)"
+                        }
                     } else {
                         testResult = "❌ Error: Status code \(httpResponse.statusCode)"
                     }
