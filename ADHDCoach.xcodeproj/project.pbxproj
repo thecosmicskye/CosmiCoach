@@ -8,9 +8,11 @@
 
 /* Begin PBXBuildFile section */
 		1A1A1A1A1A1A1A1A1A1A1A1A /* ADHDCoachApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A2A /* ADHDCoachApp.swift */; };
+		1A1A1A1A1A1A1A1A1A1A1A1B /* OperationStatusMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2A2A2A2A2A2A2A2A2B /* OperationStatusMessage.swift */; };
 		1A1A1A1B1A1A1A1B1A1A1A1B /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2B2A2A2A2B2A2A2A2B /* ContentView.swift */; };
 		1A1A1A1C1A1A1A1C1A1A1A1C /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2C2A2A2A2C2A2A2A2C /* MessageBubbleView.swift */; };
 		1A1A1A1D1A1A1A1D1A1A1A1D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2D2A2A2A2D2A2A2A2D /* SettingsView.swift */; };
+		1A1A1A1D1A1A1A1D1A1A1A1F /* OperationStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2D2A2A2A2D2A2A2A2F /* OperationStatusView.swift */; };
 		1A1A1A1E1A1A1A1E1A1A1A1E /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2E2A2A2A2E2A2A2A2E /* ChatMessage.swift */; };
 		1A1A1A1F1A1A1A1F1A1A1A1F /* CalendarEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A2F2A2A2A2F2A2A2A2F /* CalendarEvent.swift */; };
 		1A1A1A201A1A1A201A1A1A20 /* ReminderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A302A2A2A302A2A2A30 /* ReminderItem.swift */; };
@@ -38,9 +40,11 @@
 
 /* Begin PBXFileReference section */
 		2A2A2A2A2A2A2A2A2A2A2A2A /* ADHDCoachApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ADHDCoachApp.swift; sourceTree = "<group>"; };
+		2A2A2A2A2A2A2A2A2A2A2A2B /* OperationStatusMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationStatusMessage.swift; sourceTree = "<group>"; };
 		2A2A2A2B2A2A2A2B2A2A2A2B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		2A2A2A2C2A2A2A2C2A2A2A2C /* MessageBubbleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageBubbleView.swift; sourceTree = "<group>"; };
 		2A2A2A2D2A2A2A2D2A2A2A2D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		2A2A2A2D2A2A2A2D2A2A2A2F /* OperationStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationStatusView.swift; sourceTree = "<group>"; };
 		2A2A2A2E2A2A2A2E2A2A2A2E /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		2A2A2A2F2A2A2A2F2A2A2A2F /* CalendarEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarEvent.swift; sourceTree = "<group>"; };
 		2A2A2A302A2A2A302A2A2A30 /* ReminderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderItem.swift; sourceTree = "<group>"; };
@@ -107,6 +111,7 @@
 				2A2A2A2C2A2A2A2C2A2A2A2C /* MessageBubbleView.swift */,
 				2A2A2A2D2A2A2A2D2A2A2A2D /* SettingsView.swift */,
 				2A2A2A352A2A2A352A2A2A35 /* OnboardingView.swift */,
+				2A2A2A2D2A2A2A2D2A2A2A2F /* OperationStatusView.swift */,
 				8A8A8A8A8A8A8A8A8A8A8A8A /* Models */,
 				9A9A9A9A9A9A9A9A9A9A9A9A /* Managers */,
 				2A2A2A342A2A2A342A2A2A34 /* Info.plist */,
@@ -129,6 +134,7 @@
 				2A2A2A2E2A2A2A2E2A2A2A2E /* ChatMessage.swift */,
 				2A2A2A2F2A2A2A2F2A2A2A2F /* CalendarEvent.swift */,
 				2A2A2A302A2A2A302A2A2A30 /* ReminderItem.swift */,
+				2A2A2A2A2A2A2A2A2A2A2A2B /* OperationStatusMessage.swift */
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -257,9 +263,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				1A1A1A1A1A1A1A1A1A1A1A1A /* ADHDCoachApp.swift in Sources */,
+				1A1A1A1A1A1A1A1A1A1A1A1B /* OperationStatusMessage.swift in Sources */,
 				1A1A1A1B1A1A1A1B1A1A1A1B /* ContentView.swift in Sources */,
 				1A1A1A1C1A1A1A1C1A1A1A1C /* MessageBubbleView.swift in Sources */,
 				1A1A1A1D1A1A1A1D1A1A1A1D /* SettingsView.swift in Sources */,
+				1A1A1A1D1A1A1A1D1A1A1A1F /* OperationStatusView.swift in Sources */,
 				1A1A1A1E1A1A1A1E1A1A1A1E /* ChatMessage.swift in Sources */,
 				1A1A1A1F1A1A1A1F1A1A1A1F /* CalendarEvent.swift in Sources */,
 				1A1A1A201A1A1A201A1A1A20 /* ReminderItem.swift in Sources */,

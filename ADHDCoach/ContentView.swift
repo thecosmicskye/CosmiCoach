@@ -37,71 +37,84 @@ struct ContentView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Chat messages list
-                GeometryReader { geometry in
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            // This spacer pushes content to the bottom when there are few messages
-                            if chatManager.messages.count < 5 {
-                                Spacer(minLength: scrollViewHeight - 100)
-                                    .frame(height: scrollViewHeight)
-                            }
-                            
-                            LazyVStack(spacing: 12) {
-                                ForEach(chatManager.messages) { message in
-                                    MessageBubbleView(message: message)
-                                        .padding(.horizontal)
+            ZStack {
+                VStack(spacing: 0) {
+                    // Chat messages list
+                    GeometryReader { geometry in
+                        ScrollViewReader { proxy in
+                            ScrollView {
+                                // This spacer pushes content to the bottom when there are few messages
+                                if chatManager.messages.count < 5 {
+                                    Spacer(minLength: scrollViewHeight - 100)
+                                        .frame(height: scrollViewHeight)
                                 }
                                 
-                                // Invisible spacer view at the end for scrolling
-                                Color.clear
-                                    .frame(height: 1)
-                                    .id("bottomID")
+                                LazyVStack(spacing: 12) {
+                                    ForEach(chatManager.messages) { message in
+                                        VStack(spacing: 4) {
+                                            MessageBubbleView(message: message)
+                                                .padding(.horizontal)
+                                            
+                                            // If this is the message that triggered an operation,
+                                            // display the operation status message right after it
+                                            if !message.isUser && message.isComplete {
+                                                // Use the helper method to get status messages for this message
+                                                ForEach(chatManager.statusMessagesForMessage(message)) { statusMessage in
+                                                    OperationStatusView(statusMessage: statusMessage)
+                                                        .padding(.horizontal)
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
+                                    // Invisible spacer view at the end for scrolling
+                                    Color.clear
+                                        .frame(height: 1)
+                                        .id("bottomID")
+                                }
+                                .padding(.vertical, 8)
                             }
-                            .padding(.vertical, 8)
-                        }
-                        .onAppear {
-                            // Save the scroll view height
-                            scrollViewHeight = geometry.size.height
-                            
-                            // Scroll to bottom without animation when view appears
-                            DispatchQueue.main.async {
-                                proxy.scrollTo("bottomID", anchor: .bottom)
+                            .onAppear {
+                                // Save the scroll view height
+                                scrollViewHeight = geometry.size.height
+                                
+                                // Scroll to bottom without animation when view appears
+                                DispatchQueue.main.async {
+                                    proxy.scrollTo("bottomID", anchor: .bottom)
+                                }
                             }
-                        }
-                        .onChange(of: chatManager.messages.count) { _ in
-                            // Scroll to bottom with animation when messages change
-                            withAnimation {
-                                proxy.scrollTo("bottomID", anchor: .bottom)
+                            .onChange(of: chatManager.messages.count) { _ in
+                                // Scroll to bottom with animation when messages change
+                                withAnimation {
+                                    proxy.scrollTo("bottomID", anchor: .bottom)
+                                }
                             }
-                        }
-                        // Also scroll when streaming updates occur
-                        .onChange(of: chatManager.streamingUpdateCount) { _ in
-                            // Scroll to bottom with animation during streaming
-                            withAnimation {
-                                proxy.scrollTo("bottomID", anchor: .bottom)
+                            // Also scroll when streaming updates occur
+                            .onChange(of: chatManager.streamingUpdateCount) { _ in
+                                // Scroll to bottom with animation during streaming
+                                withAnimation {
+                                    proxy.scrollTo("bottomID", anchor: .bottom)
+                                }
                             }
                         }
                     }
-                }
                 
-                // Input area
-                HStack {
-                    TextField("Message", text: $messageText)
-                        .padding(10)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(20)
-                        .focused($isInputFocused)
-                    
-                    Button(action: sendMessage) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 30))
-                            .foregroundColor(.blue)
+                    // Input area
+                    HStack {
+                        TextField("Message", text: $messageText)
+                            .padding(10)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(20)
+                            .focused($isInputFocused)
+                        
+                        Button(action: sendMessage) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 30))
+                                .foregroundColor(.blue)
+                        }
+                        .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing)
                     }
-                    .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing)
-                }
-                .padding()
+                    .padding()
             }
             .navigationTitle("Cosmic Coach")
             .toolbar {
