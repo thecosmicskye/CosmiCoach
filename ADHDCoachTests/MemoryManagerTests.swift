@@ -13,7 +13,7 @@ final class MemoryManagerTests: XCTestCase {
         // Create a test-specific URL for the memory file
         do {
             let documentsDirectory = try testFileManager.url(for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            testFileURL = documentsDirectory.appendingPathComponent("test_memory.md")
+            testFileURL = documentsDirectory.appendingPathComponent("test_memories.json")
             
             // Ensure the test file doesn't exist from a previous run
             if testFileManager.fileExists(atPath: testFileURL.path) {
@@ -39,21 +39,7 @@ final class MemoryManagerTests: XCTestCase {
         try await super.tearDown()
     }
     
-    func testInitialMemoryCreation() async {
-        // When
-        await memoryManager.loadMemory()
-        
-        // Then
-        XCTAssertFalse(memoryManager.memoryContent.isEmpty)
-        XCTAssertTrue(memoryManager.memoryContent.contains("# User Memory File"))
-        XCTAssertTrue(memoryManager.memoryContent.contains("## Basic Information"))
-    }
-    
-    func testReadMemory() async {
-        // Given
-        let initialContent = "Test memory content"
-        try? initialContent.write(to: testFileURL, atomically: true, encoding: .utf8)
-        
+    func testAddMemory() async throws {
         // Create a custom memory manager that uses our test file
         class TestMemoryManager: MemoryManager {
             let testURL: URL
@@ -69,16 +55,32 @@ final class MemoryManagerTests: XCTestCase {
         }
         
         let testManager = TestMemoryManager(testURL: testFileURL)
+        await testManager.loadMemories()
         
-        // When
-        let content = await testManager.readMemory()
+        // Get initial count
+        let initialCount = await MainActor.run { testManager.memories.count }
         
-        // Then
-        XCTAssertEqual(content, initialContent)
+        // Add a memory
+        try await testManager.addMemory(
+            content: "Test memory content",
+            category: .notes,
+            importance: 3
+        )
+        
+        // Verify it was added
+        let newCount = await MainActor.run { testManager.memories.count }
+        XCTAssertEqual(newCount, initialCount + 1)
+        
+        // Verify content is correct
+        let memories = await MainActor.run { testManager.memories }
+        let addedMemory = memories.last
+        XCTAssertEqual(addedMemory?.content, "Test memory content")
+        XCTAssertEqual(addedMemory?.category, .notes)
+        XCTAssertEqual(addedMemory?.importance, 3)
     }
     
-    func testUpdateMemory() async {
-        // Given
+    func testUpdateMemory() async throws {
+        // Create a custom memory manager that uses our test file
         class TestMemoryManager: MemoryManager {
             let testURL: URL
             
@@ -93,228 +95,285 @@ final class MemoryManagerTests: XCTestCase {
         }
         
         let testManager = TestMemoryManager(testURL: testFileURL)
-        let newContent = "Updated memory content"
+        await testManager.loadMemories()
         
-        // When
-        let success = await testManager.updateMemory(newContent: newContent)
+        // Add a memory first
+        try await testManager.addMemory(
+            content: "Original content",
+            category: .notes
+        )
         
-        // Then
-        XCTAssertTrue(success)
+        // Get the ID of the added memory
+        let memories = await MainActor.run { testManager.memories }
+        guard let memoryId = memories.last?.id else {
+            XCTFail("Could not get memory ID")
+            return
+        }
         
-        // Verify file was updated
-        let fileContent = try? String(contentsOf: testFileURL, encoding: .utf8)
-        XCTAssertEqual(fileContent, newContent)
+        // Update the memory
+        try await testManager.updateMemory(
+            id: memoryId,
+            newContent: "Updated content",
+            newCategory: .preferences,
+            newImportance: 4
+        )
         
-        // Verify in-memory content was updated
-        XCTAssertEqual(testManager.memoryContent, newContent)
+        // Verify it was updated correctly
+        let updatedMemories = await MainActor.run { testManager.memories }
+        let updatedMemory = updatedMemories.first(where: { $0.id == memoryId })
+        
+        XCTAssertEqual(updatedMemory?.content, "Updated content")
+        XCTAssertEqual(updatedMemory?.category, .preferences)
+        XCTAssertEqual(updatedMemory?.importance, 4)
     }
     
-    func testApplyDiff_AdditionsOnly() async {
-        // Given
-        let initialContent = """
-        # User Memory File
-        
-        ## Basic Information
-        User name: Test
-        """
-        
+    func testDeleteMemory() async throws {
+        // Create a custom memory manager that uses our test file
         class TestMemoryManager: MemoryManager {
-            var initialContent: String
             let testURL: URL
             
-            init(initialContent: String, testURL: URL) {
-                self.initialContent = initialContent
+            init(testURL: URL) {
                 self.testURL = testURL
                 super.init()
-                
-                // Set initial memory content synchronously
-                self.memoryContent = initialContent
             }
             
             override func getMemoryFileURL() -> URL? {
                 return testURL
             }
+        }
+        
+        let testManager = TestMemoryManager(testURL: testFileURL)
+        await testManager.loadMemories()
+        
+        // Add a memory first
+        try await testManager.addMemory(
+            content: "Memory to delete",
+            category: .notes
+        )
+        
+        // Get the ID of the added memory
+        let memories = await MainActor.run { testManager.memories }
+        guard let memoryId = memories.last?.id else {
+            XCTFail("Could not get memory ID")
+            return
+        }
+        
+        // Get initial count
+        let initialCount = await MainActor.run { testManager.memories.count }
+        
+        // Delete the memory
+        try await testManager.deleteMemory(id: memoryId)
+        
+        // Verify it was deleted
+        let newCount = await MainActor.run { testManager.memories.count }
+        XCTAssertEqual(newCount, initialCount - 1)
+        
+        // Verify it's no longer in the list
+        let updatedMemories = await MainActor.run { testManager.memories }
+        XCTAssertFalse(updatedMemories.contains(where: { $0.id == memoryId }))
+    }
+    
+    func testFormatMemoriesForClaude() async throws {
+        // Create a custom memory manager that uses our test file
+        class TestMemoryManager: MemoryManager {
+            let testURL: URL
             
-            override func readMemory() async -> String {
-                return initialContent
+            init(testURL: URL) {
+                self.testURL = testURL
+                super.init()
             }
             
-            override func updateMemory(newContent: String) async -> Bool {
-                self.initialContent = newContent
-                return true
+            override func getMemoryFileURL() -> URL? {
+                return testURL
             }
         }
         
-        let testManager = TestMemoryManager(initialContent: initialContent, testURL: testFileURL)
+        let testManager = TestMemoryManager(testURL: testFileURL)
+        await testManager.loadMemories()
         
-        // When
+        // Clear existing memories for a clean slate
+        let memories = await MainActor.run { testManager.memories }
+        for memory in memories {
+            try await testManager.deleteMemory(id: memory.id)
+        }
+        
+        // Add test memories in different categories
+        try await testManager.addMemory(
+            content: "User takes medication at 9am",
+            category: .medications,
+            importance: 5
+        )
+        
+        try await testManager.addMemory(
+            content: "User prefers direct communication",
+            category: .preferences,
+            importance: 4
+        )
+        
+        try await testManager.addMemory(
+            content: "User struggles with task initiation",
+            category: .patterns,
+            importance: 3
+        )
+        
+        // Get formatted memories
+        let formatted = testManager.formatMemoriesForClaude()
+        
+        // Verify format includes categories and content
+        XCTAssertTrue(formatted.contains("## Medications"))
+        XCTAssertTrue(formatted.contains("## Preferences"))
+        XCTAssertTrue(formatted.contains("## Behavior Patterns"))
+        
+        XCTAssertTrue(formatted.contains("- User takes medication at 9am"))
+        XCTAssertTrue(formatted.contains("- User prefers direct communication"))
+        XCTAssertTrue(formatted.contains("- User struggles with task initiation"))
+    }
+    
+    func testProcessMemoryInstructions() async throws {
+        // Create a custom memory manager that uses our test file
+        class TestMemoryManager: MemoryManager {
+            let testURL: URL
+            
+            init(testURL: URL) {
+                self.testURL = testURL
+                super.init()
+            }
+            
+            override func getMemoryFileURL() -> URL? {
+                return testURL
+            }
+        }
+        
+        let testManager = TestMemoryManager(testURL: testFileURL)
+        await testManager.loadMemories()
+        
+        // Clear existing memories for a clean slate
+        let memories = await MainActor.run { testManager.memories }
+        for memory in memories {
+            try await testManager.deleteMemory(id: memory.id)
+        }
+        
+        // Test adding memories via instructions
+        let instructions = """
+        [MEMORY_ADD] User takes 20mg Adderall at 8am | Medications | 5
+        [MEMORY_ADD] User prefers short answers | Preferences | 4
+        Not a memory instruction
+        [MEMORY_ADD] User has a dog named Rex | Personal Information
+        """
+        
+        let initialCount = await MainActor.run { testManager.memories.count }
+        let success = await testManager.processMemoryInstructions(instructions: instructions)
+        
+        // Verify success and count
+        XCTAssertTrue(success)
+        let newCount = await MainActor.run { testManager.memories.count }
+        XCTAssertEqual(newCount, initialCount + 3)
+        
+        // Verify content
+        let updatedMemories = await MainActor.run { testManager.memories }
+        XCTAssertTrue(updatedMemories.contains(where: { $0.content == "User takes 20mg Adderall at 8am" && $0.category == .medications && $0.importance == 5 }))
+        XCTAssertTrue(updatedMemories.contains(where: { $0.content == "User prefers short answers" && $0.category == .preferences && $0.importance == 4 }))
+        XCTAssertTrue(updatedMemories.contains(where: { $0.content == "User has a dog named Rex" && $0.category == .personalInfo }))
+    }
+    
+    func testApplyDiff() async throws {
+        // Create a custom memory manager that uses our test file
+        class TestMemoryManager: MemoryManager {
+            let testURL: URL
+            
+            init(testURL: URL) {
+                self.testURL = testURL
+                super.init()
+            }
+            
+            override func getMemoryFileURL() -> URL? {
+                return testURL
+            }
+        }
+        
+        let testManager = TestMemoryManager(testURL: testFileURL)
+        await testManager.loadMemories()
+        
+        // Clear existing memories for a clean slate
+        let memories = await MainActor.run { testManager.memories }
+        for memory in memories {
+            try await testManager.deleteMemory(id: memory.id)
+        }
+        
+        // Add an initial memory
+        try await testManager.addMemory(
+            content: "User takes 10mg medication",
+            category: .medications
+        )
+        
+        // Apply diff to add and remove memories
         let diff = """
-        +User age: 30
-        +User location: Test City
+        +User prefers dark mode
+        -User takes 10mg medication
+        +User takes 20mg medication
         """
         
         let success = await testManager.applyDiff(diff: diff)
-        
-        // Then
         XCTAssertTrue(success)
-        XCTAssertTrue(testManager.initialContent.contains("User age: 30"))
-        XCTAssertTrue(testManager.initialContent.contains("User location: Test City"))
+        
+        // Verify the result
+        let updatedMemories = await MainActor.run { testManager.memories }
+        
+        // The original memory should be removed
+        XCTAssertFalse(updatedMemories.contains(where: { $0.content == "User takes 10mg medication" }))
+        
+        // The new memories should be added
+        XCTAssertTrue(updatedMemories.contains(where: { $0.content == "User prefers dark mode" }))
+        XCTAssertTrue(updatedMemories.contains(where: { $0.content == "User takes 20mg medication" }))
     }
     
-    func testApplyDiff_RemovalsOnly() async {
-        // Given
-        let initialContent = """
-        # User Memory File
-        
-        ## Basic Information
-        User name: Test
-        User age: 30
-        User location: Test City
-        """
-        
+    func testLegacyUpdateMemory() async throws {
+        // Create a custom memory manager that uses our test file
         class TestMemoryManager: MemoryManager {
-            var initialContent: String
             let testURL: URL
             
-            init(initialContent: String, testURL: URL) {
-                self.initialContent = initialContent
+            init(testURL: URL) {
                 self.testURL = testURL
                 super.init()
-                
-                // Set initial memory content synchronously
-                self.memoryContent = initialContent
             }
             
             override func getMemoryFileURL() -> URL? {
                 return testURL
             }
-            
-            override func readMemory() async -> String {
-                return initialContent
-            }
-            
-            override func updateMemory(newContent: String) async -> Bool {
-                self.initialContent = newContent
-                return true
-            }
         }
         
-        let testManager = TestMemoryManager(initialContent: initialContent, testURL: testFileURL)
+        let testManager = TestMemoryManager(testURL: testFileURL)
+        await testManager.loadMemories()
         
-        // When
-        let diff = """
-        -User age: 30
-        """
+        // Clear existing memories for a clean slate
+        let memories = await MainActor.run { testManager.memories }
+        for memory in memories {
+            try await testManager.deleteMemory(id: memory.id)
+        }
         
-        let success = await testManager.applyDiff(diff: diff)
-        
-        // Then
-        XCTAssertTrue(success)
-        XCTAssertFalse(testManager.initialContent.contains("User age: 30"))
-        XCTAssertTrue(testManager.initialContent.contains("User name: Test"))
-        XCTAssertTrue(testManager.initialContent.contains("User location: Test City"))
-    }
-    
-    func testApplyDiff_MixedAdditionsAndRemovals() async {
-        // Given
-        let initialContent = """
+        // Create markdown content to update memories
+        let markdownContent = """
         # User Memory File
         
-        ## Basic Information
-        User name: Test
-        User age: 30
+        ## Medications
+        - User takes 15mg medication every morning
+        
+        ## Preferences
+        - User prefers dark mode
+        - User likes notifications
         """
         
-        class TestMemoryManager: MemoryManager {
-            var initialContent: String
-            let testURL: URL
-            
-            init(initialContent: String, testURL: URL) {
-                self.initialContent = initialContent
-                self.testURL = testURL
-                super.init()
-                
-                // Set initial memory content synchronously
-                self.memoryContent = initialContent
-            }
-            
-            override func getMemoryFileURL() -> URL? {
-                return testURL
-            }
-            
-            override func readMemory() async -> String {
-                return initialContent
-            }
-            
-            override func updateMemory(newContent: String) async -> Bool {
-                self.initialContent = newContent
-                return true
-            }
-        }
-        
-        let testManager = TestMemoryManager(initialContent: initialContent, testURL: testFileURL)
-        
-        // When
-        let diff = """
-        -User age: 30
-        +User age: 31
-        +User location: Test City
-        """
-        
-        let success = await testManager.applyDiff(diff: diff)
-        
-        // Then
+        // Use legacy update method
+        let success = await testManager.updateMemory(newContent: markdownContent)
         XCTAssertTrue(success)
-        XCTAssertFalse(testManager.initialContent.contains("User age: 30"))
-        XCTAssertTrue(testManager.initialContent.contains("User age: 31"))
-        XCTAssertTrue(testManager.initialContent.contains("User location: Test City"))
-    }
-    
-    func testApplyDiff_EmptyResult() async {
-        // Given
-        let initialContent = """
-        # User Memory File
         
-        ## Basic Information
-        User name: Test
-        """
+        // Verify the result
+        let updatedMemories = await MainActor.run { testManager.memories }
         
-        class TestMemoryManager: MemoryManager {
-            var initialContent: String
-            let testURL: URL
-            
-            init(initialContent: String, testURL: URL) {
-                self.initialContent = initialContent
-                self.testURL = testURL
-                super.init()
-                
-                // Set initial memory content synchronously
-                self.memoryContent = initialContent
-            }
-            
-            override func getMemoryFileURL() -> URL? {
-                return testURL
-            }
-            
-            override func readMemory() async -> String {
-                return initialContent
-            }
-            
-            override func updateMemory(newContent: String) async -> Bool {
-                self.initialContent = newContent
-                return true
-            }
-        }
-        
-        let testManager = TestMemoryManager(initialContent: initialContent, testURL: testFileURL)
-        
-        // When - Try to remove everything
-        let diff = "-# User Memory File\n-\n-## Basic Information\n-User name: Test"
-        
-        let success = await testManager.applyDiff(diff: diff)
-        
-        // Then - Should fail because it would result in empty content
-        XCTAssertFalse(success)
-        XCTAssertTrue(testManager.initialContent.contains("User name: Test"))
+        // Should have created new memory items from the markdown
+        XCTAssertEqual(updatedMemories.count, 3)
+        XCTAssertTrue(updatedMemories.contains(where: { $0.content == "User takes 15mg medication every morning" && $0.category == .medications }))
+        XCTAssertTrue(updatedMemories.contains(where: { $0.content == "User prefers dark mode" && $0.category == .preferences }))
+        XCTAssertTrue(updatedMemories.contains(where: { $0.content == "User likes notifications" && $0.category == .preferences }))
     }
 }

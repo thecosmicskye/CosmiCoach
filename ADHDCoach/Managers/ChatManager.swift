@@ -32,7 +32,7 @@ class ChatManager: ObservableObject {
     6. Use the provided calendar events and reminders to give context-aware advice
     7. You can create, modify, or delete calendar events and reminders by using specific formatting
     8. Be empathetic and understanding of ADHD challenges
-    9. Keep important information in the memory file so you can reference it in future conversations
+    9. Maintain important user information in structured memory categories
 
     To modify calendar or reminders, use the following format:
     [CALENDAR_ADD] Title | Start time | End time | Notes (optional)
@@ -43,15 +43,35 @@ class ChatManager: ObservableObject {
     [REMINDER_MODIFY] Reminder ID | New title | New due date/time | New notes (optional)
     [REMINDER_DELETE] Reminder ID
 
-    You have access to the user's memory file which contains information about them that persists between conversations. You should update this file when you learn important information about the user, their preferences, or patterns you observe. 
+    You have access to the user's memory which contains information about them that persists between conversations. This information is organized into categories:
+    - Personal Information: Basic information about the user
+    - Preferences: User preferences and likes/dislikes
+    - Behavior Patterns: Patterns in user behavior and task completion
+    - Daily Basics: Tracking of daily basics like eating and drinking water
+    - Medications: Medication information and tracking
+    - Goals: Short and long-term goals
+    - Miscellaneous Notes: Other information to remember
+
+    To add or update memories, use the following format:
+    [MEMORY_ADD] Content | Category | Importance (1-5, optional)
     
-    To update the memory file, use the following format:
-    [MEMORY_UPDATE]
-    +This line will be added to the memory file
-    -This line will be removed from the memory file
-    [/MEMORY_UPDATE]
+    Examples:
+    [MEMORY_ADD] User takes 20mg Adderall at 8am daily | Medications | 5
+    [MEMORY_ADD] User prefers short, direct answers | Preferences | 4
+    [MEMORY_ADD] User struggles with morning routines | Behavior Patterns | 3
     
-    Be careful not to remove too much content at once. Focus on adding new information or updating specific sections. The memory file content is visible at the top of each conversation under USER MEMORY.
+    To remove outdated memories:
+    [MEMORY_REMOVE] Exact content to match and remove
+    
+    Important:
+    - Memories with higher importance (4-5) are most critical to refer to
+    - Don't add redundant memories - check existing memories first 
+    - Update memories when information changes rather than creating duplicates
+    - Delete outdated information in memories
+    - When adding specific facts, add them as separate memory items instead of combining multiple facts
+    - The memory content is visible at the top of each conversation under USER MEMORY INFORMATION
+    - DO NOT add calendar events or reminders as memories
+    - Avoid duplicating memories
     """
     
     @MainActor
@@ -736,12 +756,9 @@ class ChatManager: ObservableObject {
             return
         }
         
-        // Look for memory update commands in the format:
-        // [MEMORY_UPDATE]
-        // +Added line
-        // -Removed line
-        // [/MEMORY_UPDATE]
+        // Support both old and new memory update formats for backward compatibility
         
+        // 1. Check for old format memory updates
         let memoryUpdatePattern = "\\[MEMORY_UPDATE\\]([\\s\\S]*?)\\[\\/MEMORY_UPDATE\\]"
         if let regex = try? NSRegularExpression(pattern: memoryUpdatePattern, options: []) {
             let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
@@ -749,18 +766,27 @@ class ChatManager: ObservableObject {
             for match in matches {
                 if let updateRange = Range(match.range(at: 1), in: response) {
                     let diffContent = String(response[updateRange])
-                    print("Found memory update instruction: \(diffContent.count) characters")
+                    print("Found legacy memory update instruction: \(diffContent.count) characters")
                     
                     // Apply the diff to the memory file
                     let success = await memManager.applyDiff(diff: diffContent.trimmingCharacters(in: .whitespacesAndNewlines))
                     
                     if success {
-                        print("Successfully updated memory file")
+                        print("Successfully applied legacy memory update")
                     } else {
-                        print("Failed to update memory file")
+                        print("Failed to apply legacy memory update")
                     }
                 }
             }
+        }
+        
+        // 2. Check for new structured memory instructions
+        // Process the new structured memory format
+        // This uses the new method in MemoryManager
+        let success = await memManager.processMemoryInstructions(instructions: response)
+        
+        if success {
+            print("Successfully processed structured memory instructions")
         }
     }
     
