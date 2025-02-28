@@ -117,7 +117,7 @@ struct OnboardingView: View {
                         .padding(.top, 4)
                 }
                 
-                Link("Get a Claude API key", destination: URL(string: "https://console.anthropic.com/dashboard/keys")!)
+                Link("Get a Claude API key", destination: URL(string: "https://console.anthropic.com/")!)
                     .font(.caption)
                     .padding(.top, 4)
             }
