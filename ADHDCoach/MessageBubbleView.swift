@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MessageBubbleView: View {
     let message: ChatMessage
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         HStack {
@@ -12,8 +13,9 @@ struct MessageBubbleView: View {
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
                 Text(message.content)
                     .padding(12)
-                    .background(message.isUser ? Color.blue : Color(.systemGray5))
-                    .foregroundColor(message.isUser ? .white : .primary)
+                    .background(message.isUser ? Color("AccentColor") : Color(.systemGray5))
+                    .foregroundColor(message.isUser ? 
+                        (colorScheme == .light ? .white : .black) : .primary)
                     .cornerRadius(16)
                     .textSelection(.enabled)  // Enable text selection for copying
                     .contextMenu {
