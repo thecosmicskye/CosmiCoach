@@ -121,7 +121,7 @@ class EventKitManager: ObservableObject {
                 statusMessageId = await MainActor.run {
                     let statusMessage = chatManager.addOperationStatusMessage(
                         forMessageId: messageId,
-                        operationType: "Adding Calendar Event",
+                        operationType: "Added Calendar Event",
                         status: .inProgress
                     )
                     return statusMessage.id
@@ -194,7 +194,7 @@ class EventKitManager: ObservableObject {
                 statusMessageId = await MainActor.run {
                     let statusMessage = chatManager.addOperationStatusMessage(
                         forMessageId: messageId,
-                        operationType: "Updating Calendar Event",
+                        operationType: "Updated Calendar Event",
                         status: .inProgress
                     )
                     return statusMessage.id
@@ -293,7 +293,7 @@ class EventKitManager: ObservableObject {
                 statusMessageId = await MainActor.run {
                     let statusMessage = chatManager.addOperationStatusMessage(
                         forMessageId: messageId,
-                        operationType: "Deleting Calendar Event",
+                        operationType: "Deleted Calendar Event",
                         status: .inProgress
                     )
                     return statusMessage.id
@@ -423,7 +423,7 @@ class EventKitManager: ObservableObject {
                 statusMessageId = await MainActor.run {
                     let statusMessage = chatManager.addOperationStatusMessage(
                         forMessageId: messageId,
-                        operationType: "Adding Reminder",
+                        operationType: "Added Reminder",
                         status: .inProgress
                     )
                     return statusMessage.id
@@ -647,7 +647,7 @@ class EventKitManager: ObservableObject {
                 statusMessageId = await MainActor.run {
                     let statusMessage = chatManager.addOperationStatusMessage(
                         forMessageId: messageId,
-                        operationType: "Updating Reminder",
+                        operationType: "Updated Reminder",
                         status: .inProgress
                     )
                     return statusMessage.id
@@ -718,7 +718,7 @@ class EventKitManager: ObservableObject {
                 statusMessageId = await MainActor.run {
                     let statusMessage = chatManager.addOperationStatusMessage(
                         forMessageId: messageId,
-                        operationType: "Deleting Reminder",
+                        operationType: "Deleted Reminder",
                         status: .inProgress
                     )
                     return statusMessage.id
