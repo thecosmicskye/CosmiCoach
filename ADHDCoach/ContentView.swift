@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct ContentView: View {
     @EnvironmentObject private var chatManager: ChatManager
@@ -7,7 +8,8 @@ struct ContentView: View {
     @State private var messageText = ""
     @FocusState private var isInputFocused: Bool
     @State private var showingSettings = false
-    @State private var scrollViewHeight: CGFloat = 0
+    @State private var keyboardHeight: CGFloat = 0
+    @State private var scrollToBottom = false
     @AppStorage("hasAppearedBefore") private var hasAppearedBefore = false
     @Environment(\.scenePhase) private var scenePhase
     
@@ -15,6 +17,15 @@ struct ContentView: View {
     init() {
         // This is needed because @EnvironmentObject isn't available in init
         print("⏱️ ContentView initializing")
+    }
+    
+    // Helper function to scroll to bottom of chat
+    private func scrollToBottom(proxy: ScrollViewProxy) {
+        DispatchQueue.main.async {
+            withAnimation {
+                proxy.scrollTo("bottomID", anchor: .bottom)
+            }
+        }
     }
     
     // Helper function to reset chat when notification is received
@@ -33,6 +44,26 @@ struct ContentView: View {
                 await chatManager.checkAndSendAutomaticMessageAfterHistoryDeletion()
             }
         }
+        
+        // Set up keyboard notifications
+        NotificationCenter.default.addObserver(
+            forName: UIResponder.keyboardWillShowNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                keyboardHeight = keyboardFrame.height
+                scrollToBottom = true
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIResponder.keyboardWillHideNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            keyboardHeight = 0
+        }
     }
     
     var body: some View {
@@ -40,15 +71,22 @@ struct ContentView: View {
             ZStack {
                 VStack(spacing: 0) {
                     // Chat messages list
-                    GeometryReader { geometry in
-                        ScrollViewReader { proxy in
-                            ScrollView {
-                                // This spacer pushes content to the bottom when there are few messages
-                                if chatManager.messages.count < 5 {
-                                    Spacer(minLength: scrollViewHeight - 100)
-                                        .frame(height: scrollViewHeight)
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            if chatManager.messages.isEmpty {
+                                // Empty state with a centered welcome message
+                                VStack {
+                                    Spacer()
+                                    Text("Welcome to Cosmic Coach")
+                                        .font(.headline)
+                                        .foregroundColor(.secondary)
+                                    Text("Type a message to get started")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
                                 }
-                                
+                                .frame(maxHeight: .infinity)
+                            } else {
                                 LazyVStack(spacing: 12) {
                                     ForEach(chatManager.messages) { message in
                                         VStack(spacing: 4) {
@@ -74,28 +112,22 @@ struct ContentView: View {
                                 }
                                 .padding(.vertical, 8)
                             }
-                            .onAppear {
-                                // Save the scroll view height
-                                scrollViewHeight = geometry.size.height
-                                
-                                // Scroll to bottom without animation when view appears
-                                DispatchQueue.main.async {
-                                    proxy.scrollTo("bottomID", anchor: .bottom)
-                                }
+                        }
+                        .onChange(of: chatManager.messages.count) { _, _ in
+                            scrollToBottom(proxy: proxy)
+                        }
+                        .onChange(of: chatManager.streamingUpdateCount) { _, _ in
+                            scrollToBottom(proxy: proxy)
+                        }
+                        .onChange(of: scrollToBottom) { _, newValue in
+                            if newValue {
+                                scrollToBottom(proxy: proxy)
+                                scrollToBottom = false
                             }
-                            .onChange(of: chatManager.messages.count) { oldCount, newCount in
-                                // Scroll to bottom with animation when messages change
-                                withAnimation {
-                                    proxy.scrollTo("bottomID", anchor: .bottom)
-                                }
-                            }
-                            // Also scroll when streaming updates occur
-                            .onChange(of: chatManager.streamingUpdateCount) { oldCount, newCount in
-                                // Scroll to bottom with animation during streaming
-                                withAnimation {
-                                    proxy.scrollTo("bottomID", anchor: .bottom)
-                                }
-                            }
+                        }
+                        .onAppear {
+                            // Scroll to bottom on first appear
+                            scrollToBottom(proxy: proxy)
                         }
                     }
                 
@@ -116,6 +148,7 @@ struct ContentView: View {
                     }
                     .padding()
                 }
+                .animation(.easeOut(duration: 0.16), value: keyboardHeight)
             }
             .navigationTitle("Cosmic Coach")
             .toolbar {
