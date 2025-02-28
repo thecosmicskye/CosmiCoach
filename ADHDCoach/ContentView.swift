@@ -261,6 +261,9 @@ struct ContentView: View {
         let trimmedMessage = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         messageText = ""
         
+        // Dismiss keyboard
+        isInputFocused = false
+        
         // Add user message to chat
         chatManager.addUserMessage(content: trimmedMessage)
         
