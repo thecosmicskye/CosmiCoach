@@ -41,9 +41,12 @@ class ChatManager: ObservableObject {
     5. Analyze patterns in task completion over time
     6. Use the provided calendar events and reminders to give context-aware advice
     7. IMPORTANT: You MUST use the provided tools to create, modify, or delete calendar events, reminders, and memories
-       - ALWAYS use add_calendar_event tool when the user asks to create a calendar event
-       - ALWAYS use add_reminder tool when the user asks to create a reminder
-       - ALWAYS use add_memory tool when you need to store important information
+       - Use add_calendar_event tool when the user asks to create a single calendar event
+       - Use add_calendar_events_batch tool when the user asks to create multiple calendar events
+       - Use add_reminder tool when the user asks to create a single reminder
+       - Use add_reminders_batch tool when the user asks to create multiple reminders
+       - Use add_memory tool when you need to store a single piece of important information
+       - Use add_memories_batch tool when you need to store multiple pieces of important information
        - DO NOT respond with text saying you've created a calendar event or reminder - use the tools
     8. Be empathetic and understanding of ADHD challenges
     9. Maintain important user information in structured memory categories
@@ -69,6 +72,16 @@ class ChatManager: ObservableObject {
     - The memory content is visible at the top of each conversation under USER MEMORY INFORMATION
     - DO NOT add calendar events or reminders as memories
     - Avoid duplicating memories
+
+    IMPORTANT: When working with multiple items (multiple calendar events, reminders, or memories), always use the batch tools:
+    - add_calendar_events_batch: Use this to add multiple calendar events in a single operation
+    - modify_calendar_events_batch: Use this to modify multiple calendar events in a single operation
+    - delete_calendar_events_batch: Use this to delete multiple calendar events in a single operation
+    - add_reminders_batch: Use this to add multiple reminders in a single operation
+    - modify_reminders_batch: Use this to modify multiple reminders in a single operation
+    - delete_reminders_batch: Use this to delete multiple reminders in a single operation
+    - add_memories_batch: Use this to add multiple memories in a single operation
+    - remove_memories_batch: Use this to remove multiple memories in a single operation
     """
     
     @MainActor
@@ -447,41 +460,75 @@ class ChatManager: ObservableObject {
     // Define tool schemas for Claude
     private var toolDefinitions: [[String: Any]] {
         return [
-            // Calendar Tools
+            // Calendar Tools - Single item operations
             [
                 "name": "add_calendar_event",
-                "description": "Add a new calendar event to the user's calendar. You MUST use this tool when the user wants to add an event to their calendar.",
+                "description": "Add a new calendar event to the user's calendar. You MUST use this tool when the user wants to add a single event to their calendar.",
                 "input_schema": CalendarAddCommand.schema
             ],
             [
                 "name": "modify_calendar_event",
-                "description": "Modify an existing calendar event in the user's calendar. Use this tool when the user wants to change an existing event.",
+                "description": "Modify an existing calendar event in the user's calendar. Use this tool when the user wants to change a single existing event.",
                 "input_schema": CalendarModifyCommand.schema
             ],
             [
                 "name": "delete_calendar_event",
-                "description": "Delete an existing calendar event from the user's calendar. Use this tool when the user wants to remove an event.",
+                "description": "Delete an existing calendar event from the user's calendar. Use this tool when the user wants to remove a single event.",
                 "input_schema": CalendarDeleteCommand.schema
             ],
             
-            // Reminder Tools
+            // Calendar Tools - Batch operations
+            [
+                "name": "add_calendar_events_batch",
+                "description": "Add multiple calendar events to the user's calendar at once. Use this tool when the user wants to add multiple events in a single operation.",
+                "input_schema": CalendarAddBatchCommand.schema
+            ],
+            [
+                "name": "modify_calendar_events_batch",
+                "description": "Modify multiple existing calendar events in the user's calendar at once. Use this tool when the user wants to change multiple existing events in a single operation.",
+                "input_schema": CalendarModifyBatchCommand.schema
+            ],
+            [
+                "name": "delete_calendar_events_batch",
+                "description": "Delete multiple existing calendar events from the user's calendar at once. Use this tool when the user wants to remove multiple events in a single operation.",
+                "input_schema": CalendarDeleteBatchCommand.schema
+            ],
+            
+            // Reminder Tools - Single item operations
             [
                 "name": "add_reminder",
-                "description": "Add a new reminder to the user's reminders list. You MUST use this tool when the user wants to add a reminder.",
+                "description": "Add a new reminder to the user's reminders list. You MUST use this tool when the user wants to add a single reminder.",
                 "input_schema": ReminderAddCommand.schema
             ],
             [
                 "name": "modify_reminder",
-                "description": "Modify an existing reminder in the user's reminders. Use this tool when the user wants to change an existing reminder.",
+                "description": "Modify an existing reminder in the user's reminders. Use this tool when the user wants to change a single existing reminder.",
                 "input_schema": ReminderModifyCommand.schema
             ],
             [
                 "name": "delete_reminder",
-                "description": "Delete an existing reminder from the user's reminders. Use this tool when the user wants to remove a reminder.",
+                "description": "Delete an existing reminder from the user's reminders. Use this tool when the user wants to remove a single reminder.",
                 "input_schema": ReminderDeleteCommand.schema
             ],
             
-            // Memory Tools
+            // Reminder Tools - Batch operations
+            [
+                "name": "add_reminders_batch",
+                "description": "Add multiple reminders to the user's reminders list at once. Use this tool when the user wants to add multiple reminders in a single operation.",
+                "input_schema": ReminderAddBatchCommand.schema
+            ],
+            [
+                "name": "modify_reminders_batch",
+                "description": "Modify multiple existing reminders in the user's reminders at once. Use this tool when the user wants to change multiple existing reminders in a single operation.",
+                "input_schema": ReminderModifyBatchCommand.schema
+            ],
+            [
+                "name": "delete_reminders_batch",
+                "description": "Delete multiple existing reminders from the user's reminders at once. Use this tool when the user wants to remove multiple reminders in a single operation.",
+                "input_schema": ReminderDeleteBatchCommand.schema
+            ],
+            
+            // Memory Tools - Single item operations
             [
                 "name": "add_memory",
                 "description": "Add a new memory to the user's memory database. You MUST use this tool to store important information about the user that should persist between conversations.",
@@ -491,6 +538,18 @@ class ChatManager: ObservableObject {
                 "name": "remove_memory",
                 "description": "Remove a memory from the user's memory database. Use this tool when information becomes outdated or is no longer relevant.",
                 "input_schema": MemoryRemoveCommand.schema
+            ],
+            
+            // Memory Tools - Batch operations
+            [
+                "name": "add_memories_batch",
+                "description": "Add multiple memories to the user's memory database at once. Use this tool when you need to store multiple pieces of important information in a single operation.",
+                "input_schema": MemoryAddBatchCommand.schema
+            ],
+            [
+                "name": "remove_memories_batch",
+                "description": "Remove multiple memories from the user's memory database at once. Use this tool when multiple pieces of information become outdated or are no longer relevant.",
+                "input_schema": MemoryRemoveBatchCommand.schema
             ]
         ]
     }
@@ -1381,6 +1440,27 @@ class ChatManager: ObservableObject {
         }
         print("⚙️ Message ID for tool operation: \(messageId?.uuidString ?? "nil")")
         
+        // Helper function to parse date string
+        func parseDate(_ dateString: String) -> Date? {
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
+            return dateFormatter.date(from: dateString)
+        }
+        
+        // Helper function to get EventKitManager
+        func getEventKitManager() async -> EventKitManager? {
+            return await MainActor.run { [weak self] in
+                return self?.eventKitManager
+            }
+        }
+        
+        // Helper function to get MemoryManager
+        func getMemoryManager() async -> MemoryManager? {
+            return await MainActor.run { [weak self] in
+                return self?.memoryManager
+            }
+        }
+        
         switch toolName {
         case "add_calendar_event":
             // Extract parameters
@@ -1395,23 +1475,18 @@ class ChatManager: ObservableObject {
             print("⚙️ Adding calendar event: \(title), start: \(startString), end: \(endString), notes: \(notes ?? "nil")")
             
             // Parse dates
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
-            
-            guard let startDate = dateFormatter.date(from: startString) else {
+            guard let startDate = parseDate(startString) else {
                 print("⚙️ Error parsing start date: \(startString)")
                 return "Error parsing start date: \(startString)"
             }
             
-            guard let endDate = dateFormatter.date(from: endString) else {
+            guard let endDate = parseDate(endString) else {
                 print("⚙️ Error parsing end date: \(endString)")
                 return "Error parsing end date: \(endString)"
             }
             
             // Get access to EventKitManager
-            guard let eventKitManager = await MainActor.run(body: { [weak self] in
-                return self?.eventKitManager
-            }) else {
+            guard let eventKitManager = await getEventKitManager() else {
                 print("⚙️ EventKitManager not available")
                 return "Error: EventKitManager not available"
             }
@@ -1435,9 +1510,67 @@ class ChatManager: ObservableObject {
             
             // Even when successful, the success variable may be false due to race conditions
             // Always return success for now to avoid confusing UI indicators
-            // The actual result doesn't matter since the calendar item is generally correctly added 
-            // despite the operation seeming to fail
             return "Successfully added calendar event"
+            
+        case "add_calendar_events_batch":
+            // Extract parameters
+            guard let eventsArray = toolInput["events"] as? [[String: Any]] else {
+                print("⚙️ Missing required parameter 'events' for add_calendar_events_batch")
+                return "Error: Missing required parameter 'events' for add_calendar_events_batch"
+            }
+            
+            // Get access to EventKitManager
+            guard let eventKitManager = await getEventKitManager() else {
+                print("⚙️ EventKitManager not available")
+                return "Error: EventKitManager not available"
+            }
+            
+            print("⚙️ EventKitManager access granted: \(eventKitManager.calendarAccessGranted)")
+            print("⚙️ Processing batch of \(eventsArray.count) calendar events")
+            
+            var successCount = 0
+            var failureCount = 0
+            
+            // Process each event in the batch
+            for eventData in eventsArray {
+                guard let title = eventData["title"] as? String,
+                      let startString = eventData["start"] as? String,
+                      let endString = eventData["end"] as? String else {
+                    print("⚙️ Missing required parameters for event in batch")
+                    failureCount += 1
+                    continue
+                }
+                
+                let notes = eventData["notes"] as? String
+                
+                // Parse dates
+                guard let startDate = parseDate(startString),
+                      let endDate = parseDate(endString) else {
+                    print("⚙️ Error parsing dates for event in batch")
+                    failureCount += 1
+                    continue
+                }
+                
+                // Add calendar event
+                let success = await MainActor.run {
+                    return eventKitManager.addCalendarEvent(
+                        title: title,
+                        startDate: startDate,
+                        endDate: endDate,
+                        notes: notes,
+                        messageId: messageId,
+                        chatManager: self
+                    )
+                }
+                
+                if success {
+                    successCount += 1
+                } else {
+                    failureCount += 1
+                }
+            }
+            
+            return "Processed \(eventsArray.count) calendar events: \(successCount) added successfully, \(failureCount) failed"
             
         case "modify_calendar_event":
             // Extract parameters
@@ -1455,29 +1588,21 @@ class ChatManager: ObservableObject {
             var endDate: Date? = nil
             
             if let startString = startString {
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
-                startDate = dateFormatter.date(from: startString)
-                
+                startDate = parseDate(startString)
                 if startDate == nil {
                     return "Error parsing start date: \(startString)"
                 }
             }
             
             if let endString = endString {
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
-                endDate = dateFormatter.date(from: endString)
-                
+                endDate = parseDate(endString)
                 if endDate == nil {
                     return "Error parsing end date: \(endString)"
                 }
             }
             
             // Get access to EventKitManager
-            guard let eventKitManager = await MainActor.run(body: { [weak self] in
-                return self?.eventKitManager
-            }) else {
+            guard let eventKitManager = await getEventKitManager() else {
                 return "Error: EventKitManager not available"
             }
             
@@ -1496,6 +1621,78 @@ class ChatManager: ObservableObject {
             
             return success ? "Successfully updated calendar event" : "Failed to update calendar event"
             
+        case "modify_calendar_events_batch":
+            // Extract parameters
+            guard let eventsArray = toolInput["events"] as? [[String: Any]] else {
+                print("⚙️ Missing required parameter 'events' for modify_calendar_events_batch")
+                return "Error: Missing required parameter 'events' for modify_calendar_events_batch"
+            }
+            
+            // Get access to EventKitManager
+            guard let eventKitManager = await getEventKitManager() else {
+                return "Error: EventKitManager not available"
+            }
+            
+            var successCount = 0
+            var failureCount = 0
+            
+            // Process each event in the batch
+            for eventData in eventsArray {
+                guard let id = eventData["id"] as? String else {
+                    print("⚙️ Missing required parameter 'id' for event in batch")
+                    failureCount += 1
+                    continue
+                }
+                
+                let title = eventData["title"] as? String
+                let startString = eventData["start"] as? String
+                let endString = eventData["end"] as? String
+                let notes = eventData["notes"] as? String
+                
+                // Parse dates if provided
+                var startDate: Date? = nil
+                var endDate: Date? = nil
+                
+                if let startString = startString {
+                    startDate = parseDate(startString)
+                    if startDate == nil {
+                        print("⚙️ Error parsing start date: \(startString)")
+                        failureCount += 1
+                        continue
+                    }
+                }
+                
+                if let endString = endString {
+                    endDate = parseDate(endString)
+                    if endDate == nil {
+                        print("⚙️ Error parsing end date: \(endString)")
+                        failureCount += 1
+                        continue
+                    }
+                }
+                
+                // Modify calendar event
+                let success = await MainActor.run {
+                    return eventKitManager.updateCalendarEvent(
+                        id: id,
+                        title: title,
+                        startDate: startDate,
+                        endDate: endDate,
+                        notes: notes,
+                        messageId: messageId,
+                        chatManager: self
+                    )
+                }
+                
+                if success {
+                    successCount += 1
+                } else {
+                    failureCount += 1
+                }
+            }
+            
+            return "Processed \(eventsArray.count) calendar events: \(successCount) updated successfully, \(failureCount) failed"
+            
         case "delete_calendar_event":
             // Extract parameters
             guard let id = toolInput["id"] as? String else {
@@ -1503,9 +1700,7 @@ class ChatManager: ObservableObject {
             }
             
             // Get access to EventKitManager
-            guard let eventKitManager = await MainActor.run(body: { [weak self] in
-                return self?.eventKitManager
-            }) else {
+            guard let eventKitManager = await getEventKitManager() else {
                 return "Error: EventKitManager not available"
             }
             
@@ -1519,6 +1714,41 @@ class ChatManager: ObservableObject {
             }
             
             return success ? "Successfully deleted calendar event" : "Failed to delete calendar event"
+            
+        case "delete_calendar_events_batch":
+            // Extract parameters
+            guard let ids = toolInput["ids"] as? [String] else {
+                print("⚙️ Missing required parameter 'ids' for delete_calendar_events_batch")
+                return "Error: Missing required parameter 'ids' for delete_calendar_events_batch"
+            }
+            
+            // Get access to EventKitManager
+            guard let eventKitManager = await getEventKitManager() else {
+                return "Error: EventKitManager not available"
+            }
+            
+            var successCount = 0
+            var failureCount = 0
+            
+            // Process each ID in the batch
+            for id in ids {
+                // Delete calendar event
+                let success = await MainActor.run {
+                    return eventKitManager.deleteCalendarEvent(
+                        id: id,
+                        messageId: messageId,
+                        chatManager: self
+                    )
+                }
+                
+                if success {
+                    successCount += 1
+                } else {
+                    failureCount += 1
+                }
+            }
+            
+            return "Processed \(ids.count) calendar events: \(successCount) deleted successfully, \(failureCount) failed"
             
         case "add_reminder":
             // Extract parameters
@@ -1537,10 +1767,7 @@ class ChatManager: ObservableObject {
             var dueDate: Date? = nil
             
             if let dueString = dueString, dueString.lowercased() != "null" && dueString.lowercased() != "no due date" {
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
-                dueDate = dateFormatter.date(from: dueString)
-                
+                dueDate = parseDate(dueString)
                 if dueDate == nil {
                     print("⚙️ Error parsing due date: \(dueString)")
                     return "Error parsing due date: \(dueString)"
@@ -1548,9 +1775,7 @@ class ChatManager: ObservableObject {
             }
             
             // Get access to EventKitManager
-            guard let eventKitManager = await MainActor.run(body: { [weak self] in
-                return self?.eventKitManager
-            }) else {
+            guard let eventKitManager = await getEventKitManager() else {
                 print("⚙️ EventKitManager not available")
                 return "Error: EventKitManager not available"
             }
@@ -1573,8 +1798,71 @@ class ChatManager: ObservableObject {
             }
             
             // Similarly to calendar events, always return success to avoid confusing UI
-            // The actual result doesn't matter since we want consistent success UI
             return "Successfully added reminder"
+            
+        case "add_reminders_batch":
+            // Extract parameters
+            guard let remindersArray = toolInput["reminders"] as? [[String: Any]] else {
+                print("⚙️ Missing required parameter 'reminders' for add_reminders_batch")
+                return "Error: Missing required parameter 'reminders' for add_reminders_batch"
+            }
+            
+            // Get access to EventKitManager
+            guard let eventKitManager = await getEventKitManager() else {
+                print("⚙️ EventKitManager not available")
+                return "Error: EventKitManager not available"
+            }
+            
+            print("⚙️ EventKitManager reminder access granted: \(eventKitManager.reminderAccessGranted)")
+            print("⚙️ Processing batch of \(remindersArray.count) reminders")
+            
+            var successCount = 0
+            var failureCount = 0
+            
+            // Process each reminder in the batch
+            for reminderData in remindersArray {
+                guard let title = reminderData["title"] as? String else {
+                    print("⚙️ Missing required parameter 'title' for reminder in batch")
+                    failureCount += 1
+                    continue
+                }
+                
+                let dueString = reminderData["due"] as? String
+                let notes = reminderData["notes"] as? String
+                let list = reminderData["list"] as? String
+                
+                // Parse due date if provided
+                var dueDate: Date? = nil
+                
+                if let dueString = dueString, dueString.lowercased() != "null" && dueString.lowercased() != "no due date" {
+                    dueDate = parseDate(dueString)
+                    if dueDate == nil {
+                        print("⚙️ Error parsing due date: \(dueString)")
+                        failureCount += 1
+                        continue
+                    }
+                }
+                
+                // Add reminder
+                let success = await MainActor.run {
+                    return eventKitManager.addReminder(
+                        title: title,
+                        dueDate: dueDate,
+                        notes: notes,
+                        listName: list,
+                        messageId: messageId,
+                        chatManager: self
+                    )
+                }
+                
+                if success {
+                    successCount += 1
+                } else {
+                    failureCount += 1
+                }
+            }
+            
+            return "Processed \(remindersArray.count) reminders: \(successCount) added successfully, \(failureCount) failed"
             
         case "modify_reminder":
             // Extract parameters
@@ -1594,10 +1882,7 @@ class ChatManager: ObservableObject {
                 if dueString.lowercased() == "null" || dueString.lowercased() == "no due date" {
                     dueDate = nil // Explicitly setting to nil to clear the due date
                 } else {
-                    let dateFormatter = DateFormatter()
-                    dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
-                    dueDate = dateFormatter.date(from: dueString)
-                    
+                    dueDate = parseDate(dueString)
                     if dueDate == nil {
                         return "Error parsing due date: \(dueString)"
                     }
@@ -1605,9 +1890,7 @@ class ChatManager: ObservableObject {
             }
             
             // Get access to EventKitManager
-            guard let eventKitManager = await MainActor.run(body: { [weak self] in
-                return self?.eventKitManager
-            }) else {
+            guard let eventKitManager = await getEventKitManager() else {
                 return "Error: EventKitManager not available"
             }
             
@@ -1626,6 +1909,72 @@ class ChatManager: ObservableObject {
             
             return success ? "Successfully updated reminder" : "Failed to update reminder"
             
+        case "modify_reminders_batch":
+            // Extract parameters
+            guard let remindersArray = toolInput["reminders"] as? [[String: Any]] else {
+                print("⚙️ Missing required parameter 'reminders' for modify_reminders_batch")
+                return "Error: Missing required parameter 'reminders' for modify_reminders_batch"
+            }
+            
+            // Get access to EventKitManager
+            guard let eventKitManager = await getEventKitManager() else {
+                return "Error: EventKitManager not available"
+            }
+            
+            var successCount = 0
+            var failureCount = 0
+            
+            // Process each reminder in the batch
+            for reminderData in remindersArray {
+                guard let id = reminderData["id"] as? String else {
+                    print("⚙️ Missing required parameter 'id' for reminder in batch")
+                    failureCount += 1
+                    continue
+                }
+                
+                let title = reminderData["title"] as? String
+                let dueString = reminderData["due"] as? String
+                let notes = reminderData["notes"] as? String
+                let list = reminderData["list"] as? String
+                
+                // Parse due date if provided
+                var dueDate: Date? = nil
+                
+                if let dueString = dueString {
+                    if dueString.lowercased() == "null" || dueString.lowercased() == "no due date" {
+                        dueDate = nil // Explicitly setting to nil to clear the due date
+                    } else {
+                        dueDate = parseDate(dueString)
+                        if dueDate == nil {
+                            print("⚙️ Error parsing due date: \(dueString)")
+                            failureCount += 1
+                            continue
+                        }
+                    }
+                }
+                
+                // Modify reminder
+                let success = await MainActor.run {
+                    return eventKitManager.updateReminder(
+                        id: id,
+                        title: title,
+                        dueDate: dueDate,
+                        notes: notes,
+                        listName: list,
+                        messageId: messageId,
+                        chatManager: self
+                    )
+                }
+                
+                if success {
+                    successCount += 1
+                } else {
+                    failureCount += 1
+                }
+            }
+            
+            return "Processed \(remindersArray.count) reminders: \(successCount) updated successfully, \(failureCount) failed"
+            
         case "delete_reminder":
             // Extract parameters
             guard let id = toolInput["id"] as? String else {
@@ -1633,9 +1982,7 @@ class ChatManager: ObservableObject {
             }
             
             // Get access to EventKitManager
-            guard let eventKitManager = await MainActor.run(body: { [weak self] in
-                return self?.eventKitManager
-            }) else {
+            guard let eventKitManager = await getEventKitManager() else {
                 return "Error: EventKitManager not available"
             }
             
@@ -1650,6 +1997,41 @@ class ChatManager: ObservableObject {
             
             return success ? "Successfully deleted reminder" : "Failed to delete reminder"
             
+        case "delete_reminders_batch":
+            // Extract parameters
+            guard let ids = toolInput["ids"] as? [String] else {
+                print("⚙️ Missing required parameter 'ids' for delete_reminders_batch")
+                return "Error: Missing required parameter 'ids' for delete_reminders_batch"
+            }
+            
+            // Get access to EventKitManager
+            guard let eventKitManager = await getEventKitManager() else {
+                return "Error: EventKitManager not available"
+            }
+            
+            var successCount = 0
+            var failureCount = 0
+            
+            // Process each ID in the batch
+            for id in ids {
+                // Delete reminder
+                let success = await MainActor.run {
+                    return eventKitManager.deleteReminder(
+                        id: id,
+                        messageId: messageId,
+                        chatManager: self
+                    )
+                }
+                
+                if success {
+                    successCount += 1
+                } else {
+                    failureCount += 1
+                }
+            }
+            
+            return "Processed \(ids.count) reminders: \(successCount) deleted successfully, \(failureCount) failed"
+            
         case "add_memory":
             // Extract parameters
             guard let content = toolInput["content"] as? String,
@@ -1660,9 +2042,7 @@ class ChatManager: ObservableObject {
             let importance = toolInput["importance"] as? Int ?? 3
             
             // Get access to MemoryManager
-            guard let memoryManager = await MainActor.run(body: { [weak self] in
-                return self?.memoryManager
-            }) else {
+            guard let memoryManager = await getMemoryManager() else {
                 return "Error: MemoryManager not available"
             }
             
@@ -1682,6 +2062,54 @@ class ChatManager: ObservableObject {
                 return "Failed to add memory: \(error.localizedDescription)"
             }
             
+        case "add_memories_batch":
+            // Extract parameters
+            guard let memoriesArray = toolInput["memories"] as? [[String: Any]] else {
+                print("⚙️ Missing required parameter 'memories' for add_memories_batch")
+                return "Error: Missing required parameter 'memories' for add_memories_batch"
+            }
+            
+            // Get access to MemoryManager
+            guard let memoryManager = await getMemoryManager() else {
+                return "Error: MemoryManager not available"
+            }
+            
+            var successCount = 0
+            var failureCount = 0
+            
+            // Process each memory in the batch
+            for memoryData in memoriesArray {
+                guard let content = memoryData["content"] as? String,
+                      let category = memoryData["category"] as? String else {
+                    print("⚙️ Missing required parameters for memory in batch")
+                    failureCount += 1
+                    continue
+                }
+                
+                let importance = memoryData["importance"] as? Int ?? 3
+                
+                // Find the appropriate memory category
+                let memoryCategory = MemoryCategory.allCases.first { $0.rawValue.lowercased() == category.lowercased() } ?? .notes
+                
+                // Check if content seems to be a calendar event or reminder
+                if await memoryManager.isCalendarOrReminderItem(content: content) {
+                    print("⚙️ Memory content appears to be a calendar event or reminder")
+                    failureCount += 1
+                    continue
+                }
+                
+                // Add memory
+                do {
+                    try await memoryManager.addMemory(content: content, category: memoryCategory, importance: importance)
+                    successCount += 1
+                } catch {
+                    print("⚙️ Failed to add memory: \(error.localizedDescription)")
+                    failureCount += 1
+                }
+            }
+            
+            return "Processed \(memoriesArray.count) memories: \(successCount) added successfully, \(failureCount) failed"
+            
         case "remove_memory":
             // Extract parameters
             guard let content = toolInput["content"] as? String else {
@@ -1689,9 +2117,7 @@ class ChatManager: ObservableObject {
             }
             
             // Get access to MemoryManager
-            guard let memoryManager = await MainActor.run(body: { [weak self] in
-                return self?.memoryManager
-            }) else {
+            guard let memoryManager = await getMemoryManager() else {
                 return "Error: MemoryManager not available"
             }
             
@@ -1711,6 +2137,45 @@ class ChatManager: ObservableObject {
             } else {
                 return "Error: No memory found with content: \(content)"
             }
+            
+        case "remove_memories_batch":
+            // Extract parameters
+            guard let contents = toolInput["contents"] as? [String] else {
+                print("⚙️ Missing required parameter 'contents' for remove_memories_batch")
+                return "Error: Missing required parameter 'contents' for remove_memories_batch"
+            }
+            
+            // Get access to MemoryManager
+            guard let memoryManager = await getMemoryManager() else {
+                return "Error: MemoryManager not available"
+            }
+            
+            var successCount = 0
+            var failureCount = 0
+            
+            // Process each content in the batch
+            for content in contents {
+                // Find memory with matching content
+                var foundMemory: MemoryItem? = nil
+                await MainActor.run { 
+                    foundMemory = memoryManager.memories.first(where: { $0.content == content })
+                }
+                
+                if let memoryToRemove = foundMemory {
+                    do {
+                        try await memoryManager.deleteMemory(id: memoryToRemove.id)
+                        successCount += 1
+                    } catch {
+                        print("⚙️ Failed to remove memory: \(error.localizedDescription)")
+                        failureCount += 1
+                    }
+                } else {
+                    print("⚙️ No memory found with content: \(content)")
+                    failureCount += 1
+                }
+            }
+            
+            return "Processed \(contents.count) memories: \(successCount) removed successfully, \(failureCount) failed"
             
         default:
             return "Error: Unknown tool \(toolName)"
