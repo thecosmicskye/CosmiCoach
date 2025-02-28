@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UIKit
 
 struct ContentView: View {
     @EnvironmentObject private var chatManager: ChatManager
@@ -16,6 +17,18 @@ struct ContentView: View {
     init() {
         // This is needed because @EnvironmentObject isn't available in init
         print("⏱️ ContentView initializing")
+    }
+    
+    // Setup keyboard appearance notification
+    private func setupKeyboardObserver() {
+        NotificationCenter.default.addObserver(
+            forName: UIResponder.keyboardDidShowNotification,
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            // Trigger scroll to bottom when keyboard appears
+            scrollToBottom = true
+        }
     }
     
     // Helper function to scroll to bottom of chat
@@ -117,6 +130,12 @@ struct ContentView: View {
                         .background(Color(.systemGray6))
                         .cornerRadius(20)
                         .focused($isInputFocused)
+                        .onChange(of: isInputFocused) { _, isFocused in
+                            if isFocused {
+                                // When keyboard appears due to focus, scroll to bottom
+                                scrollToBottom = true
+                            }
+                        }
                     
                     Button(action: sendMessage) {
                         Image(systemName: "arrow.up.circle.fill")
@@ -147,9 +166,10 @@ struct ContentView: View {
                 chatManager.setMemoryManager(memoryManager)
                 print("⏱️ ContentView.onAppear - Connected memory manager to chat manager")
                 
-                // Setup notification observer for chat history deletion
+                // Setup notification observers
                 setupNotificationObserver()
-                print("⏱️ ContentView.onAppear - Set up notification observer")
+                setupKeyboardObserver()
+                print("⏱️ ContentView.onAppear - Set up notification observers")
                 
                 // Check if automatic messages should be enabled in settings and log it
                 let automaticMessagesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
