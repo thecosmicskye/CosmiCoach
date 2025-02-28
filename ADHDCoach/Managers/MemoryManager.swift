@@ -162,8 +162,9 @@ class MemoryManager: ObservableObject {
         try await saveMemories()
     }
     
-    // Helper function to detect if content is likely a calendar event or reminder
-    private func isCalendarOrReminderItem(content: String) -> Bool {
+    // Function to detect if content is likely a calendar event or reminder
+    // Made public so it can be used by the tool processing logic
+    func isCalendarOrReminderItem(content: String) -> Bool {
         // Common keywords that might indicate a calendar event or reminder
         let calendarKeywords = ["appointment", "meeting", "schedule", "event", "call", "at ", "pm", "am", "starts at", "ends at", 
                                "on Monday", "on Tuesday", "on Wednesday", "on Thursday", "on Friday", "on Saturday", "on Sunday"]
