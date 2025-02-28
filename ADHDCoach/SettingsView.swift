@@ -39,33 +39,67 @@ struct SettingsView: View {
         request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.addValue(savedKey, forHTTPHeaderField: "x-api-key")
         
-        // Simple request body
+        // Simple request body - including tools to test if they're supported
         let requestBody: [String: Any] = [
             "model": "claude-3-7-sonnet-20250219",
             "max_tokens": 10,
             "stream": false,
+            "tools": [
+                [
+                    "name": "test_tool",
+                    "description": "A test tool",
+                    "input_schema": [
+                        "type": "object",
+                        "properties": [
+                            "test": ["type": "string"]
+                        ]
+                    ]
+                ]
+            ],
             "messages": [
-                ["role": "user", "content": "Hello"]
+                ["role": "user", "content": [
+                    ["type": "text", "text": "Hello"]
+                ]]
             ]
         ]
         
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
+            print("💡 Sending test API request with tools")
             
             let (data, response) = try await URLSession.shared.data(for: request)
             
             if let httpResponse = response as? HTTPURLResponse {
+                print("💡 API Test Status: \(httpResponse.statusCode)")
+                
                 if httpResponse.statusCode == 200 {
-                    testResult = "✅ API key is valid!"
+                    // Try to decode the response to check for tool errors
+                    if let responseString = String(data: data, encoding: .utf8) {
+                        print("💡 API Test Response: \(responseString)")
+                        
+                        // Check if there's any indication of tool errors
+                        if responseString.contains("tool") {
+                            testResult = "✅ API key is valid with tools support!"
+                        } else {
+                            testResult = "✅ API key is valid, but tools support is unclear"
+                        }
+                    } else {
+                        testResult = "✅ API key is valid!"
+                    }
                 } else {
                     // Try to extract error message
                     if let responseString = String(data: data, encoding: .utf8) {
-                        print("API Error Response: \(responseString)")
+                        print("💡 API Test Error: \(responseString)")
                         
                         if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                            let error = errorJson["error"] as? [String: Any],
                            let message = error["message"] as? String {
                             testResult = "❌ Error: \(message)"
+                            
+                            // Check for specific errors related to tools
+                            if message.contains("tool") {
+                                testResult = "❌ Error with tools: \(message)"
+                            }
                         } else {
                             testResult = "❌ Error: Status code \(httpResponse.statusCode)"
                         }
@@ -75,6 +109,7 @@ struct SettingsView: View {
                 }
             }
         } catch {
+            print("💡 API Test Exception: \(error)")
             testResult = "❌ Error: \(error.localizedDescription)"
         }
         
