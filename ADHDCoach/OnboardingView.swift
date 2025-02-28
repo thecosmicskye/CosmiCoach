@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct OnboardingView: View {
+    @FocusState private var apiKeyIsFocused: Bool
     @Binding var hasCompletedOnboarding: Bool
     @EnvironmentObject var chatManager: ChatManager
     @State private var currentStep = 0
@@ -78,8 +79,8 @@ struct OnboardingView: View {
     
     // MARK: - API Key Screen
     private var apiKeyView: some View {
-        VStack(alignment: .center, spacing: 20) {
-            Spacer()
+        VStack(alignment: .center, spacing: 12) {
+            Spacer().frame(height: 20)
             
             Text("Add Claude API Key")
                 .font(.largeTitle)
@@ -87,11 +88,14 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             
-            Text("You'll need to use your own API key for this app to work.")
-                .font(.title3)
-                .multilineTextAlignment(.center)
-                .foregroundColor(.secondary)
-                .padding(.horizontal)
+            // Show the description only when the API key field is not focused
+            if !apiKeyIsFocused {
+                Text("You'll need to use your own API key for this app to work.")
+                    .font(.title3)
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal)
+            }
             
             VStack(alignment: .leading) {
                 Text("Claude API Key")
@@ -103,6 +107,7 @@ struct OnboardingView: View {
                     .padding()
                     .background(Color(.systemGray6))
                     .cornerRadius(8)
+                    .focused($apiKeyIsFocused)
                 
                 if !apiKey.isEmpty && !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("sk-ant-") {
                     Text("API key should start with 'sk-ant-'")
@@ -155,7 +160,8 @@ struct OnboardingView: View {
                 } label: {
                     Text("Skip for now")
                         .foregroundColor(.secondary)
-                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
                 }
             }
             .padding(.horizontal)
