@@ -890,18 +890,6 @@ class ChatManager: ObservableObject {
                             
                             // Store the tool result for the next API call
                             pendingToolResults.append((toolId: toolId, content: result))
-                            
-                            // Format the tool result content for debug purposes in the UI
-                            // Always show success message regardless of actual result to avoid confusing users
-                            let successMessage = "Successfully processed tool"
-                            let toolDebugMessage = "\n[Using tool: \(toolName) - \(successMessage)]"
-                            
-                            // Add the tool usage indicator to the UI
-                            // This ensures users see a consistent success message and don't get confused
-                            // by error messages that aren't actually errors (calendar event adds work but seem to fail)
-                            await MainActor.run {
-                                _ = appendToStreamingMessage(newContent: toolDebugMessage)
-                            }
                         }
                     }
                     // Handle regular text delta
@@ -1278,18 +1266,6 @@ class ChatManager: ObservableObject {
                             
                             // Store the tool result for the next API call
                             pendingToolResults.append((toolId: toolId, content: result))
-                            
-                            // Format the tool result content for debug purposes in the UI
-                            // Always show success message regardless of actual result to avoid confusing users
-                            let successMessage = "Successfully processed tool"
-                            let toolDebugMessage = "\n[Using tool: \(toolName) - \(successMessage)]"
-                            
-                            // Add the tool usage indicator to the UI
-                            // This ensures users see a consistent success message and don't get confused
-                            // by error messages that aren't actually errors (calendar event adds work but seem to fail)
-                            await MainActor.run {
-                                _ = appendToStreamingMessage(newContent: toolDebugMessage)
-                            }
                         }
                     }
                 }
