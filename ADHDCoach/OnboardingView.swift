@@ -67,7 +67,7 @@ struct OnboardingView: View {
             } label: {
                 Text("Continue")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(Color.accentColor)
@@ -140,7 +140,7 @@ struct OnboardingView: View {
                 } label: {
                     Text(isTestingKey ? "Testing..." : "Continue")
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(Color.accentColor)
