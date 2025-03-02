@@ -262,9 +262,6 @@ class ChatAPIService {
                 return
             }
             
-            // Track the full response for post-processing
-            var fullResponse = ""
-            
             // Process the streaming response
             for try await line in asyncBytes.lines {
                 // Skip empty lines
@@ -405,8 +402,9 @@ class ChatAPIService {
                         // and get back the full accumulated content
                         let updatedContent = updateStreamingMessage(textContent)
                         
-                        // Keep track of the full response for post-processing
-                        fullResponse = updatedContent
+                        // We still need to use the result of the updateStreamingMessage callback
+                        // even though we're not tracking the full response anymore
+                        let _ = updatedContent
                     }
                 }
             }
