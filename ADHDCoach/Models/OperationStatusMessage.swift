@@ -34,7 +34,7 @@ struct OperationStatusMessage: Identifiable, Codable {
         case .inProgress:
             return "\(operationType)..."
         case .success:
-            return "\(operationType) Succeeded"
+            return "\(operationType)"
         case .failure:
             return "\(operationType) Failed\(details != nil ? ": \(details!)" : "")"
         }
