@@ -267,13 +267,6 @@ struct ContentView: View {
                 }
             }
         }
-        .gesture(
-            TapGesture()
-                .onEnded { _ in
-                    // Dismiss keyboard when tapping anywhere on screen
-                    isInputFocused = false
-                }
-        )
     }
     
     private func sendMessage() {
