@@ -740,6 +740,22 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         return await apiService.testAPIKey(key)
     }
     
+    /**
+     * Gets a performance report for the prompt caching system.
+     *
+     * @return A string containing cache performance metrics
+     */
+    func getCachePerformanceReport() -> String {
+        return CachePerformanceTracker.shared.getPerformanceReport()
+    }
+    
+    /**
+     * Resets all cache performance metrics to zero.
+     */
+    func resetCachePerformanceMetrics() {
+        CachePerformanceTracker.shared.reset()
+    }
+    
     // MARK: - Tool Processing
     
     /**

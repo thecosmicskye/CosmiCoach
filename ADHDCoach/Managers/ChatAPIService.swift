@@ -34,6 +34,11 @@ class ChatAPIService {
     /// The URL endpoint for Claude's streaming API
     private let streamingURL = URL(string: "https://api.anthropic.com/v1/messages")!
     
+    /// Cache performance tracking
+    private var cacheCreationTokens = 0
+    private var cacheReadTokens = 0
+    private var inputTokens = 0
+    
     /// System prompt that defines Claude's role
     private(set) var systemPrompt = """
     You are an empathic ADHD coach assistant that helps the user manage their tasks, calendar, and daily life. Your goal is to help them overcome overwhelm and make decisions about what to focus on.
@@ -227,14 +232,11 @@ class ChatAPIService {
         }
         
         // Create the request body with system as a top-level parameter and tools
-        let requestBody: [String: Any] = [
-            "model": "claude-3-7-sonnet-20250219",
-            "max_tokens": 4000,
-            "system": systemPrompt,
-            "tools": toolDefinitions,
-            "stream": true,
-            "messages": messages
-        ]
+        let requestBody = buildRequestBodyWithCaching(
+            systemPrompt: systemPrompt,
+            toolDefinitions: toolDefinitions,
+            messages: messages
+        )
         
         print("💡 REQUEST CONTAINS \(toolDefinitions.count) TOOLS")
         for tool in toolDefinitions {
@@ -317,6 +319,47 @@ class ChatAPIService {
                 // Parse the JSON
                 if let data = jsonStr.data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    
+                    // Track cache performance metrics
+                    if json["type"] as? String == "message_start",
+                       let message = json["message"] as? [String: Any],
+                       let usage = message["usage"] as? [String: Any] {
+                        
+                        if let creationTokens = usage["cache_creation_input_tokens"] as? Int {
+                            cacheCreationTokens = creationTokens
+                            print("🧠 Cache creation tokens: \(cacheCreationTokens)")
+                        }
+                        
+                        if let readTokens = usage["cache_read_input_tokens"] as? Int {
+                            cacheReadTokens = readTokens
+                            print("🧠 Cache read tokens: \(cacheReadTokens)")
+                        }
+                        
+                        if let tokens = usage["input_tokens"] as? Int {
+                            inputTokens = tokens
+                            print("🧠 Input tokens: \(inputTokens)")
+                        }
+                        
+                        // Log cache performance summary
+                        let totalTokens = cacheCreationTokens + cacheReadTokens + inputTokens
+                        print("🧠 CACHE PERFORMANCE SUMMARY:")
+                        print("🧠 - Cache creation tokens: \(cacheCreationTokens)")
+                        print("🧠 - Cache read tokens: \(cacheReadTokens)")
+                        print("🧠 - Regular input tokens: \(inputTokens)")
+                        print("🧠 - Total tokens processed: \(totalTokens)")
+                        
+                        if cacheReadTokens > 0 {
+                            let savingsPercent = Double(cacheReadTokens) / Double(totalTokens) * 100.0
+                            print("🧠 - Cache hit detected! Approximately \(String(format: "%.1f", savingsPercent))% of tokens were read from cache")
+                        }
+                        
+                        // Record metrics in the performance tracker
+                        CachePerformanceTracker.shared.recordRequest(
+                            cacheCreationTokens: cacheCreationTokens,
+                            cacheReadTokens: cacheReadTokens,
+                            inputTokens: inputTokens
+                        )
+                    }
                     
                     // Check if this is a start of content block (could be text or tool)
                     if json["type"] as? String == "content_block_start" {
@@ -629,6 +672,76 @@ class ChatAPIService {
     private var lastLocationContext: String = ""
     private var lastConversationHistory: String = ""
     
+    /**
+     * Builds a request body with prompt caching enabled.
+     *
+     * This method creates a request body with cache_control parameters
+     * to enable prompt caching for system prompt and tool definitions.
+     *
+     * @param systemPrompt The system prompt to include in the request
+     * @param toolDefinitions Array of tool definitions that Claude can use
+     * @param messages Array of messages to include in the request
+     * @return A dictionary containing the request body with caching enabled
+     */
+    /**
+     * Builds a request body with prompt caching enabled.
+     *
+     * This method creates a request body with cache_control parameters
+     * to enable prompt caching for system prompt and tool definitions.
+     * It follows Anthropic's documentation for proper cache_control placement.
+     *
+     * @param systemPrompt The system prompt to include in the request
+     * @param toolDefinitions Array of tool definitions that Claude can use
+     * @param messages Array of messages to include in the request
+     * @return A dictionary containing the request body with caching enabled
+     */
+    private func buildRequestBodyWithCaching(
+        systemPrompt: String,
+        toolDefinitions: [[String: Any]],
+        messages: [[String: Any]]
+    ) -> [String: Any] {
+        // Add cache control to tool definitions
+        var cachedToolDefinitions = toolDefinitions
+        if !cachedToolDefinitions.isEmpty {
+            // Add cache_control to the last tool definition
+            var lastTool = cachedToolDefinitions[cachedToolDefinitions.count - 1]
+            lastTool["cache_control"] = ["type": "ephemeral"]
+            cachedToolDefinitions[cachedToolDefinitions.count - 1] = lastTool
+        }
+        
+        // Add cache control to context message if it exists and is the first message
+        var cachedMessages = messages
+        if !cachedMessages.isEmpty {
+            // Check if the first message is a context message from the user
+            if var firstMessage = cachedMessages.first as? [String: Any],
+               let role = firstMessage["role"] as? String, role == "user",
+               var content = firstMessage["content"] as? [[String: Any]],
+               !content.isEmpty {
+                
+                // Add cache_control to the last content block of the first message
+                if var lastContentBlock = content.last {
+                    lastContentBlock["cache_control"] = ["type": "ephemeral"]
+                    content[content.count - 1] = lastContentBlock
+                    firstMessage["content"] = content
+                    cachedMessages[0] = firstMessage
+                    
+                    print("🧠 Added cache_control to context message")
+                }
+            }
+        }
+        
+        // Create the request body with caching enabled
+        // Note: system should be a string, not an array of objects
+        return [
+            "model": "claude-3-7-sonnet-20250219",
+            "max_tokens": 4000,
+            "system": systemPrompt,
+            "tools": cachedToolDefinitions,
+            "stream": true,
+            "messages": cachedMessages
+        ]
+    }
+    
     private func sendFollowUpRequestWithToolResults(
         toolDefinitions: [[String: Any]],
         updateStreamingMessage: @escaping (String) -> String,
@@ -751,14 +864,11 @@ class ChatAPIService {
         var messages = completeConversationHistory
         
         // Create the request body with system as a top-level parameter and tools
-        let requestBody: [String: Any] = [
-            "model": "claude-3-7-sonnet-20250219",
-            "max_tokens": 4000,
-            "system": systemPrompt,
-            "tools": toolDefinitions,
-            "stream": true,
-            "messages": messages
-        ]
+        let requestBody = buildRequestBodyWithCaching(
+            systemPrompt: systemPrompt,
+            toolDefinitions: toolDefinitions,
+            messages: messages
+        )
         
         // Create the request
         var request = URLRequest(url: streamingURL)
@@ -834,6 +944,47 @@ class ChatAPIService {
                 // Parse the JSON
                 if let data = jsonStr.data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    
+                    // Track cache performance metrics
+                    if json["type"] as? String == "message_start",
+                       let message = json["message"] as? [String: Any],
+                       let usage = message["usage"] as? [String: Any] {
+                        
+                        if let creationTokens = usage["cache_creation_input_tokens"] as? Int {
+                            cacheCreationTokens = creationTokens
+                            print("🧠 FOLLOW-UP Cache creation tokens: \(cacheCreationTokens)")
+                        }
+                        
+                        if let readTokens = usage["cache_read_input_tokens"] as? Int {
+                            cacheReadTokens = readTokens
+                            print("🧠 FOLLOW-UP Cache read tokens: \(cacheReadTokens)")
+                        }
+                        
+                        if let tokens = usage["input_tokens"] as? Int {
+                            inputTokens = tokens
+                            print("🧠 FOLLOW-UP Input tokens: \(inputTokens)")
+                        }
+                        
+                        // Log cache performance summary
+                        let totalTokens = cacheCreationTokens + cacheReadTokens + inputTokens
+                        print("🧠 FOLLOW-UP CACHE PERFORMANCE SUMMARY:")
+                        print("🧠 - Cache creation tokens: \(cacheCreationTokens)")
+                        print("🧠 - Cache read tokens: \(cacheReadTokens)")
+                        print("🧠 - Regular input tokens: \(inputTokens)")
+                        print("🧠 - Total tokens processed: \(totalTokens)")
+                        
+                        if cacheReadTokens > 0 {
+                            let savingsPercent = Double(cacheReadTokens) / Double(totalTokens) * 100.0
+                            print("🧠 - Cache hit detected! Approximately \(String(format: "%.1f", savingsPercent))% of tokens were read from cache")
+                        }
+                        
+                        // Record metrics in the performance tracker
+                        CachePerformanceTracker.shared.recordRequest(
+                            cacheCreationTokens: cacheCreationTokens,
+                            cacheReadTokens: cacheReadTokens,
+                            inputTokens: inputTokens
+                        )
+                    }
                     
                     // Check if this is a start of content block (could be text or tool)
                     if json["type"] as? String == "content_block_start" {
