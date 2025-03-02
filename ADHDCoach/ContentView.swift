@@ -62,91 +62,98 @@ struct ContentView: View {
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Chat messages list
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        if chatManager.messages.isEmpty {
-                            // Empty state with a centered welcome message
-                            VStack {
-                                Spacer()
-                                Text("Welcome to Cosmic Coach")
-                                    .font(.headline)
-                                    .foregroundColor(.secondary)
-                                Text("Type a message to get started")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                            }
-                            .frame(maxHeight: .infinity)
-                        } else {
-                            LazyVStack(spacing: 12) {
-                                ForEach(chatManager.messages) { message in
-                                    VStack(spacing: 4) {
-                                        MessageBubbleView(message: message)
-                                            .padding(.horizontal)
-                                        
-                                        // If this is the message that triggered an operation,
-                                        // display the operation status message right after it
-                                        if !message.isUser && message.isComplete {
-                                            // Use the helper method to get status messages for this message
-                                            ForEach(chatManager.statusMessagesForMessage(message)) { statusMessage in
-                                                OperationStatusView(statusMessage: statusMessage)
-                                                    .padding(.horizontal)
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    // Chat messages list
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            if chatManager.messages.isEmpty {
+                                // Empty state with a centered welcome message
+                                VStack {
+                                    Spacer()
+                                    Text("Welcome to Cosmic Coach")
+                                        .font(.headline)
+                                        .foregroundColor(.secondary)
+                                    Text("Type a message to get started")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                }
+                                .frame(maxHeight: .infinity)
+                            } else {
+                                LazyVStack(spacing: 12) {
+                                    ForEach(chatManager.messages) { message in
+                                        VStack(spacing: 4) {
+                                            MessageBubbleView(message: message)
+                                                .padding(.horizontal)
+                                            
+                                            // If this is the message that triggered an operation,
+                                            // display the operation status message right after it
+                                            if !message.isUser && message.isComplete {
+                                                // Use the helper method to get status messages for this message
+                                                ForEach(chatManager.statusMessagesForMessage(message)) { statusMessage in
+                                                    OperationStatusView(statusMessage: statusMessage)
+                                                        .padding(.horizontal)
+                                                }
                                             }
                                         }
                                     }
+                                    
+                                    // Invisible spacer view at the end for scrolling
+                                    Color.clear
+                                        .frame(height: 1)
+                                        .id("bottomID")
                                 }
-                                
-                                // Invisible spacer view at the end for scrolling
-                                Color.clear
-                                    .frame(height: 1)
-                                    .id("bottomID")
+                                .padding(.vertical, 8)
                             }
-                            .padding(.vertical, 8)
                         }
-                    }
-                    .scrollDismissesKeyboard(.interactively)
-                    .onChange(of: chatManager.messages.count) { _, _ in
-                        scrollToBottom(proxy: proxy)
-                    }
-                    .onChange(of: chatManager.streamingUpdateCount) { _, _ in
-                        scrollToBottom(proxy: proxy)
-                    }
-                    .onChange(of: scrollToBottom) { _, newValue in
-                        if newValue {
+                        .scrollDismissesKeyboard(.interactively)
+                        .onChange(of: chatManager.messages.count) { _, _ in
                             scrollToBottom(proxy: proxy)
-                            scrollToBottom = false
                         }
-                    }
-                    .onAppear {
-                        // Scroll to bottom on first appear
-                        scrollToBottom(proxy: proxy)
-                    }
-                }
-            
-                // Input area
-                HStack {
-                    TextField("Message", text: $messageText)
-                        .padding(10)
-                        .background(Color(.systemGray6))
-                        .cornerRadius(20)
-                        .focused($isInputFocused)
-                        .onChange(of: isInputFocused) { _, isFocused in
-                            if isFocused {
-                                // When keyboard appears due to focus, scroll to bottom
-                                scrollToBottom = true
+                        .onChange(of: chatManager.streamingUpdateCount) { _, _ in
+                            scrollToBottom(proxy: proxy)
+                        }
+                        .onChange(of: scrollToBottom) { _, newValue in
+                            if newValue {
+                                scrollToBottom(proxy: proxy)
+                                scrollToBottom = false
                             }
                         }
-                    
-                    Button(action: sendMessage) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 30))
-                            .foregroundColor(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing ? Color.gray.opacity(0.5) : themeManager.accentColor(for: colorScheme))
+                        .onAppear {
+                            // Scroll to bottom on first appear
+                            scrollToBottom(proxy: proxy)
+                        }
                     }
-                    .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        // Dismiss keyboard when tapping on the scroll view area
+                        isInputFocused = false
+                    }
+                
+                    // Input area
+                    HStack {
+                        TextField("Message", text: $messageText)
+                            .padding(10)
+                            .background(Color(.systemGray6))
+                            .cornerRadius(20)
+                            .focused($isInputFocused)
+                            .onChange(of: isInputFocused) { _, isFocused in
+                                if isFocused {
+                                    // When keyboard appears due to focus, scroll to bottom
+                                    scrollToBottom = true
+                                }
+                            }
+                        
+                        Button(action: sendMessage) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 30))
+                                .foregroundColor(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing ? Color.gray.opacity(0.5) : themeManager.accentColor(for: colorScheme))
+                        }
+                        .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing)
+                    }
+                    .padding()
                 }
-                .padding()
             }
             .navigationTitle("Cosmic Coach")
             .navigationBarTitleDisplayMode(.inline)
@@ -260,6 +267,13 @@ struct ContentView: View {
                 }
             }
         }
+        .gesture(
+            TapGesture()
+                .onEnded { _ in
+                    // Dismiss keyboard when tapping anywhere on screen
+                    isInputFocused = false
+                }
+        )
     }
     
     private func sendMessage() {
