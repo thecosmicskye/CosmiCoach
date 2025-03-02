@@ -146,10 +146,15 @@ class MemoryManager: ObservableObject {
     }
     
     func addMemory(content: String, category: MemoryCategory, importance: Int = 3) async throws {
+        print("📝 Attempting to add memory: \"\(content)\" with category: \(category.rawValue), importance: \(importance)")
+        
         // Check if content seems to be a calendar event or reminder
-        if isCalendarOrReminderItem(content: content) {
-            print("Skipping memory addition: Content appears to be a calendar event or reminder")
-            return
+        let (isRestricted, restrictedTerm) = isCalendarOrReminderItem(content: content)
+        if isRestricted {
+            print("📝 ERROR: Memory addition rejected - Content appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\"")
+            throw NSError(domain: "MemoryManager", code: 3, userInfo: [
+                NSLocalizedDescriptionKey: "Memory content appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\". Please use the appropriate tools instead."
+            ])
         }
         
         let newMemory = MemoryItem(content: content, category: category, importance: importance)
@@ -157,18 +162,25 @@ class MemoryManager: ObservableObject {
         await MainActor.run {
             memories.append(newMemory)
             self.memoryContent = formatMemoriesForClaude()
+            print("📝 Memory successfully added with ID: \(newMemory.id)")
         }
         
         try await saveMemories()
+        print("📝 Memory saved to persistent storage")
     }
     
     // Function to detect if content is likely a calendar event or reminder
     // Made public so it can be used by the tool processing logic
-    func isCalendarOrReminderItem(content: String) -> Bool {
+    // Returns a tuple: (isRestricted, restrictedTerm)
+    func isCalendarOrReminderItem(content: String) -> (Bool, String) {
+        print("🔍 Checking if content is calendar/reminder: \"\(content)\"")
+        
         // Common keywords that might indicate a calendar event or reminder
-        let calendarKeywords = ["appointment", "meeting", "schedule", "event", "call", "at ", "pm", "am", "starts at", "ends at", 
+        let calendarKeywords = ["appointment", "meeting", "schedule", "event", "starts at", "ends at", 
                                "on Monday", "on Tuesday", "on Wednesday", "on Thursday", "on Friday", "on Saturday", "on Sunday"]
-        let reminderKeywords = ["reminder", "don't forget to", "remember to", "need to", "must", "should", "to-do", "todo", "task", "due"]
+        let reminderKeywords = ["reminder", "don't forget to", "remember to", "to-do", "todo", "task", "due"]
+        
+        // Define date/time patterns
         let dateTimePatterns = ["\\d{1,2}:\\d{2}", "\\d{1,2}(am|pm)", "\\d{1,2} (am|pm)", "Jan\\w* \\d{1,2}", "Feb\\w* \\d{1,2}", 
                               "Mar\\w* \\d{1,2}", "Apr\\w* \\d{1,2}", "May \\d{1,2}", "Jun\\w* \\d{1,2}", "Jul\\w* \\d{1,2}", 
                               "Aug\\w* \\d{1,2}", "Sep\\w* \\d{1,2}", "Oct\\w* \\d{1,2}", "Nov\\w* \\d{1,2}", "Dec\\w* \\d{1,2}"]
@@ -176,14 +188,16 @@ class MemoryManager: ObservableObject {
         // Check for calendar keywords
         for keyword in calendarKeywords {
             if content.lowercased().contains(keyword.lowercased()) {
-                return true
+                print("🔍 Calendar keyword detected: \"\(keyword)\" in content")
+                return (true, keyword)
             }
         }
         
         // Check for reminder keywords
         for keyword in reminderKeywords {
             if content.lowercased().contains(keyword.lowercased()) {
-                return true
+                print("🔍 Reminder keyword detected: \"\(keyword)\" in content")
+                return (true, keyword)
             }
         }
         
@@ -191,18 +205,37 @@ class MemoryManager: ObservableObject {
         for pattern in dateTimePatterns {
             if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
                 let range = NSRange(content.startIndex..., in: content)
-                if regex.firstMatch(in: content, options: [], range: range) != nil {
-                    return true
+                if let match = regex.firstMatch(in: content, options: [], range: range) {
+                    let matchRange = match.range
+                    if let range = Range(matchRange, in: content) {
+                        let matchedText = String(content[range])
+                        print("🔍 Date/time pattern detected: \"\(matchedText)\" (pattern: \(pattern)) in content")
+                        return (true, matchedText)
+                    } else {
+                        print("🔍 Date/time pattern detected: pattern \"\(pattern)\" in content")
+                        return (true, pattern)
+                    }
                 }
             }
         }
         
-        return false
+        print("🔍 No calendar/reminder patterns detected in content")
+        return (false, "")
     }
     
     func updateMemory(id: UUID, newContent: String? = nil, newCategory: MemoryCategory? = nil, newImportance: Int? = nil) async throws {
         guard let index = await MainActor.run(body: { memories.firstIndex(where: { $0.id == id }) }) else {
             throw NSError(domain: "MemoryManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "Memory not found"])
+        }
+        
+        // If new content is provided, check if it's a calendar event or reminder
+        if let newContent = newContent {
+            let (isRestricted, restrictedTerm) = isCalendarOrReminderItem(content: newContent)
+            if isRestricted {
+                throw NSError(domain: "MemoryManager", code: 3, userInfo: [
+                    NSLocalizedDescriptionKey: "Memory content appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\". Please use the appropriate tools instead."
+                ])
+            }
         }
         
         await MainActor.run {
@@ -342,8 +375,9 @@ class MemoryManager: ObservableObject {
                 let content = String(line.dropFirst())
                 
                 // Skip if content is likely a calendar event or reminder
-                if isCalendarOrReminderItem(content: content) {
-                    print("Skipping memory addition: Content appears to be a calendar event or reminder: \(content)")
+                let (isRestricted, restrictedTerm) = isCalendarOrReminderItem(content: content)
+                if isRestricted {
+                    print("Skipping memory addition: Content appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\"")
                     continue
                 }
                 
@@ -405,8 +439,9 @@ class MemoryManager: ObservableObject {
                         let command = try decoder.decode(MemoryAddCommand.self, from: jsonString.data(using: .utf8)!)
                         
                         // Skip if content is likely a calendar event or reminder
-                        if isCalendarOrReminderItem(content: command.content) {
-                            print("Skipping memory instruction: Content appears to be a calendar event or reminder: \(command.content)")
+                        let (isRestricted, restrictedTerm) = isCalendarOrReminderItem(content: command.content)
+                        if isRestricted {
+                            print("Skipping memory instruction: Content appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\"")
                             continue
                         }
                         
@@ -460,8 +495,9 @@ class MemoryManager: ObservableObject {
                 let content = String(instructions[Range(match.range(at: 1), in: instructions)!])
                 
                 // Skip if content is likely a calendar event or reminder
-                if isCalendarOrReminderItem(content: content) {
-                    print("Skipping legacy memory instruction: Content appears to be a calendar event or reminder: \(content)")
+                let (isRestricted, restrictedTerm) = isCalendarOrReminderItem(content: content)
+                if isRestricted {
+                    print("Skipping legacy memory instruction: Content appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\"")
                     continue
                 }
                 
