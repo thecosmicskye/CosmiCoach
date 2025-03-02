@@ -4,6 +4,8 @@ struct OnboardingView: View {
     @FocusState private var apiKeyIsFocused: Bool
     @Binding var hasCompletedOnboarding: Bool
     @EnvironmentObject var chatManager: ChatManager
+    @EnvironmentObject var themeManager: ThemeManager
+    @Environment(\.colorScheme) private var colorScheme
     @State private var currentStep = 0
     @State private var apiKey = ""
     @State private var isTestingKey = false
@@ -17,7 +19,7 @@ struct OnboardingView: View {
                 HStack(spacing: 8) {
                     ForEach(0..<2) { step in
                         Circle()
-                            .fill(currentStep == step ? Color.accentColor : Color.gray.opacity(0.3))
+                            .fill(currentStep == step ? themeManager.accentColor(for: colorScheme) : Color.gray.opacity(0.3))
                             .frame(width: 8, height: 8)
                     }
                 }
@@ -31,6 +33,9 @@ struct OnboardingView: View {
             }
             .padding()
             .animation(.spring(), value: currentStep)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(colorScheme)
+            .applyThemeColor(themeManager: themeManager)
         }
     }
     
@@ -70,7 +75,7 @@ struct OnboardingView: View {
                     .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(Color.accentColor)
+                    .background(themeManager.accentColor(for: colorScheme))
                     .cornerRadius(14)
             }
             .padding(.horizontal)
@@ -125,6 +130,7 @@ struct OnboardingView: View {
                 Link("Get a Claude API key", destination: URL(string: "https://console.anthropic.com/")!)
                     .font(.caption)
                     .padding(.top, 4)
+                    .foregroundColor(themeManager.accentColor(for: colorScheme))
             }
             .padding()
             
@@ -143,7 +149,7 @@ struct OnboardingView: View {
                         .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
                         .padding()
-                        .background(Color.accentColor)
+                        .background(themeManager.accentColor(for: colorScheme))
                         .cornerRadius(14)
                 }
                 .disabled(isTestingKey)
@@ -159,7 +165,7 @@ struct OnboardingView: View {
                     completeOnboarding()
                 } label: {
                     Text("Skip for now")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(themeManager.accentColor(for: colorScheme))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                 }
@@ -211,4 +217,5 @@ extension String {
 #Preview {
     OnboardingView(hasCompletedOnboarding: .constant(false))
         .environmentObject(ChatManager())
+        .environmentObject(ThemeManager())
 }

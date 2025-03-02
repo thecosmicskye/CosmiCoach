@@ -6,11 +6,13 @@ struct ADHDCoachApp: App {
     @StateObject private var eventKitManager = EventKitManager()
     @StateObject private var memoryManager = MemoryManager()
     @StateObject private var locationManager = LocationManager()
+    @StateObject private var themeManager = ThemeManager()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("enable_location_awareness") private var enableLocationAwareness = false
     
     // Track when the app enters background to update session time
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
     
     init() {
         print("⏱️ ADHDCoachApp initializing at \(Date())")
@@ -23,6 +25,12 @@ struct ADHDCoachApp: App {
         } else {
             print("⏱️ ADHDCoachApp init - No previous session time found in UserDefaults")
         }
+        
+        // Ensure the default theme is set if no theme is saved
+        if UserDefaults.standard.string(forKey: "selected_theme_id") == nil {
+            UserDefaults.standard.set("pink", forKey: "selected_theme_id")
+            UserDefaults.standard.synchronize()
+        }
     }
     
     var body: some Scene {
@@ -33,7 +41,11 @@ struct ADHDCoachApp: App {
                     .environmentObject(eventKitManager)
                     .environmentObject(memoryManager)
                     .environmentObject(locationManager)
+                    .environmentObject(themeManager)
                     .onAppear {
+                        // Force update the theme when the app appears
+                        themeManager.setTheme(themeManager.currentTheme)
+                        
                         // Request permissions when app launches
                         eventKitManager.requestAccess()
                         
@@ -57,10 +69,23 @@ struct ADHDCoachApp: App {
                             print("⏱️ ADHDCoachApp.body.onAppear - No previous session time found in UserDefaults")
                         }
                     }
+                    .onChange(of: colorScheme) { _, _ in
+                        // Update the global accent color when the color scheme changes
+                        themeManager.setTheme(themeManager.currentTheme)
+                    }
             } else {
                 OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
                     .environmentObject(chatManager)
                     .environmentObject(locationManager)
+                    .environmentObject(themeManager)
+                    .onAppear {
+                        // Force update the theme when the app appears
+                        themeManager.setTheme(themeManager.currentTheme)
+                    }
+                    .onChange(of: colorScheme) { _, _ in
+                        // Update the global accent color when the color scheme changes
+                        themeManager.setTheme(themeManager.currentTheme)
+                    }
             }
         }
         .onChange(of: scenePhase) { oldPhase, newPhase in
@@ -76,6 +101,10 @@ struct ADHDCoachApp: App {
                 print("⏱️ App entered background - updated session timestamp: \(timeDate)")
             } else if newPhase == .active {
                 print("⏱️ App becoming active")
+                
+                // Force update the theme when the app becomes active
+                themeManager.setTheme(themeManager.currentTheme)
+                
                 // Check if we have a last session time
                 if let lastSessionTime = UserDefaults.standard.object(forKey: "last_app_session_time") as? TimeInterval {
                     let lastTime = Date(timeIntervalSince1970: lastSessionTime)

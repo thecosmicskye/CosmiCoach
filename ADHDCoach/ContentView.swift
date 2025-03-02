@@ -6,6 +6,8 @@ struct ContentView: View {
     @EnvironmentObject private var chatManager: ChatManager
     @EnvironmentObject private var eventKitManager: EventKitManager
     @EnvironmentObject private var memoryManager: MemoryManager
+    @EnvironmentObject private var themeManager: ThemeManager
+    @Environment(\.colorScheme) private var colorScheme
     @State private var messageText = ""
     @FocusState private var isInputFocused: Bool
     @State private var showingSettings = false
@@ -140,13 +142,16 @@ struct ContentView: View {
                     Button(action: sendMessage) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 30))
-                            .foregroundColor(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing ? Color.gray.opacity(0.5) : Color("AccentColor"))
+                            .foregroundColor(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing ? Color.gray.opacity(0.5) : themeManager.accentColor(for: colorScheme))
                     }
                     .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing)
                 }
                 .padding()
             }
             .navigationTitle("Cosmic Coach")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(colorScheme)
+            .tint(themeManager.accentColor(for: colorScheme))
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
@@ -154,12 +159,14 @@ struct ContentView: View {
                     }) {
                         Image(systemName: "gear")
                             .font(.system(size: 22))
+                            .foregroundColor(themeManager.accentColor(for: colorScheme))
                     }
                 }
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
             }
+            .applyThemeColor(themeManager: themeManager)
             .onAppear {
                 print("⏱️ ContentView.onAppear - START")
                 // Connect the memory manager to the chat manager
@@ -290,4 +297,5 @@ struct ContentView: View {
         .environmentObject(ChatManager())
         .environmentObject(EventKitManager())
         .environmentObject(MemoryManager())
+        .environmentObject(ThemeManager())
 }

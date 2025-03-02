@@ -28,6 +28,12 @@
 		2AD2B60B2D6EFDFA00782E3F /* ChatMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FD2D6EFDDA00782E3F /* ChatMessageTests.swift */; };
 		2AD2B60D2D6EFDFA00782E3F /* EventKitManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FE2D6EFDDA00782E3F /* EventKitManagerTests.swift */; };
 		2AF38BCC2D6EE8C600756FD8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */; };
+		E4C961F42D73F9500012035F /* ThemeColorModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A372A2A2A372A2A2A39 /* ThemeColorModifier.swift */; };
+		E4C961F52D73F9600012035F /* ThemePreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A382A2A2A382A2A2A40 /* ThemePreviewView.swift */; };
+		E4C961F62D73F9600012035F /* ThemeSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */; };
+		E4C961F72D73F9600012035F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A342A2A2A342A2A2A36 /* Theme.swift */; };
+		E4C961F82D73F9600012035F /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A352A2A2A352A2A2A37 /* ThemeManager.swift */; };
+		E4C961F92D73F9600012035F /* Color+Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A362A2A2A362A2A2A38 /* Color+Theme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -55,7 +61,13 @@
 		2A2A2A322A2A2A322A2A2A32 /* EventKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventKitManager.swift; sourceTree = "<group>"; };
 		2A2A2A332A2A2A332A2A2A33 /* MemoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryManager.swift; sourceTree = "<group>"; };
 		2A2A2A342A2A2A342A2A2A34 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		2A2A2A342A2A2A342A2A2A36 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		2A2A2A352A2A2A352A2A2A35 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		2A2A2A352A2A2A352A2A2A37 /* ThemeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeManager.swift; sourceTree = "<group>"; };
+		2A2A2A362A2A2A362A2A2A38 /* Color+Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Theme.swift"; sourceTree = "<group>"; };
+		2A2A2A372A2A2A372A2A2A39 /* ThemeColorModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeColorModifier.swift; sourceTree = "<group>"; };
+		2A2A2A382A2A2A382A2A2A40 /* ThemePreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemePreviewView.swift; sourceTree = "<group>"; };
+		2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSelectionView.swift; sourceTree = "<group>"; };
 		2A771BA82D725173000B70E6 /* CommandModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandModels.swift; sourceTree = "<group>"; };
 		2A7B3FFF2D6EFCFC004CF1E4 /* ADHDCoachTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ADHDCoachTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2AD2B5FC2D6EFDDA00782E3F /* ChatManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatManagerTests.swift; sourceTree = "<group>"; };
@@ -116,8 +128,11 @@
 				2A2A2A2D2A2A2A2D2A2A2A2D /* SettingsView.swift */,
 				2A2A2A352A2A2A352A2A2A35 /* OnboardingView.swift */,
 				2A2A2A2D2A2A2A2D2A2A2A2F /* OperationStatusView.swift */,
+				2A2A2A382A2A2A382A2A2A40 /* ThemePreviewView.swift */,
+				2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */,
 				8A8A8A8A8A8A8A8A8A8A8A8A /* Models */,
 				9A9A9A9A9A9A9A9A9A9A9A9A /* Managers */,
+				AAAAAAAAAAAAAAAAAAAAAA1 /* Extensions */,
 				2A2A2A342A2A2A342A2A2A34 /* Info.plist */,
 			);
 			path = ADHDCoach;
@@ -140,6 +155,7 @@
 				2A2A2A302A2A2A302A2A2A30 /* ReminderItem.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2B /* OperationStatusMessage.swift */,
 				2A771BA82D725173000B70E6 /* CommandModels.swift */,
+				2A2A2A342A2A2A342A2A2A36 /* Theme.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -151,8 +167,18 @@
 				2A2A2A322A2A2A322A2A2A32 /* EventKitManager.swift */,
 				2A2A2A332A2A2A332A2A2A33 /* MemoryManager.swift */,
 				2A06F4912D711B770030A1AE /* LocationManager.swift */,
+				2A2A2A352A2A2A352A2A2A37 /* ThemeManager.swift */,
 			);
 			path = Managers;
+			sourceTree = "<group>";
+		};
+		AAAAAAAAAAAAAAAAAAAAAA1 /* Extensions */ = {
+			isa = PBXGroup;
+			children = (
+				2A2A2A362A2A2A362A2A2A38 /* Color+Theme.swift */,
+				2A2A2A372A2A2A372A2A2A39 /* ThemeColorModifier.swift */,
+			);
+			path = Extensions;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -268,6 +294,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E4C961F52D73F9600012035F /* ThemePreviewView.swift in Sources */,
+				E4C961F62D73F9600012035F /* ThemeSelectionView.swift in Sources */,
+				E4C961F72D73F9600012035F /* Theme.swift in Sources */,
+				E4C961F82D73F9600012035F /* ThemeManager.swift in Sources */,
+				E4C961F92D73F9600012035F /* Color+Theme.swift in Sources */,
+				E4C961F42D73F9500012035F /* ThemeColorModifier.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1A /* ADHDCoachApp.swift in Sources */,
 				2A771BA92D725173000B70E6 /* CommandModels.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1B /* OperationStatusMessage.swift in Sources */,

@@ -2,8 +2,10 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var memoryManager: MemoryManager
     @EnvironmentObject private var locationManager: LocationManager
+    @EnvironmentObject private var themeManager: ThemeManager
     @State private var apiKey = ""
     @AppStorage("check_basics_daily") private var checkBasicsDaily = true
     @AppStorage("token_limit") private var tokenLimit = 75000
@@ -154,6 +156,7 @@ struct SettingsView: View {
                             Text("Testing API Key...")
                         } else {
                             Text("Test API Key")
+                                .foregroundColor(themeManager.accentColor(for: colorScheme))
                         }
                     }
                     .disabled(apiKey.isEmpty || isTestingKey)
@@ -166,6 +169,7 @@ struct SettingsView: View {
                     
                     Link("Get a Claude API Key", destination: URL(string: "https://console.anthropic.com/")!)
                         .font(.caption)
+                        .foregroundColor(themeManager.accentColor(for: colorScheme))
                 }
                 
                 Section(header: Text("Coaching Preferences")) {
@@ -182,6 +186,7 @@ struct SettingsView: View {
                             showingMemoryViewer = true
                         }
                     }
+                    .foregroundColor(themeManager.accentColor(for: colorScheme))
                     .sheet(isPresented: $showingMemoryViewer) {
                         NavigationStack {
                             ScrollView {
@@ -190,11 +195,13 @@ struct SettingsView: View {
                                     .textSelection(.enabled)
                             }
                             .navigationTitle("Memory File")
+                            .applyThemeColor(themeManager: themeManager)
                             .toolbar {
                                 ToolbarItem(placement: .navigationBarTrailing) {
                                     Button("Done") {
                                         showingMemoryViewer = false
                                     }
+                                    .foregroundColor(themeManager.accentColor(for: colorScheme))
                                 }
                             }
                         }
@@ -283,6 +290,34 @@ struct SettingsView: View {
                     }
                 }
                 
+                Section(header: Text("Appearance")) {
+                    NavigationLink(destination: 
+                        ThemeSelectionView(themeManager: themeManager)
+                            .onAppear {
+                                // Force update the theme when the view appears
+                                themeManager.setTheme(themeManager.currentTheme)
+                            }
+                            .onChange(of: themeManager.currentTheme) { _, _ in
+                                // Update the theme when it changes
+                                themeManager.setTheme(themeManager.currentTheme)
+                            }
+                    ) {
+                        HStack {
+                            Text("Theme")
+                            
+                            Spacer()
+                            
+                            HStack {
+                                Circle()
+                                    .fill(colorScheme == .dark ? themeManager.currentTheme.darkModeAccentColor : themeManager.currentTheme.accentColor)
+                                    .frame(width: 16, height: 16)
+                                Text(themeManager.currentTheme.name)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+                
                 Section(header: Text("Experimental Features")) {
                     Toggle("Automatic Messages", isOn: $enableAutomaticResponses)
                     
@@ -317,11 +352,15 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(colorScheme)
+            .applyThemeColor(themeManager: themeManager)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") {
                         dismiss()
                     }
+                    .foregroundColor(themeManager.accentColor(for: colorScheme))
                 }
             }
         }
@@ -332,4 +371,5 @@ struct SettingsView: View {
     SettingsView()
         .environmentObject(MemoryManager())
         .environmentObject(LocationManager())
+        .environmentObject(ThemeManager())
 }
