@@ -16,7 +16,7 @@ struct MessageBubbleView: View {
                     .padding(12)
                     .background(message.isUser ? themeManager.accentColor(for: colorScheme) : Color(.systemGray5))
                     .foregroundColor(message.isUser ? 
-                        (colorScheme == .light ? .white : .black) : .primary)
+                        (colorScheme == .dark ? .white : .black) : .primary)
                     .cornerRadius(16)
                     .textSelection(.enabled)  // Enable text selection for copying
                     .contextMenu {
