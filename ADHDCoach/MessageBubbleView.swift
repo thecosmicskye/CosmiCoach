@@ -3,6 +3,7 @@ import SwiftUI
 struct MessageBubbleView: View {
     let message: ChatMessage
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var themeManager: ThemeManager
     
     var body: some View {
         HStack {
@@ -13,7 +14,7 @@ struct MessageBubbleView: View {
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
                 Text(message.content)
                     .padding(12)
-                    .background(message.isUser ? Color("AccentColor") : Color(.systemGray5))
+                    .background(message.isUser ? themeManager.accentColor(for: colorScheme) : Color(.systemGray5))
                     .foregroundColor(message.isUser ? 
                         (colorScheme == .light ? .white : .black) : .primary)
                     .cornerRadius(16)
@@ -53,4 +54,5 @@ struct MessageBubbleView: View {
         MessageBubbleView(message: ChatMessage(content: "I'm feeling overwhelmed with my tasks", isUser: true))
     }
     .padding()
+    .environmentObject(ThemeManager())
 }
