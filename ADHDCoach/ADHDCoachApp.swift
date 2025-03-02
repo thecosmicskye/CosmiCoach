@@ -99,6 +99,10 @@ struct ADHDCoachApp: App {
                 UserDefaults.standard.set(timestamp, forKey: "last_app_session_time")
                 UserDefaults.standard.synchronize()
                 print("⏱️ App entered background - updated session timestamp: \(timeDate)")
+                
+                // Save cache performance stats to ensure they persist when app closes
+                CachePerformanceTracker.shared.saveStatsToUserDefaults()
+                print("🧠 App entered background - saved cache performance stats")
             } else if newPhase == .active {
                 print("⏱️ App becoming active")
                 
