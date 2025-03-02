@@ -45,11 +45,6 @@ struct ThemeSelectionView: View {
                         .foregroundColor(themeManager.accentColor(for: colorScheme))
                     }
                 }
-                
-                Section {
-                    ThemePreviewView(theme: Theme.getThemeById(selectedThemeId))
-                        .listRowInsets(EdgeInsets())
-                }
             }
             .navigationTitle("Select Theme")
             .navigationBarTitleDisplayMode(.inline)
