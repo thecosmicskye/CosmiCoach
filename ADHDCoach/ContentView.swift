@@ -50,10 +50,10 @@ struct ContentView: View {
             queue: .main
         ) { [self] _ in
             // This will be called when chat history is deleted
-            chatManager.messages = []
-            
-            // Instead of static welcome message, try to do a preemptive query
-            Task {
+            // Use Task with MainActor to safely modify the MainActor-isolated property
+            Task { @MainActor in
+                chatManager.messages = []
+                
                 // Try sending automatic message after chat history deletion
                 await chatManager.checkAndSendAutomaticMessageAfterHistoryDeletion()
             }

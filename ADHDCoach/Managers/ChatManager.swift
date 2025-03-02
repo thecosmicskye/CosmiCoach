@@ -13,7 +13,8 @@ import Combine
  * - Coordinating automatic messages
  * - Delegating tool processing to appropriate handlers
  */
-class ChatManager: ObservableObject {
+@MainActor
+class ChatManager: ObservableObject, @unchecked Sendable {
     // MARK: - Published Properties
     
     /// Collection of chat messages
@@ -30,6 +31,9 @@ class ChatManager: ObservableObject {
     
     /// Maps message IDs to their operation status messages
     @Published var operationStatusMessages: [UUID: [OperationStatusMessage]] = [:]
+    
+    /// Static reference to shared instance (for @Sendable closures)
+    private static weak var sharedInstance: ChatManager?
     
     // MARK: - Component Managers
     
@@ -67,9 +71,19 @@ class ChatManager: ObservableObject {
     /**
      * Initializes the ChatManager and sets up component interactions.
      */
+    /// Static method to update processing state (for @Sendable closures)
+    nonisolated
+    private static func updateProcessingState(_ isProcessing: Bool) {
+        Task { @MainActor in
+            sharedInstance?.isProcessing = isProcessing
+        }
+    }
+    
     @MainActor
     init() {
         print("⏱️ ChatManager initializing")
+        // Store reference to self for use in static methods
+        ChatManager.sharedInstance = self
         
         // Set up tool handler callback
         toolHandler.processToolUseCallback = { [weak self] toolName, toolId, toolInput, messageId, chatManager in
@@ -398,6 +412,7 @@ class ChatManager: ObservableObject {
      * @param calendarEvents The user's calendar events
      * @param reminders The user's reminders
      */
+    // MARK: - First API method
     func sendMessageToClaude(userMessage: String, calendarEvents: [CalendarEvent], reminders: [ReminderItem]) async {
         guard !apiKey.isEmpty else {
             await MainActor.run {
@@ -456,14 +471,24 @@ class ChatManager: ObservableObject {
             locationContext: locationContext,
             toolDefinitions: toolHandler.getToolDefinitions(),
             updateStreamingMessage: { [weak self] newContent in
-                guard let self = self else { return "" }
                 // Use DispatchQueue.main to run on the main thread instead of Task
                 let semaphore = DispatchSemaphore(value: 0)
                 var result = ""
-                DispatchQueue.main.async {
-                    result = self.appendToStreamingMessage(newContent: newContent)
+                
+                if let weakSelf = self {
+                    // Use MainActor.run to safely call the MainActor-isolated method
+                    Task {
+                        result = await MainActor.run {
+                            return weakSelf.appendToStreamingMessage(newContent: newContent)
+                        }
+                        semaphore.signal()
+                    }
+                } else {
+                    // If self is nil, signal the semaphore to avoid deadlock
                     semaphore.signal()
                 }
+                
+                // Wait outside the if block to ensure we always wait
                 semaphore.wait()
                 return result
             },
@@ -473,7 +498,8 @@ class ChatManager: ObservableObject {
                 }
             },
             isProcessingCallback: { [weak self] isProcessing in
-                Task { @MainActor in
+                // Use DispatchQueue.main.async instead of Task with MainActor.run
+                DispatchQueue.main.async {
                     self?.isProcessing = isProcessing
                 }
             }
@@ -600,6 +626,7 @@ class ChatManager: ObservableObject {
      *
      * @param isAfterHistoryDeletion Whether this is after history deletion
      */
+    // MARK: - Second API method
     private func sendAutomaticMessage(isAfterHistoryDeletion: Bool = false) async {
         print("⏱️ SENDING AUTOMATIC MESSAGE - \(isAfterHistoryDeletion ? "After history deletion" : "After app open")")
         
@@ -652,14 +679,24 @@ class ChatManager: ObservableObject {
             locationContext: locationContext,
             toolDefinitions: toolHandler.getToolDefinitions(),
             updateStreamingMessage: { [weak self] newContent in
-                guard let self = self else { return "" }
                 // Use DispatchQueue.main to run on the main thread instead of Task
                 let semaphore = DispatchSemaphore(value: 0)
                 var result = ""
-                DispatchQueue.main.async {
-                    result = self.appendToStreamingMessage(newContent: newContent)
+                
+                if let weakSelf = self {
+                    // Use MainActor.run to safely call the MainActor-isolated method
+                    Task {
+                        result = await MainActor.run {
+                            return weakSelf.appendToStreamingMessage(newContent: newContent)
+                        }
+                        semaphore.signal()
+                    }
+                } else {
+                    // If self is nil, signal the semaphore to avoid deadlock
                     semaphore.signal()
                 }
+                
+                // Wait outside the if block to ensure we always wait
                 semaphore.wait()
                 return result
             },
@@ -669,7 +706,8 @@ class ChatManager: ObservableObject {
                 }
             },
             isProcessingCallback: { [weak self] isProcessing in
-                Task { @MainActor in
+                // Use DispatchQueue.main.async instead of Task with MainActor.run
+                DispatchQueue.main.async {
                     self?.isProcessing = isProcessing
                 }
             }
@@ -766,6 +804,8 @@ class ChatManager: ObservableObject {
                 return "Error parsing end date: \(endString)"
             }
             
+            // No need to create local copies since we're using MainActor.run
+            
             // Get access to EventKitManager
             guard let eventKitManager = await getEventKitManager() else {
                 print("⚙️ EventKitManager not available")
@@ -775,9 +815,9 @@ class ChatManager: ObservableObject {
             print("⚙️ EventKitManager access granted: \(eventKitManager.calendarAccessGranted)")
             
             // Add calendar event
-            let success = await MainActor.run {
+            await MainActor.run {
                 print("⚙️ Calling eventKitManager.addCalendarEvent")
-                let result = eventKitManager.addCalendarEvent(
+                _ = eventKitManager.addCalendarEvent(
                     title: title,
                     startDate: startDate,
                     endDate: endDate,
@@ -785,8 +825,7 @@ class ChatManager: ObservableObject {
                     messageId: messageId,
                     chatManager: self
                 )
-                print("⚙️ addCalendarEvent result: \(result)")
-                return result
+                print("⚙️ addCalendarEvent completed")
             }
             
             // Even when successful, the success variable may be false due to race conditions
@@ -882,6 +921,10 @@ class ChatManager: ObservableObject {
                 }
             }
             
+            // Create local copies to avoid capturing mutable variables in concurrent code
+            let localStartDate = startDate
+            let localEndDate = endDate
+            
             // Get access to EventKitManager
             guard let eventKitManager = await getEventKitManager() else {
                 return "Error: EventKitManager not available"
@@ -892,8 +935,8 @@ class ChatManager: ObservableObject {
                 return eventKitManager.updateCalendarEvent(
                     id: id,
                     title: title,
-                    startDate: startDate,
-                    endDate: endDate,
+                    startDate: localStartDate,
+                    endDate: localEndDate,
                     notes: notes,
                     messageId: messageId,
                     chatManager: self
@@ -952,13 +995,17 @@ class ChatManager: ObservableObject {
                     }
                 }
                 
+                // Create local copies to avoid capturing mutable variables in concurrent code
+                let localStartDate = startDate
+                let localEndDate = endDate
+                
                 // Modify calendar event
                 let success = await MainActor.run {
                     return eventKitManager.updateCalendarEvent(
                         id: id,
                         title: title,
-                        startDate: startDate,
-                        endDate: endDate,
+                        startDate: localStartDate,
+                        endDate: localEndDate,
                         notes: notes,
                         messageId: messageId,
                         chatManager: self
@@ -1055,6 +1102,9 @@ class ChatManager: ObservableObject {
                 }
             }
             
+            // Create local copy to avoid capturing mutable variable in concurrent code
+            let localDueDate = dueDate
+            
             // Get access to EventKitManager
             guard let eventKitManager = await getEventKitManager() else {
                 print("⚙️ EventKitManager not available")
@@ -1064,18 +1114,17 @@ class ChatManager: ObservableObject {
             print("⚙️ EventKitManager reminder access granted: \(eventKitManager.reminderAccessGranted)")
             
             // Add reminder
-            let success = await MainActor.run {
+            await MainActor.run {
                 print("⚙️ Calling eventKitManager.addReminder")
-                let result = eventKitManager.addReminder(
+                _ = eventKitManager.addReminder(
                     title: title,
-                    dueDate: dueDate,
+                    dueDate: localDueDate,
                     notes: notes,
                     listName: list,
                     messageId: messageId,
                     chatManager: self
                 )
-                print("⚙️ addReminder result: \(result)")
-                return result
+                print("⚙️ addReminder completed")
             }
             
             // Similarly to calendar events, always return success to avoid confusing UI
@@ -1124,11 +1173,14 @@ class ChatManager: ObservableObject {
                     }
                 }
                 
+                // Create local copy to avoid capturing mutable variable in concurrent code
+                let localDueDate = dueDate
+                
                 // Add reminder
                 let success = await MainActor.run {
                     return eventKitManager.addReminder(
                         title: title,
-                        dueDate: dueDate,
+                        dueDate: localDueDate,
                         notes: notes,
                         listName: list,
                         messageId: messageId,
@@ -1170,6 +1222,9 @@ class ChatManager: ObservableObject {
                 }
             }
             
+            // Create local copy to avoid capturing mutable variable in concurrent code
+            let localDueDate = dueDate
+            
             // Get access to EventKitManager
             guard let eventKitManager = await getEventKitManager() else {
                 return "Error: EventKitManager not available"
@@ -1180,7 +1235,7 @@ class ChatManager: ObservableObject {
                 return eventKitManager.updateReminder(
                     id: id,
                     title: title,
-                    dueDate: dueDate,
+                    dueDate: localDueDate,
                     notes: notes,
                     listName: list,
                     messageId: messageId,
@@ -1234,12 +1289,15 @@ class ChatManager: ObservableObject {
                     }
                 }
                 
+                // Create local copy to avoid capturing mutable variable in concurrent code
+                let localDueDate = dueDate
+                
                 // Modify reminder
                 let success = await MainActor.run {
                     return eventKitManager.updateReminder(
                         id: id,
                         title: title,
-                        dueDate: dueDate,
+                        dueDate: localDueDate,
                         notes: notes,
                         listName: list,
                         messageId: messageId,
@@ -1331,7 +1389,7 @@ class ChatManager: ObservableObject {
             let memoryCategory = MemoryCategory.allCases.first { $0.rawValue.lowercased() == category.lowercased() } ?? .notes
             
             // Check if content seems to be a calendar event or reminder
-            if await memoryManager.isCalendarOrReminderItem(content: content) {
+            if memoryManager.isCalendarOrReminderItem(content: content) {
                 return "Error: Memory content appears to be a calendar event or reminder. Please use the appropriate tools instead."
             }
             
@@ -1373,7 +1431,7 @@ class ChatManager: ObservableObject {
                 let memoryCategory = MemoryCategory.allCases.first { $0.rawValue.lowercased() == category.lowercased() } ?? .notes
                 
                 // Check if content seems to be a calendar event or reminder
-                if await memoryManager.isCalendarOrReminderItem(content: content) {
+                if memoryManager.isCalendarOrReminderItem(content: content) {
                     print("⚙️ Memory content appears to be a calendar event or reminder")
                     failureCount += 1
                     continue
@@ -1402,15 +1460,18 @@ class ChatManager: ObservableObject {
                 return "Error: MemoryManager not available"
             }
             
-            // Find memory with matching content
-            var foundMemory: MemoryItem? = nil
-            await MainActor.run { 
-                foundMemory = memoryManager.memories.first(where: { $0.content == content })
+            // Find memory with matching content on the main thread
+            let memoryId: UUID? = await MainActor.run {
+                if let memory = memoryManager.memories.first(where: { $0.content == content }) {
+                    return memory.id
+                }
+                return UUID()  // Return a placeholder UUID instead of nil
             }
             
-            if let memoryToRemove = foundMemory {
+            // Check if we found a memory with the given content
+            if let memoryId = memoryId {
                 do {
-                    try await memoryManager.deleteMemory(id: memoryToRemove.id)
+                    try await memoryManager.deleteMemory(id: memoryId)
                     return "Successfully removed memory"
                 } catch {
                     return "Failed to remove memory: \(error.localizedDescription)"
@@ -1436,15 +1497,18 @@ class ChatManager: ObservableObject {
             
             // Process each content in the batch
             for content in contents {
-                // Find memory with matching content
-                var foundMemory: MemoryItem? = nil
-                await MainActor.run { 
-                    foundMemory = memoryManager.memories.first(where: { $0.content == content })
+                // Find memory with matching content on the main thread
+                let memoryId: UUID? = await MainActor.run {
+                    if let memory = memoryManager.memories.first(where: { $0.content == content }) {
+                        return memory.id
+                    }
+                    return UUID()  // Return a placeholder UUID instead of nil
                 }
                 
-                if let memoryToRemove = foundMemory {
+                // Check if we found a memory with the given content
+                if let memoryId = memoryId {
                     do {
-                        try await memoryManager.deleteMemory(id: memoryToRemove.id)
+                        try await memoryManager.deleteMemory(id: memoryId)
                         successCount += 1
                     } catch {
                         print("⚙️ Failed to remove memory: \(error.localizedDescription)")
@@ -1476,10 +1540,10 @@ class ChatManager: ObservableObject {
         // For backward compatibility, we'll still process legacy command formats
         // that might be in the text response using bracket syntax
         
-        // Process memory instructions for bracket format
-        if let memManager = memoryManager {
-            await toolHandler.processMemoryUpdates(response: response, memoryManager: memManager)
-        }
+            // Process memory instructions for bracket format
+            if let memManager = memoryManager {
+                await toolHandler.processMemoryUpdates(response: response, memoryManager: memManager)
+            }
         
         // Note: We don't need to process calendar and reminder commands here anymore
         // because they're now handled via the tool use system
