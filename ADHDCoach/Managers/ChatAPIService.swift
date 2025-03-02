@@ -528,6 +528,8 @@ class ChatAPIService {
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        // Add the beta header for token-efficient tool use
+        request.addValue("token-efficient-tools-2025-02-19", forHTTPHeaderField: "anthropic-beta")
         // For tool use, we should use the most recent version with tools support
         request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
     }
@@ -551,6 +553,8 @@ class ChatAPIService {
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        // Add the beta header for token-efficient tool use
+        request.addValue("token-efficient-tools-2025-02-19", forHTTPHeaderField: "anthropic-beta")
         request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
         
         // Simple request body with correct format, stream: false for simple testing
@@ -1036,6 +1040,8 @@ class ChatAPIService {
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        // Add the beta header for token-efficient tool use
+        request.addValue("token-efficient-tools-2025-02-19", forHTTPHeaderField: "anthropic-beta")
         request.addValue(key, forHTTPHeaderField: "x-api-key")
         
         // Simple request body with correct format, stream: false for simple testing
