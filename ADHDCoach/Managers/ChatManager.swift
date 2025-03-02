@@ -1391,30 +1391,43 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             // Extract parameters
             guard let content = toolInput["content"] as? String,
                   let category = toolInput["category"] as? String else {
+                print("⚙️ ERROR: Missing required parameters for add_memory")
                 return "Error: Missing required parameters for add_memory"
             }
             
             let importance = toolInput["importance"] as? Int ?? 3
             
+            print("⚙️ Processing add_memory tool call:")
+            print("⚙️ - Content: \"\(content)\"")
+            print("⚙️ - Category: \"\(category)\"")
+            print("⚙️ - Importance: \(importance)")
+            
             // Get access to MemoryManager
             guard let memoryManager = await getMemoryManager() else {
+                print("⚙️ ERROR: MemoryManager not available")
                 return "Error: MemoryManager not available"
             }
             
             // Find the appropriate memory category
             let memoryCategory = MemoryCategory.allCases.first { $0.rawValue.lowercased() == category.lowercased() } ?? .notes
+            print("⚙️ Mapped category string to enum: \(memoryCategory.rawValue)")
             
             // Check if content seems to be a calendar event or reminder
-            if memoryManager.isCalendarOrReminderItem(content: content) {
-                return "Error: Memory content appears to be a calendar event or reminder. Please use the appropriate tools instead."
+            let (isRestricted, restrictedTerm) = memoryManager.isCalendarOrReminderItem(content: content)
+            if isRestricted {
+                print("⚙️ ERROR: Memory content rejected - appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\"")
+                return "Error: Memory content appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\". Please use the appropriate tools instead."
             }
             
             // Add memory
             do {
+                print("⚙️ Calling memoryManager.addMemory...")
                 try await memoryManager.addMemory(content: content, category: memoryCategory, importance: importance)
+                print("⚙️ Memory successfully added")
                 return "Successfully added memory"
             } catch {
-                return "Failed to add memory: \(error.localizedDescription)"
+                print("⚙️ ERROR: Failed to add memory: \(error.localizedDescription)")
+                return error.localizedDescription
             }
             
         case "add_memories_batch":
@@ -1447,8 +1460,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 let memoryCategory = MemoryCategory.allCases.first { $0.rawValue.lowercased() == category.lowercased() } ?? .notes
                 
                 // Check if content seems to be a calendar event or reminder
-                if memoryManager.isCalendarOrReminderItem(content: content) {
-                    print("⚙️ Memory content appears to be a calendar event or reminder")
+                let (isRestricted, restrictedTerm) = memoryManager.isCalendarOrReminderItem(content: content)
+                if isRestricted {
+                    print("⚙️ Memory content appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\"")
                     failureCount += 1
                     continue
                 }
