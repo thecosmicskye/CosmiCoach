@@ -33,6 +33,12 @@
 		E4C961F72D73F9600012035F /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A342A2A2A342A2A2A36 /* Theme.swift */; };
 		E4C961F82D73F9600012035F /* ThemeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A352A2A2A352A2A2A37 /* ThemeManager.swift */; };
 		E4C961F92D73F9600012035F /* Color+Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A362A2A2A362A2A2A38 /* Color+Theme.swift */; };
+		E4C961FF2D741EDF0012035F /* ChatAutomaticMessageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C961FB2D741EDF0012035F /* ChatAutomaticMessageService.swift */; };
+		E4C962002D741EDF0012035F /* ChatAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C961FA2D741EDF0012035F /* ChatAPIService.swift */; };
+		E4C962012D741EDF0012035F /* ChatOperationStatusManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C961FC2D741EDF0012035F /* ChatOperationStatusManager.swift */; };
+		E4C962022D741EDF0012035F /* ChatPersistenceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C961FD2D741EDF0012035F /* ChatPersistenceManager.swift */; };
+		E4C962032D741EDF0012035F /* ChatToolHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C961FE2D741EDF0012035F /* ChatToolHandler.swift */; };
+		E4C962052D741EFA0012035F /* DateFormatter+Shared.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C962042D741EFA0012035F /* DateFormatter+Shared.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,6 +81,12 @@
 		2AD2B6002D6EFDDA00782E3F /* ReminderItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderItemTests.swift; sourceTree = "<group>"; };
 		2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ADHDCoach/Assets.xcassets; sourceTree = "<group>"; };
 		3A3A3A3A3A3A3A3A3A3A3A3A /* CosmicCoach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CosmicCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E4C961FA2D741EDF0012035F /* ChatAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAPIService.swift; sourceTree = "<group>"; };
+		E4C961FB2D741EDF0012035F /* ChatAutomaticMessageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAutomaticMessageService.swift; sourceTree = "<group>"; };
+		E4C961FC2D741EDF0012035F /* ChatOperationStatusManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatOperationStatusManager.swift; sourceTree = "<group>"; };
+		E4C961FD2D741EDF0012035F /* ChatPersistenceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPersistenceManager.swift; sourceTree = "<group>"; };
+		E4C961FE2D741EDF0012035F /* ChatToolHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatToolHandler.swift; sourceTree = "<group>"; };
+		E4C962042D741EFA0012035F /* DateFormatter+Shared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DateFormatter+Shared.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -160,6 +172,11 @@
 		9A9A9A9A9A9A9A9A9A9A9A9A /* Managers */ = {
 			isa = PBXGroup;
 			children = (
+				E4C961FA2D741EDF0012035F /* ChatAPIService.swift */,
+				E4C961FB2D741EDF0012035F /* ChatAutomaticMessageService.swift */,
+				E4C961FC2D741EDF0012035F /* ChatOperationStatusManager.swift */,
+				E4C961FD2D741EDF0012035F /* ChatPersistenceManager.swift */,
+				E4C961FE2D741EDF0012035F /* ChatToolHandler.swift */,
 				2A2A2A312A2A2A312A2A2A31 /* ChatManager.swift */,
 				2A2A2A322A2A2A322A2A2A32 /* EventKitManager.swift */,
 				2A2A2A332A2A2A332A2A2A33 /* MemoryManager.swift */,
@@ -172,6 +189,7 @@
 		AAAAAAAAAAAAAAAAAAAAAA1 /* Extensions */ = {
 			isa = PBXGroup;
 			children = (
+				E4C962042D741EFA0012035F /* DateFormatter+Shared.swift */,
 				2A2A2A362A2A2A362A2A2A38 /* Color+Theme.swift */,
 				2A2A2A372A2A2A372A2A2A39 /* ThemeColorModifier.swift */,
 			);
@@ -294,9 +312,15 @@
 				E4C961F62D73F9600012035F /* ThemeSelectionView.swift in Sources */,
 				E4C961F72D73F9600012035F /* Theme.swift in Sources */,
 				E4C961F82D73F9600012035F /* ThemeManager.swift in Sources */,
+				E4C962052D741EFA0012035F /* DateFormatter+Shared.swift in Sources */,
 				E4C961F92D73F9600012035F /* Color+Theme.swift in Sources */,
 				E4C961F42D73F9500012035F /* ThemeColorModifier.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1A /* ADHDCoachApp.swift in Sources */,
+				E4C961FF2D741EDF0012035F /* ChatAutomaticMessageService.swift in Sources */,
+				E4C962002D741EDF0012035F /* ChatAPIService.swift in Sources */,
+				E4C962012D741EDF0012035F /* ChatOperationStatusManager.swift in Sources */,
+				E4C962022D741EDF0012035F /* ChatPersistenceManager.swift in Sources */,
+				E4C962032D741EDF0012035F /* ChatToolHandler.swift in Sources */,
 				2A771BA92D725173000B70E6 /* CommandModels.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1B /* OperationStatusMessage.swift in Sources */,
 				1A1A1A1B1A1A1A1B1A1A1A1B /* ContentView.swift in Sources */,

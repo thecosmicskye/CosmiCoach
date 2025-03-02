@@ -1,115 +1,110 @@
 import Foundation
 import Combine
 
+/**
+ * ChatManager is the central coordinator for the chat functionality in the ADHD Coach app.
+ *
+ * This class is responsible for:
+ * - Managing the chat message collection and UI state
+ * - Coordinating between specialized component managers
+ * - Handling user and assistant messages
+ * - Processing streaming responses from Claude
+ * - Managing operation status messages
+ * - Coordinating automatic messages
+ * - Delegating tool processing to appropriate handlers
+ */
 class ChatManager: ObservableObject {
+    // MARK: - Published Properties
+    
+    /// Collection of chat messages
     @Published var messages: [ChatMessage] = []
+    
+    /// Indicates if a message is currently being processed
     @Published var isProcessing = false
+    
+    /// ID of the message currently being streamed (if any)
     @Published var currentStreamingMessageId: UUID?
-    @Published var streamingUpdateCount: Int = 0  // Track streaming updates for scrolling
-    @Published var operationStatusMessages: [UUID: [OperationStatusMessage]] = [:]  // Maps message IDs to their operation status messages
     
-    // Store tool use results for feedback to Claude in the next message
-    private var pendingToolResults: [(toolId: String, content: String)] = []
+    /// Counter to track streaming updates for scrolling
+    @Published var streamingUpdateCount: Int = 0
     
-    // Variables to track tool use chunks
-    private var currentToolName: String?
-    private var currentToolId: String?
-    private var currentToolInputJson = ""
+    /// Maps message IDs to their operation status messages
+    @Published var operationStatusMessages: [UUID: [OperationStatusMessage]] = [:]
     
-    private var apiKey: String {
-        return UserDefaults.standard.string(forKey: "claude_api_key") ?? ""
-    }
-    private let maxTokens = 75000
-    private let apiURL = URL(string: "https://api.anthropic.com/v1/messages")!
-    private let streamingURL = URL(string: "https://api.anthropic.com/v1/messages")!
+    // MARK: - Component Managers
+    
+    /// Handles API communication with Claude
+    private let apiService = ChatAPIService()
+    
+    /// Manages tool definitions and processing
+    private let toolHandler = ChatToolHandler()
+    
+    /// Manages operation status messages
+    private let statusManager = ChatOperationStatusManager()
+    
+    /// Manages automatic message functionality
+    private let automaticMessageService = ChatAutomaticMessageService()
+    
+    /// Handles persistence of chat messages
+    private let persistenceManager = ChatPersistenceManager()
+    
+    // MARK: - External Managers
+    
+    /// Manages user memory persistence
     private var memoryManager: MemoryManager?
+    
+    /// Manages calendar events and reminders
     private var eventKitManager: EventKitManager?
+    
+    /// Manages location awareness
     private var locationManager: LocationManager?
+    
+    /// Current content of the streaming message
     private var currentStreamingMessage: String = ""
-    private var urlSession = URLSession.shared
-    private var lastAppOpenTime: Date?
     
-    // System prompt that defines Claude's role
-    private let systemPrompt = """
-    You are an empathic ADHD coach assistant that helps the user manage their tasks, calendar, and daily life. Your goal is to help them overcome overwhelm and make decisions about what to focus on.
-
-    Guidelines:
-    1. Be concise and clear in your responses
-    2. Ask only one question at a time to minimize decision fatigue
-    3. Proactively suggest task prioritization
-    4. Check on daily basics (medicine, eating, drinking water)
-    5. Analyze patterns in task completion over time
-    6. Use the provided calendar events and reminders to give context-aware advice
-    7. IMPORTANT: You MUST use the provided tools to create, modify, or delete calendar events, reminders, and memories
-       - Use add_calendar_event tool when the user asks to create a single calendar event
-       - Use add_calendar_events_batch tool when the user asks to create multiple calendar events
-       - Use add_reminder tool when the user asks to create a single reminder
-       - Use add_reminders_batch tool when the user asks to create multiple reminders
-       - Use add_memory tool when you need to store a single piece of important information
-       - Use add_memories_batch tool when you need to store multiple pieces of important information
-       - DO NOT respond with text saying you've created a calendar event or reminder - use the tools
-    8. Be empathetic and understanding of ADHD challenges
-    9. Maintain important user information in structured memory categories
-    10. When location information is provided, use it for context, but only mention it when relevant
-        - For example, if the user said they're commuting and you see they're at a transit hub, you can acknowledge they're on track
-        - Don't explicitly comment on location unless it's helpful in context
-
-    You have access to the user's memory which contains information about them that persists between conversations. This information is organized into categories:
-    - Personal Information: Basic information about the user
-    - Preferences: User preferences and likes/dislikes
-    - Behavior Patterns: Patterns in user behavior and task completion
-    - Daily Basics: Tracking of daily basics like eating and drinking water
-    - Medications: Medication information and tracking
-    - Goals: Short and long-term goals
-    - Miscellaneous Notes: Other information to remember
-
-    Important guidelines for working with user memory:
-    - Memories with higher importance (4-5) are most critical to refer to
-    - Don't add redundant memories - check existing memories first 
-    - Update memories when information changes rather than creating duplicates
-    - Delete outdated information in memories
-    - When adding specific facts, add them as separate memory items instead of combining multiple facts
-    - The memory content is visible at the top of each conversation under USER MEMORY INFORMATION
-    - DO NOT add calendar events or reminders as memories
-    - Avoid duplicating memories
-
-    IMPORTANT: When working with multiple items (multiple calendar events, reminders, or memories), always use the batch tools:
-    - add_calendar_events_batch: Use this to add multiple calendar events in a single operation
-    - modify_calendar_events_batch: Use this to modify multiple calendar events in a single operation
-    - delete_calendar_events_batch: Use this to delete multiple calendar events in a single operation
-    - add_reminders_batch: Use this to add multiple reminders in a single operation
-    - modify_reminders_batch: Use this to modify multiple reminders in a single operation
-    - delete_reminders_batch: Use this to delete multiple reminders in a single operation
-    - add_memories_batch: Use this to add multiple memories in a single operation
-    - remove_memories_batch: Use this to remove multiple memories in a single operation
-    """
+    // MARK: - Initialization
     
+    /**
+     * Initializes the ChatManager and sets up component interactions.
+     */
     @MainActor
     init() {
         print("⏱️ ChatManager initializing")
+        
+        // Set up tool handler callback
+        toolHandler.processToolUseCallback = { [weak self] toolName, toolId, toolInput, messageId, chatManager in
+            return await self?.processToolUse(toolName: toolName, toolId: toolId, toolInput: toolInput) ?? "Error: Tool processing failed"
+        }
+        
+        // Set up API service callback
+        apiService.processToolUseCallback = { [weak self] toolName, toolId, toolInput in
+            return await self?.processToolUse(toolName: toolName, toolId: toolId, toolInput: toolInput) ?? "Error: Tool processing failed"
+        }
+        
         // Load previous messages from storage
-        loadMessages()
+        let loadResult = persistenceManager.loadMessages()
+        messages = loadResult.messages
+        currentStreamingMessageId = loadResult.currentStreamingMessageId
+        
+        // Always ensure isProcessing is false when initializing
+        // This prevents the send button from being disabled on app restart
+        isProcessing = false
+        
+        // Load operation status messages
+        operationStatusMessages = statusManager.loadOperationStatusMessages()
         
         // Reset any incomplete messages from previous sessions
-        resetIncompleteMessages()
+        var messagesRef = messages
+        if persistenceManager.resetIncompleteMessages(messages: &messagesRef) {
+            messages = messagesRef
+            currentStreamingMessageId = nil
+        }
         
         // Add initial assistant message if this is the first time
         if messages.isEmpty {
             let welcomeMessage = "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?"
             addAssistantMessage(content: welcomeMessage)
         }
-        
-        // Record the time the app was opened
-        lastAppOpenTime = Date()
-        print("⏱️ ChatManager initialized - lastAppOpenTime set to: \(lastAppOpenTime!)")
-        
-        // Check automatic message settings
-        let automaticMessagesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
-        print("⏱️ ChatManager init - Automatic messages enabled: \(automaticMessagesEnabled)")
-        
-        // Check the API key availability
-        let hasApiKey = !apiKey.isEmpty
-        print("⏱️ ChatManager init - API key available: \(hasApiKey)")
         
         // Set a default value for automatic messages if not already set
         if UserDefaults.standard.object(forKey: "enable_automatic_responses") == nil {
@@ -118,149 +113,89 @@ class ChatManager: ObservableObject {
         }
     }
     
-    @MainActor
-    private func resetIncompleteMessages() {
-        // Find any incomplete messages and mark them as complete
-        // This handles cases where the app was closed during message streaming
-        for (index, message) in messages.enumerated() {
-            if !message.isComplete {
-                // Mark as complete
-                messages[index].isComplete = true
-                
-                // Only add the interruption tag if it's not already there
-                if !message.content.hasSuffix("[Message was interrupted]") {
-                    // Add the tag only if there's actual content
-                    if !message.content.isEmpty {
-                        messages[index].content += " [Message was interrupted]"
-                    } else {
-                        messages[index].content = "[Message was interrupted]"
-                    }
-                }
-            }
-        }
-        
-        // Reset streaming state
-        currentStreamingMessageId = nil
-        isProcessing = false
-        
-        // Clear any saved state in UserDefaults
-        UserDefaults.standard.removeObject(forKey: "streaming_message_id")
-        UserDefaults.standard.removeObject(forKey: "last_streaming_content")
-        UserDefaults.standard.set(false, forKey: "chat_processing_state")
-        
-        // Save changes
-        saveMessages()
-    }
+    // MARK: - External Manager Setup
     
+    /**
+     * Sets the memory manager for user memory persistence.
+     *
+     * @param manager The memory manager to use
+     */
     func setMemoryManager(_ manager: MemoryManager) {
         self.memoryManager = manager
     }
     
+    /**
+     * Sets the event kit manager for calendar and reminder operations.
+     *
+     * @param manager The event kit manager to use
+     */
     func setEventKitManager(_ manager: EventKitManager) {
         self.eventKitManager = manager
     }
     
+    /**
+     * Sets the location manager for location awareness.
+     *
+     * @param manager The location manager to use
+     */
     func setLocationManager(_ manager: LocationManager) {
         self.locationManager = manager
     }
     
+    /**
+     * Returns the time when the app was last opened.
+     *
+     * @return The last app open time, or nil if not available
+     */
     func getLastAppOpenTime() -> Date? {
-        return lastAppOpenTime
+        return automaticMessageService.getLastAppOpenTime()
     }
     
+    // MARK: - Automatic Message Handling
+    
+    /**
+     * Checks if an automatic message should be sent and sends it if needed.
+     */
     @MainActor
     func checkAndSendAutomaticMessage() async {
-        print("⏱️ AUTOMATIC MESSAGE CHECK START - \(Date())")
-        
-        // Check if automatic messages are enabled in settings
-        let automaticMessagesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
-        print("⏱️ Automatic messages enabled in settings: \(automaticMessagesEnabled)")
-        guard automaticMessagesEnabled else {
-            print("⏱️ Automatic message skipped: Automatic messages are disabled in settings")
-            return
+        if await automaticMessageService.shouldSendAutomaticMessage() {
+            await sendAutomaticMessage()
         }
-        
-        // Check if we have the API key
-        let hasApiKey = !apiKey.isEmpty
-        print("⏱️ API key available: \(hasApiKey)")
-        guard hasApiKey else {
-            print("⏱️ Automatic message skipped: No API key available")
-            return
-        }
-        
-        // Always update lastAppOpenTime to ensure background->active transitions work properly
-        lastAppOpenTime = Date()
-        print("⏱️ Updated lastAppOpenTime to current time: \(lastAppOpenTime!)")
-        
-        // Check if the app hasn't been opened for at least 5 minutes (temporarily changed from 5 minutes)
-        let lastSessionKey = "last_app_session_time"
-        
-        // Always store current time when checking - this fixes the bug where
-        // closing the app without fully terminating doesn't update the session time
-        let currentTime = Date().timeIntervalSince1970
-        print("⏱️ Current time: \(Date(timeIntervalSince1970: currentTime))")
-        
-        // IMPORTANT: Get the current store time BEFORE updating it
-        var timeSinceLastSession: TimeInterval = 999999 // Default to a large value to ensure we run
-        
-        if let lastSessionTimeInterval = UserDefaults.standard.object(forKey: lastSessionKey) as? TimeInterval {
-            let lastSessionTime = Date(timeIntervalSince1970: lastSessionTimeInterval)
-            timeSinceLastSession = Date().timeIntervalSince(lastSessionTime)
-            
-            print("⏱️ Last session time: \(lastSessionTime)")
-            print("⏱️ Time since last session: \(timeSinceLastSession) seconds")
-        } else {
-            print("⏱️ No previous session time found in UserDefaults")
-        }
-        
-        // Store current session time for future reference
-        UserDefaults.standard.set(currentTime, forKey: lastSessionKey)
-        UserDefaults.standard.synchronize() // Force synchronize to ensure it's saved
-        print("⏱️ Updated session timestamp in UserDefaults: \(Date(timeIntervalSince1970: currentTime))")
-        
-        // Check if app was opened less than 5 minutes ago
-        if timeSinceLastSession < 300 { // 300 seconds = 5 minutes
-            print("⏱️ Automatic message skipped: App was opened less than 5 minutes ago (timeSinceLastSession = \(timeSinceLastSession))")
-            return
-        }
-        
-        // If we get here, all conditions are met - send the automatic message
-        print("⏱️ All conditions met - sending automatic message")
-        await sendAutomaticMessage()
     }
     
+    /**
+     * Checks if an automatic message should be sent after history deletion and sends it if needed.
+     */
     @MainActor
     func checkAndSendAutomaticMessageAfterHistoryDeletion() async {
-        // Check if automatic messages are enabled in settings
-        // For history deletion, we respect the setting but always provide a fallback message
-        let automaticMessagesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
-        
-        if !automaticMessagesEnabled {
-            print("Automatic message after history deletion skipped: Automatic messages are disabled in settings")
-            // Always show a welcome message when chat history is cleared, even if automatic messages are disabled
-            addAssistantMessage(content: "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?")
-            return
-        }
-        
-        // Check if we have the API key
-        guard !apiKey.isEmpty else {
-            print("Automatic message after history deletion skipped: No API key available")
+        if await automaticMessageService.shouldSendAutomaticMessageAfterHistoryDeletion() {
+            await sendAutomaticMessage(isAfterHistoryDeletion: true)
+        } else {
             // Fall back to a static welcome message if we can't query
             addAssistantMessage(content: "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?")
-            return
         }
-        
-        // If we get here, send an automatic message
-        await sendAutomaticMessage(isAfterHistoryDeletion: true)
     }
     
+    // MARK: - Message Management
+    
+    /**
+     * Adds a user message to the chat.
+     *
+     * @param content The content of the user message
+     */
     @MainActor
     func addUserMessage(content: String) {
         let message = ChatMessage(content: content, isUser: true)
         messages.append(message)
-        saveMessages()
+        persistenceManager.saveMessages(messages: messages, isProcessing: isProcessing, currentStreamingMessageId: currentStreamingMessageId)
     }
     
+    /**
+     * Adds an assistant message to the chat.
+     *
+     * @param content The content of the assistant message
+     * @param isComplete Whether the message is complete (default: true)
+     */
     @MainActor
     func addAssistantMessage(content: String, isComplete: Bool = true) {
         let message = ChatMessage(content: content, isUser: false, isComplete: isComplete)
@@ -284,9 +219,14 @@ class ChatManager: ObservableObject {
             }
         }
         
-        saveMessages()
+        persistenceManager.saveMessages(messages: messages, isProcessing: isProcessing, currentStreamingMessageId: currentStreamingMessageId)
     }
     
+    /**
+     * Updates the content of the currently streaming message.
+     *
+     * @param content The new content for the streaming message
+     */
     @MainActor
     func updateStreamingMessage(content: String) {
         if let streamingId = currentStreamingMessageId,
@@ -296,12 +236,19 @@ class ChatManager: ObservableObject {
             // Increment counter to trigger scroll updates
             streamingUpdateCount += 1
             // Save messages to ensure they're persisted
-            saveMessages()
+            persistenceManager.saveMessages(messages: messages, isProcessing: isProcessing, currentStreamingMessageId: currentStreamingMessageId)
         }
     }
     
-    // This method both updates the UI and returns the accumulated content
-    // It's isolated to the MainActor to avoid concurrency issues
+    /**
+     * Appends new content to the currently streaming message.
+     *
+     * This method both updates the UI and returns the accumulated content.
+     * It's isolated to the MainActor to avoid concurrency issues.
+     *
+     * @param newContent The new content to append
+     * @return The updated full content of the streaming message
+     */
     @MainActor
     func appendToStreamingMessage(newContent: String) -> String {
         if let streamingId = currentStreamingMessageId,
@@ -316,7 +263,7 @@ class ChatManager: ObservableObject {
             streamingUpdateCount += 1
             
             // Save messages to ensure they're persisted
-            saveMessages()
+            persistenceManager.saveMessages(messages: messages, isProcessing: isProcessing, currentStreamingMessageId: currentStreamingMessageId)
             
             // Return the updated content
             return updatedContent
@@ -324,6 +271,9 @@ class ChatManager: ObservableObject {
         return ""
     }
     
+    /**
+     * Finalizes the currently streaming message, marking it as complete.
+     */
     @MainActor
     func finalizeStreamingMessage() {
         if let streamingId = currentStreamingMessageId,
@@ -333,227 +283,121 @@ class ChatManager: ObservableObject {
             // Trigger one final update for scrolling
             streamingUpdateCount += 1
             // Save messages to persist the finalized state
-            saveMessages()
+            persistenceManager.saveMessages(messages: messages, isProcessing: isProcessing, currentStreamingMessageId: currentStreamingMessageId)
         }
     }
     
-    @MainActor
-    func saveMessages() {
-        // Save messages to UserDefaults for persistence
-        if let encoded = try? JSONEncoder().encode(messages) {
-            UserDefaults.standard.set(encoded, forKey: "chat_messages")
-            
-            // Save processing state for recovery after app restart
-            UserDefaults.standard.set(isProcessing, forKey: "chat_processing_state")
-            if let id = currentStreamingMessageId {
-                UserDefaults.standard.set(id.uuidString, forKey: "streaming_message_id")
-            } else {
-                UserDefaults.standard.removeObject(forKey: "streaming_message_id")
-            }
-        }
-        
-        // Save operation status messages
-        if let encoded = try? JSONEncoder().encode(operationStatusMessages) {
-            UserDefaults.standard.set(encoded, forKey: "operation_status_messages")
-        }
-    }
+    // MARK: - Operation Status Management
     
-    @MainActor
-    func loadMessages() {
-        // Load messages from UserDefaults
-        if let data = UserDefaults.standard.data(forKey: "chat_messages"),
-           let decoded = try? JSONDecoder().decode([ChatMessage].self, from: data) {
-            messages = decoded
-            
-            // Load saved streaming state (if any)
-            if let savedStreamingIdString = UserDefaults.standard.string(forKey: "streaming_message_id"),
-               let savedStreamingId = UUID(uuidString: savedStreamingIdString) {
-                // Only set if the message actually exists
-                if messages.contains(where: { $0.id == savedStreamingId }) {
-                    currentStreamingMessageId = savedStreamingId
-                }
-            }
-            
-            // Load processing state, but we'll reset this in resetIncompleteMessages()
-            isProcessing = UserDefaults.standard.bool(forKey: "chat_processing_state")
-        }
-        
-        // Load operation status messages
-        if let data = UserDefaults.standard.data(forKey: "operation_status_messages"),
-           let decoded = try? JSONDecoder().decode([UUID: [OperationStatusMessage]].self, from: data) {
-            operationStatusMessages = decoded
-        }
-    }
-    
-    // MARK: - Operation Status Methods
-    
-    /// Returns all operation status messages associated with a specific chat message
+    /**
+     * Returns all operation status messages associated with a specific chat message.
+     *
+     * @param message The chat message to get status messages for
+     * @return An array of operation status messages
+     */
     @MainActor
     func statusMessagesForMessage(_ message: ChatMessage) -> [OperationStatusMessage] {
-        return operationStatusMessages[message.id] ?? []
+        return statusManager.statusMessagesForMessage(message.id)
     }
     
-    /// Adds a new operation status message for a specific chat message
+    /**
+     * Adds a new operation status message for a specific chat message.
+     *
+     * @param messageId The UUID of the chat message
+     * @param operationType The type of operation (e.g., "Add Calendar Event")
+     * @param status The current status of the operation (default: .inProgress)
+     * @param details Optional details about the operation
+     * @return The newly created operation status message
+     */
     @MainActor
     func addOperationStatusMessage(forMessageId messageId: UUID, operationType: String, status: OperationStatus = .inProgress, details: String? = nil) -> OperationStatusMessage {
-        let statusMessage = OperationStatusMessage(
+        let statusMessage = statusManager.addOperationStatusMessage(
+            forMessageId: messageId,
             operationType: operationType,
             status: status,
             details: details
         )
         
-        // Initialize the array if it doesn't exist
+        // Update the local copy
         if operationStatusMessages[messageId] == nil {
             operationStatusMessages[messageId] = []
         }
-        
-        // Add the status message
         operationStatusMessages[messageId]?.append(statusMessage)
-        
-        // Save to persistence
-        saveMessages()
         
         return statusMessage
     }
     
-    /// Updates an existing operation status message
+    /**
+     * Updates an existing operation status message.
+     *
+     * @param messageId The UUID of the chat message
+     * @param statusMessageId The UUID of the status message to update
+     * @param status The new status of the operation
+     * @param details Optional new details about the operation
+     */
     @MainActor
     func updateOperationStatusMessage(forMessageId messageId: UUID, statusMessageId: UUID, status: OperationStatus, details: String? = nil) {
-        // Find the status message
+        statusManager.updateOperationStatusMessage(
+            forMessageId: messageId,
+            statusMessageId: statusMessageId,
+            status: status,
+            details: details
+        )
+        
+        // Update the local copy
         if var statusMessages = operationStatusMessages[messageId],
            let index = statusMessages.firstIndex(where: { $0.id == statusMessageId }) {
-            // Update the status
             statusMessages[index].status = status
-            
-            // Update details if provided
             if let details = details {
                 statusMessages[index].details = details
             }
-            
-            // Save the updated array
             operationStatusMessages[messageId] = statusMessages
-            
-            // Save to persistence
-            saveMessages()
         }
     }
     
-    /// Removes an operation status message
+    /**
+     * Removes an operation status message.
+     *
+     * @param messageId The UUID of the chat message
+     * @param statusMessageId The UUID of the status message to remove
+     */
     @MainActor
     func removeOperationStatusMessage(forMessageId messageId: UUID, statusMessageId: UUID) {
-        // Find and remove the status message
+        statusManager.removeOperationStatusMessage(forMessageId: messageId, statusMessageId: statusMessageId)
+        
+        // Update the local copy
         if var statusMessages = operationStatusMessages[messageId] {
             statusMessages.removeAll(where: { $0.id == statusMessageId })
-            
-            // Update the array or remove it if empty
             if statusMessages.isEmpty {
                 operationStatusMessages.removeValue(forKey: messageId)
             } else {
                 operationStatusMessages[messageId] = statusMessages
             }
-            
-            // Save to persistence
-            saveMessages()
         }
     }
     
-    // Define tool schemas for Claude
-    private var toolDefinitions: [[String: Any]] {
-        return [
-            // Calendar Tools - Single item operations
-            [
-                "name": "add_calendar_event",
-                "description": "Add a new calendar event to the user's calendar. You MUST use this tool when the user wants to add a single event to their calendar.",
-                "input_schema": CalendarAddCommand.schema
-            ],
-            [
-                "name": "modify_calendar_event",
-                "description": "Modify an existing calendar event in the user's calendar. Use this tool when the user wants to change a single existing event.",
-                "input_schema": CalendarModifyCommand.schema
-            ],
-            [
-                "name": "delete_calendar_event",
-                "description": "Delete an existing calendar event from the user's calendar. Use this tool when the user wants to remove a single event.",
-                "input_schema": CalendarDeleteCommand.schema
-            ],
-            
-            // Calendar Tools - Batch operations
-            [
-                "name": "add_calendar_events_batch",
-                "description": "Add multiple calendar events to the user's calendar at once. Use this tool when the user wants to add multiple events in a single operation.",
-                "input_schema": CalendarAddBatchCommand.schema
-            ],
-            [
-                "name": "modify_calendar_events_batch",
-                "description": "Modify multiple existing calendar events in the user's calendar at once. Use this tool when the user wants to change multiple existing events in a single operation.",
-                "input_schema": CalendarModifyBatchCommand.schema
-            ],
-            [
-                "name": "delete_calendar_events_batch",
-                "description": "Delete multiple existing calendar events from the user's calendar at once. Use this tool when the user wants to remove multiple events in a single operation.",
-                "input_schema": CalendarDeleteBatchCommand.schema
-            ],
-            
-            // Reminder Tools - Single item operations
-            [
-                "name": "add_reminder",
-                "description": "Add a new reminder to the user's reminders list. You MUST use this tool when the user wants to add a single reminder.",
-                "input_schema": ReminderAddCommand.schema
-            ],
-            [
-                "name": "modify_reminder",
-                "description": "Modify an existing reminder in the user's reminders. Use this tool when the user wants to change a single existing reminder.",
-                "input_schema": ReminderModifyCommand.schema
-            ],
-            [
-                "name": "delete_reminder",
-                "description": "Delete an existing reminder from the user's reminders. Use this tool when the user wants to remove a single reminder.",
-                "input_schema": ReminderDeleteCommand.schema
-            ],
-            
-            // Reminder Tools - Batch operations
-            [
-                "name": "add_reminders_batch",
-                "description": "Add multiple reminders to the user's reminders list at once. Use this tool when the user wants to add multiple reminders in a single operation.",
-                "input_schema": ReminderAddBatchCommand.schema
-            ],
-            [
-                "name": "modify_reminders_batch",
-                "description": "Modify multiple existing reminders in the user's reminders at once. Use this tool when the user wants to change multiple existing reminders in a single operation.",
-                "input_schema": ReminderModifyBatchCommand.schema
-            ],
-            [
-                "name": "delete_reminders_batch",
-                "description": "Delete multiple existing reminders from the user's reminders at once. Use this tool when the user wants to remove multiple reminders in a single operation.",
-                "input_schema": ReminderDeleteBatchCommand.schema
-            ],
-            
-            // Memory Tools - Single item operations
-            [
-                "name": "add_memory",
-                "description": "Add a new memory to the user's memory database. You MUST use this tool to store important information about the user that should persist between conversations.",
-                "input_schema": MemoryAddCommand.schema
-            ],
-            [
-                "name": "remove_memory",
-                "description": "Remove a memory from the user's memory database. Use this tool when information becomes outdated or is no longer relevant.",
-                "input_schema": MemoryRemoveCommand.schema
-            ],
-            
-            // Memory Tools - Batch operations
-            [
-                "name": "add_memories_batch",
-                "description": "Add multiple memories to the user's memory database at once. Use this tool when you need to store multiple pieces of important information in a single operation.",
-                "input_schema": MemoryAddBatchCommand.schema
-            ],
-            [
-                "name": "remove_memories_batch",
-                "description": "Remove multiple memories from the user's memory database at once. Use this tool when multiple pieces of information become outdated or are no longer relevant.",
-                "input_schema": MemoryRemoveBatchCommand.schema
-            ]
-        ]
+    /// Store tool use results for feedback to Claude in the next message
+    private var pendingToolResults: [(toolId: String, content: String)] = []
+    
+    // Variables to track tool use chunks
+    private var currentToolName: String?
+    private var currentToolId: String?
+    private var currentToolInputJson = ""
+    
+    /// Retrieves the Claude API key from UserDefaults
+    private var apiKey: String {
+        return UserDefaults.standard.string(forKey: "claude_api_key") ?? ""
     }
     
+    // MARK: - Claude API Communication
+    
+    /**
+     * Sends a user message to Claude with all necessary context.
+     *
+     * @param userMessage The user's message to send
+     * @param calendarEvents The user's calendar events
+     * @param reminders The user's reminders
+     */
     func sendMessageToClaude(userMessage: String, calendarEvents: [CalendarEvent], reminders: [ReminderItem]) async {
         guard !apiKey.isEmpty else {
             await MainActor.run {
@@ -593,349 +437,60 @@ class ChatManager: ObservableObject {
         
         // Get recent conversation history (limited by token count)
         let conversationHistory = await MainActor.run {
-            return getRecentConversationHistory()
+            return persistenceManager.formatRecentConversationHistory(messages: messages)
         }
         
-        // Create a messages array with context first, then user message
-        var messages: [[String: Any]] = [
-            ["role": "user", "content": [
-                ["type": "text", "text": """
-                Current time: \(formatCurrentDateTime())
-                
-                USER MEMORY:
-                \(memoryContent)
-                
-                CALENDAR EVENTS:
-                \(calendarContext)
-                
-                REMINDERS:
-                \(remindersContext)
-                
-                \(locationContext)
-                
-                CONVERSATION HISTORY:
-                \(conversationHistory)
-                """]
-            ]],
-            ["role": "assistant", "content": [
-                ["type": "text", "text": "I understand. How can I help you today?"]
-            ]],
-            ["role": "user", "content": [
-                ["type": "text", "text": userMessage]
-            ]]
-        ]
-        
-        // Add any pending tool results as tool_result blocks
-        // This handles the case when a previous message resulted in a tool use
-        if !pendingToolResults.isEmpty {
-            print("Including \(pendingToolResults.count) tool results in the request")
-            
-            // Create a user message with tool_result content blocks for each pending result
-            var toolResultBlocks: [[String: Any]] = []
-            
-            for result in pendingToolResults {
-                toolResultBlocks.append([
-                    "type": "tool_result",
-                    "tool_use_id": result.toolId,
-                    "content": result.content
-                ])
-            }
-            
-            // Only include tool results if we have actual tool use in previous messages
-            // This prevents the 400 error "tool_result block(s) provided when previous message does not contain any tool_use blocks"
-            
-            // Check for actual tool_use blocks in previous messages
-            // Simply checking message count isn't reliable
-            var hasToolUseInPreviousMessages = false
-            
-            // Check if previous assistant messages contained tool use
-            for msg in messages {
-                if let content = msg["content"] as? [[String: Any]] {
-                    for block in content {
-                        if let type = block["type"] as? String, type == "tool_use" {
-                            hasToolUseInPreviousMessages = true
-                            break
-                        }
-                    }
-                }
-                if hasToolUseInPreviousMessages {
-                    break
-                }
-            }
-            
-            if !toolResultBlocks.isEmpty && hasToolUseInPreviousMessages {
-                messages.append(["role": "user", "content": toolResultBlocks])
-                print("Added tool results to messages array")
-            } else if !toolResultBlocks.isEmpty {
-                print("Skipping tool results because there are no previous messages with tool use")
-            }
-            
-            // Clear the pending results after adding them
-            pendingToolResults = []
+        // Initialize streaming message
+        await MainActor.run {
+            currentStreamingMessage = ""
+            addAssistantMessage(content: "", isComplete: false)
         }
         
-        // Create the request body with system as a top-level parameter and tools
-        let requestBody: [String: Any] = [
-            "model": "claude-3-7-sonnet-20250219",
-            "max_tokens": 4000,
-            "system": systemPrompt,
-            "tools": toolDefinitions,
-            "stream": true,
-            "messages": messages
-        ]
+        // Send the message to Claude using the API service
+        await apiService.sendMessageToClaude(
+            userMessage: userMessage,
+            conversationHistory: conversationHistory,
+            memoryContent: memoryContent,
+            calendarContext: calendarContext,
+            remindersContext: remindersContext,
+            locationContext: locationContext,
+            toolDefinitions: toolHandler.getToolDefinitions(),
+            updateStreamingMessage: { [weak self] newContent in
+                guard let self = self else { return "" }
+                // Use DispatchQueue.main to run on the main thread instead of Task
+                let semaphore = DispatchSemaphore(value: 0)
+                var result = ""
+                DispatchQueue.main.async {
+                    result = self.appendToStreamingMessage(newContent: newContent)
+                    semaphore.signal()
+                }
+                semaphore.wait()
+                return result
+            },
+            finalizeStreamingMessage: { [weak self] in
+                Task { @MainActor in
+                    self?.finalizeStreamingMessage()
+                }
+            },
+            isProcessingCallback: { [weak self] isProcessing in
+                Task { @MainActor in
+                    self?.isProcessing = isProcessing
+                }
+            }
+        )
         
-        print("💡 REQUEST CONTAINS \(toolDefinitions.count) TOOLS")
-        for tool in toolDefinitions {
-            if let name = tool["name"] as? String {
-                print("💡 TOOL DEFINED: \(name)")
-            }
-        }
-        
-        // Create the request
-        var request = URLRequest(url: streamingURL)
-        configureRequestHeaders(&request)
-        
-        do {
-            let requestData = try JSONSerialization.data(withJSONObject: requestBody)
-            request.httpBody = requestData
-            
-            // Print the actual request JSON for debugging
-            if let requestStr = String(data: requestData, encoding: .utf8) {
-                print("💡 FULL API REQUEST: \(String(requestStr.prefix(1000))) [...]") // Only print first 1000 chars
-            }
-            
-            // Initialize streaming message
-            await MainActor.run {
-                currentStreamingMessage = ""
-                addAssistantMessage(content: "", isComplete: false)
-            }
-            
-            // Create a URLSession data task with delegate
-            let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                await MainActor.run {
-                    self.addAssistantMessage(content: "Error: Invalid HTTP response")
-                    self.isProcessing = false
-                }
-                return
-            }
-            
-            print("💡 API RESPONSE STATUS CODE: \(httpResponse.statusCode)")
-            
-            if httpResponse.statusCode != 200 {
-                var errorData = Data()
-                for try await byte in asyncBytes {
-                    errorData.append(byte)
-                }
-                
-                // Try to extract error message from response
-                let statusCode = httpResponse.statusCode
-                var errorDetails = ""
-                
-                if let responseString = String(data: errorData, encoding: .utf8) {
-                    print("💡 API ERROR RESPONSE: \(responseString)")
-                    
-                    if let errorJson = try? JSONSerialization.jsonObject(with: errorData) as? [String: Any],
-                       let error = errorJson["error"] as? [String: Any],
-                       let message = error["message"] as? String {
-                        errorDetails = ". \(message)"
-                        print("💡 ERROR MESSAGE: \(message)")
-                    }
-                }
-                
-                let finalErrorMessage = "Error communicating with Claude API. Status code: \(statusCode)\(errorDetails)"
-                
-                await MainActor.run {
-                    self.finalizeStreamingMessage()
-                    self.addAssistantMessage(content: finalErrorMessage)
-                    self.isProcessing = false
-                }
-                return
-            }
-            
-            // Track the full response for post-processing
-            var fullResponse = ""
-            
-            // Process the streaming response
-            for try await line in asyncBytes.lines {
-                // Skip empty lines
-                guard !line.isEmpty else { continue }
-                
-                // SSE format has "data: " prefix
-                guard line.hasPrefix("data: ") else { continue }
-                
-                // Remove the "data: " prefix
-                let jsonStr = line.dropFirst(6)
-                
-                // Handle the stream end event
-                if jsonStr == "[DONE]" {
-                    break
-                }
-                
-                // Log raw response data for debugging
-                print("💡 RAW RESPONSE: \(jsonStr)")
-                
-                // Parse the JSON
-                if let data = jsonStr.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    
-                    // Check if this is a start of content block (could be text or tool)
-                    if json["type"] as? String == "content_block_start" {
-                        print("💡 Content block start detected")
-                        if let contentBlock = json["content_block"] as? [String: Any],
-                           let blockType = contentBlock["type"] as? String {
-                            
-                            print("💡 Content block type: \(blockType)")
-                            
-                            // Handle tool_use block start
-                            if blockType == "tool_use" {
-                                if let toolName = contentBlock["name"] as? String,
-                                   let toolId = contentBlock["id"] as? String {
-                                    print("💡 DETECTED TOOL USE START: \(toolName) with ID: \(toolId)")
-                                    
-                                    // Save the tool name and id for later
-                                    self.currentToolName = toolName
-                                    self.currentToolId = toolId
-                                    self.currentToolInputJson = ""
-                                }
-                            }
-                        }
-                    }
-                    // Handle tool input JSON deltas (streamed piece by piece)
-                    else if json["type"] as? String == "content_block_delta",
-                            let delta = json["delta"] as? [String: Any],
-                            let inputJsonDelta = delta["type"] as? String, inputJsonDelta == "input_json_delta",
-                            let partialJson = delta["partial_json"] as? String {
-                        
-                        print("💡 Tool input JSON delta: \(partialJson)")
-                        
-                        // Accumulate the input json
-                        self.currentToolInputJson += partialJson
-                    }
-                    // Check for message_delta with stop_reason = "tool_use"
-                    else if json["type"] as? String == "message_delta",
-                            let delta = json["delta"] as? [String: Any],
-                            let stopReason = delta["stop_reason"] as? String, stopReason == "tool_use" {
-                        
-                        print("💡 Message stopped for tool use")
-                        
-                        // Create usable tool input from collected JSON chunks
-                        var toolInput: [String: Any] = [:]
-                        
-                        if !self.currentToolInputJson.isEmpty {
-                            // Try to parse the accumulated input JSON
-                            print("💡 Accumulated JSON: \(self.currentToolInputJson)")
-                            
-                            // Sometimes the JSON is incomplete/malformed because of streaming chunks
-                            // In that case, we'll fall back to a default tool call
-                            if let jsonData = self.currentToolInputJson.data(using: .utf8),
-                               let parsedInput = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
-                                toolInput = parsedInput
-                                print("💡 Successfully parsed JSON input from Claude")
-                            } else {
-                                print("💡 Failed to parse JSON, using fallback for \(self.currentToolName ?? "unknown tool")")
-                                createFallbackToolInput(toolName: self.currentToolName, toolInput: &toolInput)
-                            }
-                        } else {
-                            print("💡 No input JSON accumulated, using fallback for \(self.currentToolName ?? "unknown tool")")
-                            createFallbackToolInput(toolName: self.currentToolName, toolInput: &toolInput)
-                        }
-                        
-                        // Helper function to create appropriate fallback input based on tool type
-                        func createFallbackToolInput(toolName: String?, toolInput: inout [String: Any]) {
-                            let dateFormatter = DateFormatter()
-                            dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
-                            
-                            let now = Date()
-                            
-                            switch toolName {
-                            case "add_calendar_event":
-                                let oneHourLater = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now
-                                toolInput = [
-                                    "title": "Test Calendar Event",
-                                    "start": dateFormatter.string(from: now),
-                                    "end": dateFormatter.string(from: oneHourLater),
-                                    "notes": "Created by Claude when JSON parsing failed"
-                                ]
-                            case "add_reminder":
-                                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
-                                toolInput = [
-                                    "title": "Test Reminder",
-                                    "due": dateFormatter.string(from: tomorrow),
-                                    "notes": "Created by Claude when JSON parsing failed"
-                                ]
-                            case "add_memory":
-                                toolInput = [
-                                    "content": "User asked Claude to create a test memory",
-                                    "category": "Miscellaneous Notes",
-                                    "importance": 3
-                                ]
-                            default:
-                                // For other tools, provide a basic fallback
-                                toolInput = ["note": "Fallback tool input for \(toolName ?? "unknown tool")"]
-                            }
-                        }
-                        
-                        // If we have a tool name and ID, process the tool use
-                        if let toolName = self.currentToolName, let toolId = self.currentToolId {
-                            print("💡 EXECUTING COLLECTED TOOL CALL: \(toolName)")
-                            print("💡 With input: \(toolInput)")
-                            
-                            // Process the tool use based on the tool name
-                            let result = await processToolUse(toolName: toolName, toolId: toolId, toolInput: toolInput)
-                            
-                            // Log the tool use and its result
-                            print("💡 TOOL USE PROCESSED: \(toolName) with result: \(result)")
-                            
-                            // Store the tool result for the next API call
-                            pendingToolResults.append((toolId: toolId, content: result))
-                        }
-                    }
-                    // Handle regular text delta
-                    else if let contentDelta = json["delta"] as? [String: Any],
-                         let textContent = contentDelta["text"] as? String {
-                        // Send the new content to the MainActor for UI updates
-                        // and get back the full accumulated content
-                        let updatedContent = await MainActor.run {
-                            return appendToStreamingMessage(newContent: textContent)
-                        }
-                        
-                        // Keep track of the full response for post-processing
-                        fullResponse = updatedContent
-                    }
-                }
-            }
-            
-            // Process the response for any calendar, reminder, or memory modifications
-            await processClaudeResponse(fullResponse)
-            
-            // Look for memory update patterns and apply them
-            await processMemoryUpdates(fullResponse)
-            
-            // Finalize the assistant message
-            await MainActor.run {
-                finalizeStreamingMessage()
-                isProcessing = false
-            }
-            
-        } catch {
-            await MainActor.run {
-                self.finalizeStreamingMessage()
-                self.addAssistantMessage(content: "Error: \(error.localizedDescription)")
-                self.isProcessing = false
-            }
+        // Process any memory updates from the response
+        if let lastMessage = await MainActor.run(body: { messages.last }) {
+            await toolHandler.processMemoryUpdates(response: lastMessage.content, memoryManager: memoryManager!)
         }
     }
     
-    private func formatCurrentDateTime() -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .full
-        formatter.timeStyle = .full
-        formatter.timeZone = TimeZone.current
-        return "\(formatter.string(from: Date())) (\(TimeZone.current.identifier))"
-    }
-    
+    /**
+     * Formats calendar events for Claude context.
+     *
+     * @param events Array of calendar events
+     * @return Formatted string of calendar events
+     */
     private func formatCalendarEvents(_ events: [CalendarEvent]) -> String {
         if events.isEmpty {
             return "No upcoming events."
@@ -952,6 +507,12 @@ class ChatManager: ObservableObject {
         }.joined(separator: "\n\n")
     }
     
+    /**
+     * Formats reminders for Claude context.
+     *
+     * @param reminders Array of reminder items
+     * @return Formatted string of reminders
+     */
     private func formatReminders(_ reminders: [ReminderItem]) -> String {
         if reminders.isEmpty {
             return "No reminders."
@@ -969,23 +530,22 @@ class ChatManager: ObservableObject {
         }.joined(separator: "\n\n")
     }
     
+    /**
+     * Formats a date for display.
+     *
+     * @param date The date to format
+     * @return Formatted date string
+     */
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        formatter.timeZone = TimeZone.current
-        return formatter.string(from: date)
+        return DateFormatter.shared.string(from: date)
     }
     
-    // Helper method to configure request headers with tool use support
-    private func configureRequestHeaders(_ request: inout URLRequest) {
-        request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        // For tool use, we should use the most recent version with tools support
-        request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
-    }
     
+    /**
+     * Gets the user's location context if available and enabled.
+     *
+     * @return A string containing location information, or empty if not available
+     */
     private func getLocationContext() async -> String {
         let enableLocationAwareness = UserDefaults.standard.bool(forKey: "enable_location_awareness")
         print("📍 getLocationContext - Location awareness enabled: \(enableLocationAwareness)")
@@ -1034,20 +594,12 @@ class ChatManager: ObservableObject {
         }
     }
     
-    @MainActor
-    private func getRecentConversationHistory() -> String {
-        // Get the most recent messages that fit within token limit
-        // This is a simplified implementation - in a real app, you'd want to count tokens properly
-        let recentMessages = messages.suffix(20) // Just use last 20 messages as a simple approach
-        
-        return recentMessages.map { message in
-            let role = message.isUser ? "User" : "Assistant"
-            let time = formatDate(message.timestamp)
-            return "[\(time)] \(role): \(message.content)"
-        }.joined(separator: "\n\n")
-    }
     
-    // Function to send an automatic message without user input
+    /**
+     * Sends an automatic message without user input.
+     *
+     * @param isAfterHistoryDeletion Whether this is after history deletion
+     */
     private func sendAutomaticMessage(isAfterHistoryDeletion: Bool = false) async {
         print("⏱️ SENDING AUTOMATIC MESSAGE - \(isAfterHistoryDeletion ? "After history deletion" : "After app open")")
         
@@ -1076,336 +628,93 @@ class ChatManager: ObservableObject {
         
         // Get recent conversation history
         let conversationHistory = await MainActor.run {
-            return getRecentConversationHistory()
+            return persistenceManager.formatRecentConversationHistory(messages: messages)
         }
         print("⏱️ Got conversation history for automatic message. Length: \(conversationHistory.count)")
         
-        // Create a messages array with context first, then automatic message
-        var messages: [[String: Any]] = [
-            ["role": "user", "content": [
-                ["type": "text", "text": """
-                Current time: \(formatCurrentDateTime())
-                
-                USER MEMORY:
-                \(memoryContent)
-                
-                CALENDAR EVENTS:
-                \(calendarContext)
-                
-                REMINDERS:
-                \(remindersContext)
-                
-                \(locationContext)
-                
-                CONVERSATION HISTORY:
-                \(conversationHistory)
-                """]
-            ]],
-            ["role": "assistant", "content": [
-                ["type": "text", "text": "I have your current context. How can I assist you today?"]
-            ]],
-            ["role": "user", "content": [
-                ["type": "text", "text": "[THIS IS AN AUTOMATIC MESSAGE - \(isAfterHistoryDeletion ? "The user has just cleared their chat history." : "The user has just opened the app after not using it for at least 5 minutes.") There is no specific user message. Based on the time of day, calendar events, reminders, and what you know about the user, provide a helpful, proactive greeting or insight.]"]
-            ]]
-        ]
-        
-        // Add any pending tool results as tool_result blocks
-        if !pendingToolResults.isEmpty {
-            print("⏱️ Including \(pendingToolResults.count) tool results in automatic message request")
-            
-            // Create a user message with tool_result content blocks for each pending result
-            var toolResultBlocks: [[String: Any]] = []
-            
-            for result in pendingToolResults {
-                toolResultBlocks.append([
-                    "type": "tool_result",
-                    "tool_use_id": result.toolId,
-                    "content": result.content
-                ])
-            }
-            
-            // Only include tool results if we have actual tool use in previous messages
-            // This prevents the 400 error "tool_result block(s) provided when previous message does not contain any tool_use blocks"
-            
-            // Check for actual tool_use blocks in previous messages
-            // Simply checking message count isn't reliable
-            var hasToolUseInPreviousMessages = false
-            
-            // Check if previous assistant messages contained tool use
-            for msg in messages {
-                if let content = msg["content"] as? [[String: Any]] {
-                    for block in content {
-                        if let type = block["type"] as? String, type == "tool_use" {
-                            hasToolUseInPreviousMessages = true
-                            break
-                        }
-                    }
-                }
-                if hasToolUseInPreviousMessages {
-                    break
-                }
-            }
-            
-            if !toolResultBlocks.isEmpty && hasToolUseInPreviousMessages {
-                messages.append(["role": "user", "content": toolResultBlocks])
-                print("⏱️ Added tool results to automatic message")
-            } else if !toolResultBlocks.isEmpty {
-                print("⏱️ Skipping tool results in automatic message because there are no previous messages with tool use")
-            }
-            
-            // Clear the pending results after adding them
-            pendingToolResults = []
-        }
-        
-        // Set up the request with special context indicating this is an automatic message
-        let requestBody: [String: Any] = [
-            "model": "claude-3-7-sonnet-20250219",
-            "max_tokens": 4000,
-            "system": systemPrompt,
-            "tools": toolDefinitions,
-            "stream": true,
-            "messages": messages
-        ]
-        
+        // Initialize streaming message
         await MainActor.run {
-            isProcessing = true
-            print("⏱️ Set isProcessing to true for automatic message")
+            currentStreamingMessage = ""
+            addAssistantMessage(content: "", isComplete: false)
+            print("⏱️ Added empty assistant message for streaming")
         }
         
-        // Create the request
-        var request = URLRequest(url: streamingURL)
-        configureRequestHeaders(&request)
+        // Create the automatic message text
+        let automaticMessageText = "[THIS IS AN AUTOMATIC MESSAGE - \(isAfterHistoryDeletion ? "The user has just cleared their chat history." : "The user has just opened the app after not using it for at least 5 minutes.") There is no specific user message. Based on the time of day, calendar events, reminders, and what you know about the user, provide a helpful, proactive greeting or insight.]"
         
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-            print("⏱️ Prepared request body for automatic message")
-            
-            // Initialize streaming message
-            await MainActor.run {
-                currentStreamingMessage = ""
-                addAssistantMessage(content: "", isComplete: false)
-                print("⏱️ Added empty assistant message for streaming")
-            }
-            
-            print("⏱️ Sending automatic message request to Claude API...")
-            // Handle the streaming response like normal
-            let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                await MainActor.run {
-                    self.finalizeStreamingMessage()
-                    self.isProcessing = false
+        // Send the message to Claude using the API service
+        await apiService.sendMessageToClaude(
+            userMessage: automaticMessageText,
+            conversationHistory: conversationHistory,
+            memoryContent: memoryContent,
+            calendarContext: calendarContext,
+            remindersContext: remindersContext,
+            locationContext: locationContext,
+            toolDefinitions: toolHandler.getToolDefinitions(),
+            updateStreamingMessage: { [weak self] newContent in
+                guard let self = self else { return "" }
+                // Use DispatchQueue.main to run on the main thread instead of Task
+                let semaphore = DispatchSemaphore(value: 0)
+                var result = ""
+                DispatchQueue.main.async {
+                    result = self.appendToStreamingMessage(newContent: newContent)
+                    semaphore.signal()
                 }
-                print("⏱️ Automatic message error: Invalid HTTP response")
-                return
-            }
-            
-            print("⏱️ Received response from Claude API with status code: \(httpResponse.statusCode)")
-            
-            if httpResponse.statusCode != 200 {
-                await MainActor.run {
-                    self.finalizeStreamingMessage()
-                    self.isProcessing = false
+                semaphore.wait()
+                return result
+            },
+            finalizeStreamingMessage: { [weak self] in
+                Task { @MainActor in
+                    self?.finalizeStreamingMessage()
                 }
-                print("⏱️ Automatic message HTTP error: \(httpResponse.statusCode)")
-                return
-            }
-            
-            // Track the full response for post-processing
-            var fullResponse = ""
-            print("⏱️ Beginning to process streaming response for automatic message")
-        print("💡 CHECKING FOR CLAUDE TOOL USE IN AUTOMATIC MESSAGE")
-            
-            // Process the streaming response
-            for try await line in asyncBytes.lines {
-                // Skip empty lines
-                guard !line.isEmpty else { continue }
-                
-                // SSE format has "data: " prefix
-                guard line.hasPrefix("data: ") else { continue }
-                
-                // Remove the "data: " prefix
-                let jsonStr = line.dropFirst(6)
-                
-                // Handle the stream end event
-                if jsonStr == "[DONE]" {
-                    print("⏱️ Received [DONE] event, stream complete")
-                    break
-                }
-                
-                // Parse the JSON
-                if let data = jsonStr.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    
-                    // Check if this is a tool_use or text delta
-                    if let contentDelta = json["delta"] as? [String: Any] {
-                        // Handle text content
-                        if let textContent = contentDelta["text"] as? String {
-                            // Send the new content to the MainActor for UI updates
-                            // and get back the full accumulated content
-                            let updatedContent = await MainActor.run {
-                                return appendToStreamingMessage(newContent: textContent)
-                            }
-                            
-                            // Keep track of the full response for post-processing
-                            fullResponse = updatedContent
-                        }
-                        // Handle tool_use content (this will come as a complete block in one delta)
-                        else if let toolUse = contentDelta["tool_use"] as? [String: Any],
-                                let toolName = toolUse["name"] as? String,
-                                let toolId = toolUse["id"] as? String,
-                                let toolInput = toolUse["input"] as? [String: Any] {
-                            
-                            print("⏱️ Detected tool use for: \(toolName)")
-                            
-                            // Process the tool use based on the tool name
-                            let result = await processToolUse(toolName: toolName, toolId: toolId, toolInput: toolInput)
-                            
-                            // Log the tool use and its result
-                            print("⏱️ Tool use processed: \(toolName) with result: \(result)")
-                            
-                            // Store the tool result for the next API call
-                            pendingToolResults.append((toolId: toolId, content: result))
-                        }
-                    }
+            },
+            isProcessingCallback: { [weak self] isProcessing in
+                Task { @MainActor in
+                    self?.isProcessing = isProcessing
                 }
             }
-            
-            print("⏱️ Automatic message streaming complete, processing response actions")
-            // Process the response like normal
-            await processClaudeResponse(fullResponse)
-            await processMemoryUpdates(fullResponse)
-            
-            // Finalize the assistant message
-            await MainActor.run {
-                finalizeStreamingMessage()
-                isProcessing = false
-                print("⏱️ Automatic message complete and finalized")
-            }
-            
-        } catch {
-            print("⏱️ Automatic message error: \(error.localizedDescription)")
-            await MainActor.run {
-                self.finalizeStreamingMessage()
-                self.isProcessing = false
-            }
+        )
+        
+        // Process any memory updates from the response
+        if let lastMessage = await MainActor.run(body: { messages.last }) {
+            await toolHandler.processMemoryUpdates(response: lastMessage.content, memoryManager: memoryManager!)
         }
     }
     
-    // Simple function to test the API key
+    // MARK: - API Key Testing
+    
+    /**
+     * Tests if the current API key is valid by making a simple request to Claude.
+     *
+     * @return A string indicating whether the API key is valid or an error message
+     */
     func testApiKey() async -> String {
-        // Get the API key from UserDefaults
-        guard !apiKey.isEmpty else {
-            return "❌ Error: API key is not set"
-        }
-        
-        // Create a simple request to test the API key
-        let url = URL(string: "https://api.anthropic.com/v1/messages")!
-        var request = URLRequest(url: url)
-        // Set up request headers directly instead of using configureRequestHeaders
-        // to avoid including any optional headers that might cause issues
-        request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
-        
-        // Simple request body with correct format, stream: false for simple testing
-        // Also include a basic tool definition to test if tools are supported
-        let requestBody: [String: Any] = [
-            "model": "claude-3-7-sonnet-20250219",
-            "max_tokens": 10,
-            "stream": false,
-            "tools": [
-                [
-                    "name": "test_tool",
-                    "description": "A test tool",
-                    "input_schema": [
-                        "type": "object",
-                        "properties": [
-                            "test": ["type": "string"]
-                        ]
-                    ]
-                ]
-            ],
-            "messages": [
-                ["role": "user", "content": [
-                    ["type": "text", "text": "Hello"]
-                ]]
-            ]
-        ]
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-            print("💡 Sending test API request with tools")
-            
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                print("💡 API Test Status Code: \(httpResponse.statusCode)")
-                
-                if httpResponse.statusCode == 200 {
-                    // Try to decode the response to confirm it worked
-                    if let responseString = String(data: data, encoding: .utf8) {
-                        print("💡 API Test Response: \(responseString)")
-                    }
-                    return "✅ API key is valid with tools support!"
-                } else {
-                    // Try to extract error message
-                    if let responseString = String(data: data, encoding: .utf8) {
-                        print("💡 API Test Error Response: \(responseString)")
-                        return "❌ Error: \(responseString)"
-                    } else {
-                        return "❌ Error: Status code \(httpResponse.statusCode)"
-                    }
-                }
-            } else {
-                return "❌ Error: Invalid HTTP response"
-            }
-        } catch {
-            print("💡 API Test Exception: \(error.localizedDescription)")
-            return "❌ Error: \(error.localizedDescription)"
-        }
+        return await apiService.testApiKey()
     }
     
-    // Function to test an API key passed in as parameter
+    /**
+     * Tests if a provided API key is valid by making a simple request to Claude.
+     *
+     * @param key The API key to test
+     * @return A boolean indicating whether the API key is valid
+     */
     func testAPIKey(_ key: String) async -> Bool {
-        // Create a simple request to test the API key
-        let url = URL(string: "https://api.anthropic.com/v1/messages")!
-        var request = URLRequest(url: url)
-        // We need to set headers manually here instead of using configureRequestHeaders
-        // because we're using a different API key
-        request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.addValue(key, forHTTPHeaderField: "x-api-key")
-        
-        // Simple request body with correct format, stream: false for simple testing
-        let requestBody: [String: Any] = [
-            "model": "claude-3-7-sonnet-20250219",
-            "max_tokens": 10,
-            "stream": false,
-            "messages": [
-                ["role": "user", "content": "Hello"]
-            ]
-        ]
-        
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-            
-            let (_, response) = try await URLSession.shared.data(for: request)
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                return httpResponse.statusCode == 200
-            }
-            return false
-        } catch {
-            print("API key test error: \(error.localizedDescription)")
-            return false
-        }
+        return await apiService.testAPIKey(key)
     }
     
-    // Process a tool use request from Claude and return a result
-    // This method should be public so you can test it directly
+    // MARK: - Tool Processing
+    
+    /**
+     * Processes a tool use request from Claude and returns a result.
+     *
+     * This method handles all tool types (calendar, reminder, memory)
+     * and delegates to the appropriate handlers.
+     *
+     * @param toolName The name of the tool to use
+     * @param toolId The unique ID of the tool use request
+     * @param toolInput The input parameters for the tool
+     * @return The result of the tool use as a string
+     */
     func processToolUse(toolName: String, toolId: String, toolInput: [String: Any]) async -> String {
         print("⚙️ Processing tool use: \(toolName) with ID \(toolId)")
         print("⚙️ Tool input: \(toolInput)")
@@ -1416,12 +725,8 @@ class ChatManager: ObservableObject {
         }
         print("⚙️ Message ID for tool operation: \(messageId?.uuidString ?? "nil")")
         
-        // Helper function to parse date string
-        func parseDate(_ dateString: String) -> Date? {
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
-            return dateFormatter.date(from: dateString)
-        }
+        // Use the parseDate method from ChatToolHandler
+        let parseDate = toolHandler.parseDate
         
         // Helper function to get EventKitManager
         func getEventKitManager() async -> EventKitManager? {
@@ -2158,57 +1463,23 @@ class ChatManager: ObservableObject {
         }
     }
     
-    private func processMemoryUpdates(_ response: String) async {
-        // Check if we have a memory manager
-        guard let memManager = await MainActor.run(body: { [weak self] in
-            return self?.memoryManager
-        }) else {
-            print("Error: MemoryManager not available for memory updates")
-            return
-        }
-        
-        // Support both old and new memory update formats for backward compatibility
-        
-        // 1. Check for old format memory updates
-        let memoryUpdatePattern = "\\[MEMORY_UPDATE\\]([\\s\\S]*?)\\[\\/MEMORY_UPDATE\\]"
-        if let regex = try? NSRegularExpression(pattern: memoryUpdatePattern, options: []) {
-            let matches = regex.matches(in: response, range: NSRange(response.startIndex..., in: response))
-            
-            for match in matches {
-                if let updateRange = Range(match.range(at: 1), in: response) {
-                    let diffContent = String(response[updateRange])
-                    print("Found legacy memory update instruction: \(diffContent.count) characters")
-                    
-                    // Apply the diff to the memory file
-                    let success = await memManager.applyDiff(diff: diffContent.trimmingCharacters(in: .whitespacesAndNewlines))
-                    
-                    if success {
-                        print("Successfully applied legacy memory update")
-                    } else {
-                        print("Failed to apply legacy memory update")
-                    }
-                }
-            }
-        }
-        
-        // 2. Check for new structured memory instructions
-        // Process the new structured memory format
-        // This uses the new method in MemoryManager
-        let success = await memManager.processMemoryInstructions(instructions: response)
-        
-        if success {
-            print("Successfully processed structured memory instructions")
-        }
-    }
     
-    // This function is kept for backward compatibility
-    // It processes legacy command formats in the text responses
+    /**
+     * Processes Claude's response for legacy command formats.
+     *
+     * This function is kept for backward compatibility.
+     * It processes legacy command formats in the text responses.
+     *
+     * @param response The text response from Claude
+     */
     private func processClaudeResponse(_ response: String) async {
         // For backward compatibility, we'll still process legacy command formats
         // that might be in the text response using bracket syntax
         
         // Process memory instructions for bracket format
-        await processMemoryUpdates(response)
+        if let memManager = memoryManager {
+            await toolHandler.processMemoryUpdates(response: response, memoryManager: memManager)
+        }
         
         // Note: We don't need to process calendar and reminder commands here anymore
         // because they're now handled via the tool use system
