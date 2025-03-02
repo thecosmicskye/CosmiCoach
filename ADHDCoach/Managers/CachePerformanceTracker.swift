@@ -7,6 +7,7 @@ import Foundation
  * - Tracking cache hits and misses
  * - Calculating token usage and cost savings
  * - Providing performance reports
+ * - Persisting cache statistics between app sessions
  */
 class CachePerformanceTracker {
     /// Shared instance for app-wide access
@@ -33,8 +34,21 @@ class CachePerformanceTracker {
     /// Estimated cost savings from using cache
     private(set) var estimatedSavings: Double = 0.0
     
+    /// UserDefaults keys for persistence
+    private enum UserDefaultsKeys {
+        static let totalRequests = "cache_total_requests"
+        static let cacheHits = "cache_hits"
+        static let cacheMisses = "cache_misses"
+        static let totalInputTokens = "cache_total_input_tokens"
+        static let totalCacheCreationTokens = "cache_total_creation_tokens"
+        static let totalCacheReadTokens = "cache_total_read_tokens"
+        static let estimatedSavings = "cache_estimated_savings"
+    }
+    
     /// Private initializer to enforce singleton pattern
-    private init() {}
+    private init() {
+        loadStatsFromUserDefaults()
+    }
     
     /**
      * Records metrics from an API request.
@@ -80,6 +94,9 @@ class CachePerformanceTracker {
         print("🧠 - totalCacheCreationTokens: \(totalCacheCreationTokens)")
         print("🧠 - totalCacheReadTokens: \(totalCacheReadTokens)")
         print("🧠 - estimatedSavings: \(estimatedSavings)")
+        
+        // Save stats to UserDefaults after each update
+        saveStatsToUserDefaults()
     }
     
     /**
@@ -113,5 +130,51 @@ class CachePerformanceTracker {
         totalCacheCreationTokens = 0
         totalCacheReadTokens = 0
         estimatedSavings = 0.0
+        
+        // Clear saved stats from UserDefaults
+        saveStatsToUserDefaults()
+    }
+    
+    /**
+     * Saves current cache performance stats to UserDefaults.
+     */
+    func saveStatsToUserDefaults() {
+        let defaults = UserDefaults.standard
+        defaults.set(totalRequests, forKey: UserDefaultsKeys.totalRequests)
+        defaults.set(cacheHits, forKey: UserDefaultsKeys.cacheHits)
+        defaults.set(cacheMisses, forKey: UserDefaultsKeys.cacheMisses)
+        defaults.set(totalInputTokens, forKey: UserDefaultsKeys.totalInputTokens)
+        defaults.set(totalCacheCreationTokens, forKey: UserDefaultsKeys.totalCacheCreationTokens)
+        defaults.set(totalCacheReadTokens, forKey: UserDefaultsKeys.totalCacheReadTokens)
+        defaults.set(estimatedSavings, forKey: UserDefaultsKeys.estimatedSavings)
+        
+        // Ensure changes are written to disk
+        defaults.synchronize()
+        
+        print("🧠 Cache performance stats saved to UserDefaults")
+    }
+    
+    /**
+     * Loads cache performance stats from UserDefaults.
+     */
+    private func loadStatsFromUserDefaults() {
+        let defaults = UserDefaults.standard
+        
+        totalRequests = defaults.integer(forKey: UserDefaultsKeys.totalRequests)
+        cacheHits = defaults.integer(forKey: UserDefaultsKeys.cacheHits)
+        cacheMisses = defaults.integer(forKey: UserDefaultsKeys.cacheMisses)
+        totalInputTokens = defaults.integer(forKey: UserDefaultsKeys.totalInputTokens)
+        totalCacheCreationTokens = defaults.integer(forKey: UserDefaultsKeys.totalCacheCreationTokens)
+        totalCacheReadTokens = defaults.integer(forKey: UserDefaultsKeys.totalCacheReadTokens)
+        estimatedSavings = defaults.double(forKey: UserDefaultsKeys.estimatedSavings)
+        
+        print("🧠 Cache performance stats loaded from UserDefaults")
+        print("🧠 - totalRequests: \(totalRequests)")
+        print("🧠 - cacheHits: \(cacheHits)")
+        print("🧠 - cacheMisses: \(cacheMisses)")
+        print("🧠 - totalInputTokens: \(totalInputTokens)")
+        print("🧠 - totalCacheCreationTokens: \(totalCacheCreationTokens)")
+        print("🧠 - totalCacheReadTokens: \(totalCacheReadTokens)")
+        print("🧠 - estimatedSavings: \(estimatedSavings)")
     }
 }
