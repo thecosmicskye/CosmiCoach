@@ -48,7 +48,7 @@
 			containerPortal = EEEEEEEEEEEEEEEEEEEEEE /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = AAAAAAAAAAAAAAAAAAAAAA;
-			remoteInfo = CosmicCoach;
+			remoteInfo = CosmiCoach;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -81,7 +81,7 @@
 		2AD2B5FF2D6EFDDA00782E3F /* MemoryManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryManagerTests.swift; sourceTree = "<group>"; };
 		2AD2B6002D6EFDDA00782E3F /* ReminderItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderItemTests.swift; sourceTree = "<group>"; };
 		2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ADHDCoach/Assets.xcassets; sourceTree = "<group>"; };
-		3A3A3A3A3A3A3A3A3A3A3A3A /* CosmicCoach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CosmicCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3A3A3A3A3A3A3A3A3A3A3A3A /* CosmiCoach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CosmiCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E4C961FA2D741EDF0012035F /* ChatAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAPIService.swift; sourceTree = "<group>"; };
 		E4C961FB2D741EDF0012035F /* ChatAutomaticMessageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAutomaticMessageService.swift; sourceTree = "<group>"; };
 		E4C961FC2D741EDF0012035F /* ChatOperationStatusManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatOperationStatusManager.swift; sourceTree = "<group>"; };
@@ -152,7 +152,7 @@
 		7A7A7A7A7A7A7A7A7A7A7A7A /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				3A3A3A3A3A3A3A3A3A3A3A3A /* CosmicCoach.app */,
+				3A3A3A3A3A3A3A3A3A3A3A3A /* CosmiCoach.app */,
 				2A7B3FFF2D6EFCFC004CF1E4 /* CosmiCoachTests.xctest */,
 			);
 			name = Products;
@@ -222,9 +222,9 @@
 			productReference = 2A7B3FFF2D6EFCFC004CF1E4 /* CosmiCoachTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		AAAAAAAAAAAAAAAAAAAAAA /* CosmicCoach */ = {
+		AAAAAAAAAAAAAAAAAAAAAA /* CosmiCoach */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = BBBBBBBBBBBBBBBBBBBBBB /* Build configuration list for PBXNativeTarget "CosmicCoach" */;
+			buildConfigurationList = BBBBBBBBBBBBBBBBBBBBBB /* Build configuration list for PBXNativeTarget "CosmiCoach" */;
 			buildPhases = (
 				4A4A4A4A4A4A4A4A4A4A4A4A /* Frameworks */,
 				CCCCCCCCCCCCCCCCCCCCCC /* Sources */,
@@ -234,9 +234,9 @@
 			);
 			dependencies = (
 			);
-			name = CosmicCoach;
+			name = CosmiCoach;
 			productName = ADHDCoach;
-			productReference = 3A3A3A3A3A3A3A3A3A3A3A3A /* CosmicCoach.app */;
+			productReference = 3A3A3A3A3A3A3A3A3A3A3A3A /* CosmiCoach.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -271,7 +271,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				AAAAAAAAAAAAAAAAAAAAAA /* CosmicCoach */,
+				AAAAAAAAAAAAAAAAAAAAAA /* CosmiCoach */,
 				2A7B3FFE2D6EFCFC004CF1E4 /* CosmiCoachTests */,
 			);
 		};
@@ -347,7 +347,7 @@
 /* Begin PBXTargetDependency section */
 		2A7B40042D6EFCFC004CF1E4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = AAAAAAAAAAAAAAAAAAAAAA /* CosmicCoach */;
+			target = AAAAAAAAAAAAAAAAAAAAAA /* CosmiCoach */;
 			targetProxy = 2A7B40032D6EFCFC004CF1E4 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -368,7 +368,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CosmicCoach.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CosmicCoach";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CosmiCoach.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CosmiCoach";
 			};
 			name = Debug;
 		};
@@ -387,7 +387,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CosmicCoach.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CosmicCoach";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CosmiCoach.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CosmiCoach";
 			};
 			name = Release;
 		};
@@ -524,9 +524,9 @@
 				INFOPLIST_FILE = ADHDCoach/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = CosmiCoach;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCalendarsUsageDescription = "Cosmic Coach needs access to your calendar to help you manage your schedule and provide context-aware coaching.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Cosmic Coach needs your location to provide context-aware assistance";
-				INFOPLIST_KEY_NSRemindersUsageDescription = "Cosmic Coach needs access to your reminders to help you manage your tasks and provide context-aware coaching.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "CosmiCoach needs access to your calendar to help you manage your schedule and provide context-aware coaching.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "CosmiCoach needs your location to provide context-aware assistance";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "CosmiCoach needs access to your reminders to help you manage your tasks and provide context-aware coaching.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -558,9 +558,9 @@
 				INFOPLIST_FILE = ADHDCoach/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = CosmiCoach;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_NSCalendarsUsageDescription = "Cosmic Coach needs access to your calendar to help you manage your schedule and provide context-aware coaching.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Cosmic Coach needs your location to provide context-aware assistance";
-				INFOPLIST_KEY_NSRemindersUsageDescription = "Cosmic Coach needs access to your reminders to help you manage your tasks and provide context-aware coaching.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "CosmiCoach needs access to your calendar to help you manage your schedule and provide context-aware coaching.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "CosmiCoach needs your location to provide context-aware assistance";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "CosmiCoach needs access to your reminders to help you manage your tasks and provide context-aware coaching.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -590,7 +590,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		BBBBBBBBBBBBBBBBBBBBBB /* Build configuration list for PBXNativeTarget "CosmicCoach" */ = {
+		BBBBBBBBBBBBBBBBBBBBBB /* Build configuration list for PBXNativeTarget "CosmiCoach" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				IIIIIIIIIIIIIIIIIIIIII /* Debug */,
