@@ -7,6 +7,7 @@ struct ContentView: View {
     @EnvironmentObject private var eventKitManager: EventKitManager
     @EnvironmentObject private var memoryManager: MemoryManager
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var locationManager: LocationManager
     @Environment(\.colorScheme) private var colorScheme
     @State private var messageText = ""
     @FocusState private var isInputFocused: Bool
@@ -172,6 +173,10 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+                    .environmentObject(themeManager)
+                    .environmentObject(memoryManager)
+                    .environmentObject(locationManager)
+                    .environmentObject(chatManager)
             }
             .applyThemeColor()
             .onAppear {
