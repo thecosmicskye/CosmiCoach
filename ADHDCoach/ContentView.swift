@@ -33,14 +33,7 @@ struct ContentView: View {
         }
     }
     
-    // Helper function to scroll to bottom of chat
-    private func scrollToBottom(proxy: ScrollViewProxy) {
-        DispatchQueue.main.async {
-            withAnimation {
-                proxy.scrollTo("bottomID", anchor: .bottom)
-            }
-        }
-    }
+    // This function is now moved to the ChatScrollView component
     
     // Helper function to reset chat when notification is received
     private func setupNotificationObserver() {
@@ -65,66 +58,13 @@ struct ContentView: View {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     // Chat messages list
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            if chatManager.messages.isEmpty {
-                                // Empty state with a centered welcome message
-                                VStack {
-                                    Spacer()
-                                    Text("Welcome to Cosmic Coach")
-                                        .font(.headline)
-                                        .foregroundColor(.secondary)
-                                    Text("Type a message to get started")
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                }
-                                .frame(maxHeight: .infinity)
-                            } else {
-                                LazyVStack(spacing: 12) {
-                                    ForEach(chatManager.messages) { message in
-                                        VStack(spacing: 4) {
-                                            MessageBubbleView(message: message)
-                                                .padding(.horizontal)
-                                            
-                                            // If this is the message that triggered an operation,
-                                            // display the operation status message right after it
-                                            if !message.isUser && message.isComplete {
-                                                // Use the helper method to get status messages for this message
-                                                ForEach(chatManager.statusMessagesForMessage(message)) { statusMessage in
-                                                    OperationStatusView(statusMessage: statusMessage)
-                                                        .padding(.horizontal)
-                                                }
-                                            }
-                                        }
-                                    }
-                                    
-                                    // Invisible spacer view at the end for scrolling
-                                    Color.clear
-                                        .frame(height: 1)
-                                        .id("bottomID")
-                                }
-                                .padding(.vertical, 8)
-                            }
-                        }
-                        .scrollDismissesKeyboard(.interactively)
-                        .onChange(of: chatManager.messages.count) { _, _ in
-                            scrollToBottom(proxy: proxy)
-                        }
-                        .onChange(of: chatManager.streamingUpdateCount) { _, _ in
-                            scrollToBottom(proxy: proxy)
-                        }
-                        .onChange(of: scrollToBottom) { _, newValue in
-                            if newValue {
-                                scrollToBottom(proxy: proxy)
-                                scrollToBottom = false
-                            }
-                        }
-                        .onAppear {
-                            // Scroll to bottom on first appear
-                            scrollToBottom(proxy: proxy)
-                        }
-                    }
+                    ChatScrollView(
+                        messages: chatManager.messages,
+                        statusMessagesProvider: chatManager.statusMessagesForMessage,
+                        streamingUpdateCount: chatManager.streamingUpdateCount,
+                        shouldScrollToBottom: $scrollToBottom,
+                        isEmpty: chatManager.messages.isEmpty
+                    )
                     .contentShape(Rectangle())
                     .onTapGesture {
                         // Dismiss keyboard when tapping on the scroll view area
@@ -293,12 +233,217 @@ struct ContentView: View {
     }
 }
 
+// Dedicated view for the empty state
+struct EmptyStateView: View {
+    var body: some View {
+        VStack {
+            Spacer()
+            Text("Welcome to Cosmic Coach")
+                .font(.headline)
+                .foregroundColor(.secondary)
+            Text("Type a message to get started")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .frame(maxHeight: .infinity)
+    }
+}
+
+// Dedicated view for the message list
+struct MessageListView: View {
+    let messages: [ChatMessage]
+    let statusMessagesProvider: (ChatMessage) -> [OperationStatusMessage]
+    
+    var body: some View {
+        LazyVStack(spacing: 12) {
+            ForEach(messages) { message in
+                VStack(spacing: 4) {
+                    MessageBubbleView(message: message)
+                        .padding(.horizontal)
+                    
+                    // If this is the message that triggered an operation,
+                    // display the operation status message right after it
+                    if !message.isUser && message.isComplete {
+                        ForEach(statusMessagesProvider(message)) { statusMessage in
+                            OperationStatusView(statusMessage: statusMessage)
+                                .padding(.horizontal)
+                        }
+                    }
+                }
+            }
+            
+            // Invisible spacer view at the end for scrolling
+            Color.clear
+                .frame(height: 1)
+                .id("bottomID")
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+// Dedicated scroll position manager
+class ScrollPositionManager: ObservableObject {
+    @Published var shouldScrollToBottom = false
+    
+    func scrollToBottom() {
+        shouldScrollToBottom = true
+    }
+}
+
+// Dedicated scrolling view for chat messages
+struct ChatScrollView: View {
+    let messages: [ChatMessage]
+    let statusMessagesProvider: (ChatMessage) -> [OperationStatusMessage]
+    let streamingUpdateCount: Int
+    @Binding var shouldScrollToBottom: Bool
+    let isEmpty: Bool
+    @State private var autoScrollEnabled = true
+    
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                if isEmpty {
+                    EmptyStateView()
+                } else {
+                    MessageListView(
+                        messages: messages,
+                        statusMessagesProvider: statusMessagesProvider
+                    )
+                    .background(
+                        // Hidden scroll position detector
+                        ScrollDetector(autoScrollEnabled: $autoScrollEnabled)
+                    )
+                }
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: messages.count) { _, _ in
+                if autoScrollEnabled {
+                    scrollToBottom(proxy: proxy)
+                }
+            }
+            .onChange(of: streamingUpdateCount) { _, _ in
+                if autoScrollEnabled {
+                    // Skip animation for streaming updates for better performance
+                    scrollToBottom(proxy: proxy, animated: false)
+                }
+            }
+            .onChange(of: shouldScrollToBottom) { _, newValue in
+                if newValue {
+                    scrollToBottom(proxy: proxy)
+                    shouldScrollToBottom = false
+                    // Re-enable auto-scrolling when manually scrolled to bottom
+                    autoScrollEnabled = true
+                }
+            }
+            .onAppear {
+                // Scroll to bottom on first appear
+                scrollToBottom(proxy: proxy)
+            }
+        }
+    }
+    
+    // Helper function to scroll to bottom
+    private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = true) {
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation {
+                    proxy.scrollTo("bottomID", anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo("bottomID", anchor: .bottom)
+            }
+        }
+    }
+}
+
+// Detect scroll position changes
+struct ScrollDetector: UIViewRepresentable {
+    @Binding var autoScrollEnabled: Bool
+    
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        return view
+    }
+    
+    func updateUIView(_ uiView: UIView, context: Context) {
+        // Find scroll view
+        DispatchQueue.main.async {
+            guard let scrollView = uiView.superview?.superview?.superview as? UIScrollView else {
+                return
+            }
+            
+            if context.coordinator.scrollView == nil {
+                scrollView.delegate = context.coordinator
+                context.coordinator.scrollView = scrollView
+            }
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIScrollViewDelegate {
+        var parent: ScrollDetector
+        var scrollView: UIScrollView?
+        
+        init(_ parent: ScrollDetector) {
+            self.parent = parent
+        }
+        
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            let contentHeight = scrollView.contentSize.height
+            let scrollViewHeight = scrollView.frame.size.height
+            let scrollOffset = scrollView.contentOffset.y
+            let bottomPosition = contentHeight - scrollViewHeight
+            
+            // If we're within 44 points of the bottom, consider it "at bottom"
+            let isAtBottom = (bottomPosition - scrollOffset) <= 44
+            
+            // Only update if the value is changing to avoid unnecessary @Binding updates
+            if parent.autoScrollEnabled != isAtBottom {
+                parent.autoScrollEnabled = isAtBottom
+            }
+        }
+    }
+}
+
 #Preview {
     ContentView()
         .environmentObject(ChatManager())
         .environmentObject(EventKitManager())
         .environmentObject(MemoryManager())
         .environmentObject(ThemeManager())
+        .environmentObject(LocationManager())
+}
+
+#Preview("Chat Components") {
+    VStack {
+        ChatScrollView(
+            messages: [
+                ChatMessage(id: UUID(), content: "Hello there!", timestamp: Date(), isUser: true, isComplete: true),
+                ChatMessage(id: UUID(), content: "Hi! How can I help you today?", timestamp: Date(), isUser: false, isComplete: true)
+            ],
+            statusMessagesProvider: { _ in [] },
+            streamingUpdateCount: 0,
+            shouldScrollToBottom: .constant(false),
+            isEmpty: false
+        )
+        .frame(height: 300)
+        
+        Divider()
+        
+        ChatScrollView(
+            messages: [],
+            statusMessagesProvider: { _ in [] },
+            streamingUpdateCount: 0,
+            shouldScrollToBottom: .constant(false),
+            isEmpty: true
+        )
+        .frame(height: 300)
+    }
+    .padding()
 }
 
 // Implements an input bar that sticks to the keyboard during interactive dismissal
