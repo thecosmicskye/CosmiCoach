@@ -141,7 +141,7 @@ class ChatAPIService {
         }
         
         // Create a messages array with context first, then user message
-        var contextMessage: [String: Any] = ["role": "user", "content": [
+        let contextMessage: [String: Any] = ["role": "user", "content": [
             ["type": "text", "text": """
             Current time: \(formatCurrentDateTime())
             
@@ -161,11 +161,11 @@ class ChatAPIService {
             """]
         ]]
         
-        var assistantGreeting: [String: Any] = ["role": "assistant", "content": [
+        let assistantGreeting: [String: Any] = ["role": "assistant", "content": [
             ["type": "text", "text": "I understand. How can I help you today?"]
         ]]
         
-        var userMessage: [String: Any] = ["role": "user", "content": [
+        let userMessage: [String: Any] = ["role": "user", "content": [
             ["type": "text", "text": userMessage]
         ]]
         
@@ -527,8 +527,8 @@ class ChatAPIService {
             // If we have accumulated text content, add it to the conversation history
             if !lastTextContentBeforeToolUse.isEmpty {
                 // Create an assistant message with the text content
-                var textMessage: [String: Any] = [
-                    "role": "assistant", 
+                let textMessage: [String: Any] = [
+                    "role": "assistant",
                     "content": [
                         ["type": "text", "text": lastTextContentBeforeToolUse]
                     ]
@@ -713,7 +713,7 @@ class ChatAPIService {
         var cachedMessages = messages
         if !cachedMessages.isEmpty {
             // Check if the first message is a context message from the user
-            if var firstMessage = cachedMessages.first as? [String: Any],
+            if var firstMessage = cachedMessages.first,
                let role = firstMessage["role"] as? String, role == "user",
                var content = firstMessage["content"] as? [[String: Any]],
                !content.isEmpty {
@@ -810,7 +810,7 @@ class ChatAPIService {
         }
         
         // Create an assistant message with the tool uses
-        var assistantMessage: [String: Any] = [
+        let assistantMessage: [String: Any] = [
             "role": "assistant",
             "content": toolUseBlocks
         ]
@@ -818,8 +818,8 @@ class ChatAPIService {
         // Add the assistant's text content if available
         if !lastTextContentBeforeToolUse.isEmpty {
             // Create an assistant message with the text content
-            var textMessage: [String: Any] = [
-                "role": "assistant", 
+            let textMessage: [String: Any] = [
+                "role": "assistant",
                 "content": [
                     ["type": "text", "text": lastTextContentBeforeToolUse]
                 ]
@@ -848,7 +848,7 @@ class ChatAPIService {
         }
         
         // Create a user message with the tool results
-        var userMessage: [String: Any] = ["role": "user", "content": toolResultBlocks]
+        let userMessage: [String: Any] = ["role": "user", "content": toolResultBlocks]
         
         // Add the user message to the conversation history
         completeConversationHistory.append(userMessage)
@@ -861,7 +861,7 @@ class ChatAPIService {
         pendingToolResults = []
         
         // Use the complete conversation history for the messages array
-        var messages = completeConversationHistory
+        let messages = completeConversationHistory
         
         // Create the request body with system as a top-level parameter and tools
         let requestBody = buildRequestBodyWithCaching(
@@ -1146,8 +1146,8 @@ class ChatAPIService {
             // If we have accumulated text content, add it to the conversation history
             if !lastTextContentBeforeToolUse.isEmpty {
                 // Create an assistant message with the text content
-                var textMessage: [String: Any] = [
-                    "role": "assistant", 
+                let textMessage: [String: Any] = [
+                    "role": "assistant",
                     "content": [
                         ["type": "text", "text": lastTextContentBeforeToolUse]
                     ]
