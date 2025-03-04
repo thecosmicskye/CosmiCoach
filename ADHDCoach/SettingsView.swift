@@ -171,7 +171,7 @@ struct SettingsView: View {
                                     .textSelection(.enabled)
                             }
                             .navigationTitle("Memory File")
-                            .applyThemeColor(themeManager: themeManager)
+                            .applyThemeColor()
                             .toolbar {
                                 ToolbarItem(placement: .navigationBarTrailing) {
                                     Button("Done") {
@@ -296,15 +296,8 @@ struct SettingsView: View {
                 
                 Section(header: Text("Appearance")) {
                     NavigationLink(destination: 
-                        ThemeSelectionView(themeManager: themeManager)
-                            .onAppear {
-                                // Force update the theme when the view appears
-                                themeManager.setTheme(themeManager.currentTheme)
-                            }
-                            .onChange(of: themeManager.currentTheme) { _, _ in
-                                // Update the theme when it changes
-                                themeManager.setTheme(themeManager.currentTheme)
-                            }
+                        ThemeSelectionView()
+                            .environmentObject(themeManager)
                     ) {
                         HStack {
                             Text("Theme")
@@ -358,7 +351,7 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(colorScheme)
-            .applyThemeColor(themeManager: themeManager)
+            .applyThemeColor()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") {

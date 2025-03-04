@@ -2,14 +2,13 @@ import SwiftUI
 
 struct ThemeSelectionView: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var themeManager: ThemeManager
+    @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedThemeId: String
+    @State private var refreshID = UUID()
     
-    init(themeManager: ThemeManager) {
-        self.themeManager = themeManager
-        // Initialize with the current theme
-        _selectedThemeId = State(initialValue: themeManager.currentTheme.id)
+    init() {
+        _selectedThemeId = State(initialValue: UserDefaults.standard.string(forKey: "selected_theme_id") ?? "pink")
     }
     
     var body: some View {
@@ -21,9 +20,8 @@ struct ThemeSelectionView: View {
                             selectedThemeId = theme.id
                             themeManager.setTheme(theme)
                             
-                            // Also save to UserDefaults directly to ensure it persists
-                            UserDefaults.standard.set(theme.id, forKey: "selected_theme_id")
-                            UserDefaults.standard.synchronize()
+                            // Generate new ID to force SwiftUI view refresh
+                            refreshID = UUID()
                         }) {
                             HStack {
                                 Circle()
@@ -42,41 +40,28 @@ struct ThemeSelectionView: View {
                             }
                         }
                         .padding(.vertical, 8)
-                        .foregroundColor(themeManager.accentColor(for: colorScheme))
                     }
                 }
             }
             .navigationTitle("Select Theme")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(colorScheme)
             .tint(themeManager.accentColor(for: colorScheme))
-            .onAppear {
-                // Force update the theme when the view appears
-                themeManager.setTheme(themeManager.currentTheme)
-                
-                // Force update the navigation bar appearance
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    themeManager.setTheme(themeManager.currentTheme)
-                }
-            }
-            .onChange(of: selectedThemeId) { _, _ in
-                // Force update the navigation bar appearance when the theme changes
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    themeManager.setTheme(themeManager.currentTheme)
-                }
-            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
                         dismiss()
                     }
-                    .foregroundColor(themeManager.accentColor(for: colorScheme))
                 }
             }
         }
+        // This forces SwiftUI to completely recreate the view when the theme changes
+        .id(refreshID)
+        // Apply accent color at the root level
+        .accentColor(themeManager.accentColor(for: colorScheme))
     }
 }
 
 #Preview {
-    ThemeSelectionView(themeManager: ThemeManager())
+    ThemeSelectionView()
+        .environmentObject(ThemeManager())
 }

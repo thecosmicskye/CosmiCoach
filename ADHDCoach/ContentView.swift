@@ -173,7 +173,7 @@ struct ContentView: View {
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
             }
-            .applyThemeColor(themeManager: themeManager)
+            .applyThemeColor()
             .onAppear {
                 print("⏱️ ContentView.onAppear - START")
                 // Connect the memory manager to the chat manager
