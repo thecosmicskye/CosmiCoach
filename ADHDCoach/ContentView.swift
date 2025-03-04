@@ -9,7 +9,6 @@ struct ContentView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var locationManager: LocationManager
     @Environment(\.colorScheme) private var colorScheme
-    @State private var messageText = ""
     @FocusState private var isInputFocused: Bool
     @State private var showingSettings = false
     @State private var scrollToBottom = false
@@ -132,28 +131,20 @@ struct ContentView: View {
                         isInputFocused = false
                     }
                 
-                    // Input area
-                    HStack {
-                        TextField("Message", text: $messageText)
-                            .padding(10)
-                            .background(Color(.systemGray6))
-                            .cornerRadius(20)
-                            .focused($isInputFocused)
-                            .onChange(of: isInputFocused) { _, isFocused in
-                                if isFocused {
-                                    // When keyboard appears due to focus, scroll to bottom
-                                    scrollToBottom = true
-                                }
-                            }
-                        
-                        Button(action: sendMessage) {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.system(size: 30))
-                                .foregroundColor(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing ? Color.gray.opacity(0.5) : themeManager.accentColor(for: colorScheme))
-                        }
-                        .disabled(messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || chatManager.isProcessing)
+                    // Using our keyboard-attached input
+                    KeyboardInputAccessory(
+                        text: .constant(""),
+                        onSend: sendMessage,
+                        textFieldFocused: $isInputFocused,
+                        colorScheme: colorScheme,
+                        themeColor: themeManager.accentColor(for: colorScheme),
+                        isDisabled: chatManager.isProcessing
+                    )
+                    .frame(height: 0) // No visible height - it's part of the keyboard now
+                    .onTapGesture {
+                        // Ensure the text field gets activated when we tap the SwiftUI component
+                        isInputFocused = true
                     }
-                    .padding()
                 }
             }
             .navigationTitle("Cosmic Coach")
@@ -275,15 +266,14 @@ struct ContentView: View {
     }
     
     private func sendMessage() {
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard let text = KeyboardAccessoryController.currentText?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return }
         
-        let trimmedMessage = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        messageText = ""
-        
-        // No longer dismissing keyboard to keep it open after sending
+        // Dismiss keyboard after sending
+        isInputFocused = false
         
         // Add user message to chat
-        chatManager.addUserMessage(content: trimmedMessage)
+        chatManager.addUserMessage(content: text)
         
         // Trigger scroll to bottom after adding user message
         scrollToBottom = true
@@ -295,7 +285,7 @@ struct ContentView: View {
             let reminders = await eventKitManager.fetchReminders()
             
             await chatManager.sendMessageToClaude(
-                userMessage: trimmedMessage,
+                userMessage: text,
                 calendarEvents: calendarEvents,
                 reminders: reminders
             )
@@ -309,4 +299,290 @@ struct ContentView: View {
         .environmentObject(EventKitManager())
         .environmentObject(MemoryManager())
         .environmentObject(ThemeManager())
+}
+
+// Implements an input bar that sticks to the keyboard during interactive dismissal
+struct KeyboardInputAccessory: UIViewControllerRepresentable {
+    @Binding var text: String
+    var onSend: () -> Void
+    var textFieldFocused: FocusState<Bool>.Binding
+    var colorScheme: ColorScheme
+    var themeColor: Color
+    var isDisabled: Bool
+    
+    func makeUIViewController(context: Context) -> KeyboardAccessoryController {
+        let controller = KeyboardAccessoryController()
+        controller.delegate = context.coordinator
+        controller.themeColor = UIColor(themeColor)
+        controller.isDarkMode = colorScheme == .dark
+        controller.isDisabled = isDisabled
+        controller.textFieldText = text
+        
+        if textFieldFocused.wrappedValue {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                controller.activateTextField()
+            }
+        }
+        
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: KeyboardAccessoryController, context: Context) {
+        // Avoid text update while editing to prevent cursor jumps
+        if !uiViewController.textField.isFirstResponder {
+            uiViewController.textField.text = text
+        }
+        
+        // Update controller properties
+        uiViewController.textFieldText = text
+        uiViewController.themeColor = UIColor(themeColor)
+        uiViewController.isDarkMode = colorScheme == .dark
+        uiViewController.isDisabled = isDisabled
+        
+        // Update appearance when theme or color scheme changes
+        if context.coordinator.parent.themeColor != themeColor || 
+           context.coordinator.parent.colorScheme != colorScheme ||
+           context.coordinator.parent.isDisabled != isDisabled {
+            uiViewController.updateAppearance()
+        }
+        
+        // Focus the text field if needed
+        if textFieldFocused.wrappedValue && !uiViewController.textField.isFirstResponder {
+            uiViewController.activateTextField()
+        }
+        
+        context.coordinator.parent = self
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: KeyboardInputAccessory
+        
+        init(_ parent: KeyboardInputAccessory) {
+            self.parent = parent
+        }
+        
+        func textFieldDidChangeSelection(_ textField: UITextField) {
+            parent.text = textField.text ?? ""
+        }
+        
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            parent.textFieldFocused.wrappedValue = true
+        }
+        
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            parent.textFieldFocused.wrappedValue = false
+        }
+        
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            if !(textField.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
+                parent.onSend()
+                textField.resignFirstResponder()
+            }
+            return true
+        }
+    }
+}
+
+class KeyboardAccessoryController: UIViewController {
+    var textField = UITextField()
+    var sendButton = UIButton(type: .system)
+    var delegate: UITextFieldDelegate?
+    var themeColor: UIColor = .systemBlue
+    var isDarkMode: Bool = false
+    var isDisabled: Bool = false
+    var textFieldText: String = ""
+    
+    // Static property to access the current text from anywhere
+    static var currentText: String?
+    
+    lazy var containerView: UIView = {
+        let view = UIView()
+        updateContainerAppearance(view)
+        view.frame = CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 60)
+        return view
+    }()
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupViews()
+        textField.inputAccessoryView = nil
+        
+        // Observe keyboard frame change notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillChangeFrame),
+            name: UIResponder.keyboardWillChangeFrameNotification,
+            object: nil
+        )
+        
+        // Observe theme changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(themeDidChange),
+            name: NSNotification.Name("ThemeDidChangeNotification"),
+            object: nil
+        )
+        
+        // Observe trait collection changes for dark/light mode
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(userInterfaceStyleDidChange),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+    
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if traitCollection.userInterfaceStyle != previousTraitCollection?.userInterfaceStyle {
+            updateAppearance()
+        }
+    }
+    
+    @objc private func userInterfaceStyleDidChange() {
+        updateAppearance()
+    }
+    
+    @objc private func themeDidChange() {
+        updateAppearance()
+    }
+    
+    func updateAppearance() {
+        updateContainerAppearance(containerView)
+        updateTextFieldAppearance()
+        updateSendButtonAppearance()
+    }
+    
+    private func updateContainerAppearance(_ view: UIView) {
+        // Match system background colors for consistency
+        view.backgroundColor = isDarkMode ? .systemBackground : .systemBackground
+    }
+    
+    private func updateTextFieldAppearance() {
+        textField.backgroundColor = isDarkMode ? .secondarySystemBackground : .secondarySystemBackground
+        textField.textColor = isDarkMode ? .white : .black
+        textField.borderStyle = .none
+        textField.layer.cornerRadius = 18
+        textField.clipsToBounds = true
+        textField.attributedPlaceholder = NSAttributedString(
+            string: "Message",
+            attributes: [NSAttributedString.Key.foregroundColor: UIColor.placeholderText]
+        )
+    }
+    
+    private func updateSendButtonAppearance() {
+        let textIsEmpty = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+        sendButton.tintColor = (isDisabled || textIsEmpty) ? .gray : themeColor
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        becomeFirstResponder()
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    @objc private func keyboardWillChangeFrame(notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let endFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+              let duration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
+              let curve = userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt,
+              endFrame.origin.y >= UIScreen.main.bounds.height,
+              textField.isFirstResponder else { return }
+        
+        UIView.animate(
+            withDuration: duration,
+            delay: 0,
+            options: UIView.AnimationOptions(rawValue: curve),
+            animations: {
+                self.textField.resignFirstResponder()
+            }
+        )
+    }
+    
+    private func setupViews() {
+        // Configure text field
+        updateTextFieldAppearance()
+        textField.delegate = delegate
+        textField.returnKeyType = .send
+        textField.autocorrectionType = .yes
+        textField.text = textFieldText
+        
+        // Update the static property when text changes
+        textField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
+        
+        // Configure send button
+        let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
+        sendButton.setImage(UIImage(systemName: "arrow.up.circle.fill", withConfiguration: config), for: .normal)
+        updateSendButtonAppearance()
+        sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
+        
+        // Add container tap handler
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(containerTapped))
+        containerView.addGestureRecognizer(tapGesture)
+        
+        // Add subviews and configure layout
+        containerView.addSubview(textField)
+        containerView.addSubview(sendButton)
+        
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        sendButton.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Add padding to text field
+        textField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 15, height: textField.frame.height))
+        textField.leftViewMode = .always
+        textField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 15, height: textField.frame.height))
+        textField.rightViewMode = .always
+        
+        NSLayoutConstraint.activate([
+            textField.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
+            textField.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 10),
+            textField.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -10),
+            
+            sendButton.leadingAnchor.constraint(equalTo: textField.trailingAnchor, constant: 8),
+            sendButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
+            sendButton.centerYAnchor.constraint(equalTo: textField.centerYAnchor),
+            sendButton.widthAnchor.constraint(equalToConstant: 44),
+            sendButton.heightAnchor.constraint(equalToConstant: 44)
+        ])
+    }
+    
+    @objc func containerTapped() {
+        activateTextField()
+    }
+    
+    @objc func sendTapped() {
+        if let delegate = delegate {
+            _ = delegate.textFieldShouldReturn?(textField)
+            textField.resignFirstResponder()
+        }
+    }
+    
+    func activateTextField() {
+        if !isFirstResponder {
+            becomeFirstResponder()
+        }
+        textField.becomeFirstResponder()
+    }
+    
+    // These methods enable the keyboard input accessory view
+    override var canBecomeFirstResponder: Bool {
+        return true
+    }
+    
+    override var inputAccessoryView: UIView? {
+        return containerView
+    }
+    
+    // Handle text field changes and update static property
+    @objc func textFieldDidChange(_ textField: UITextField) {
+        KeyboardAccessoryController.currentText = textField.text
+        updateSendButtonAppearance()
+    }
 }
