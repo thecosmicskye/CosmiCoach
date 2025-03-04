@@ -31,6 +31,14 @@ struct ADHDCoachApp: App {
             UserDefaults.standard.set("pink", forKey: "selected_theme_id")
             UserDefaults.standard.synchronize()
         }
+        
+        // Configure UIKit appearance for UINavigationBar
+        // This is needed because SwiftUI's NavigationView/NavigationStack uses UIKit underneath
+        configureUIKitAppearance()
+    }
+    
+    private func configureUIKitAppearance() {
+        themeManager.setTheme(themeManager.currentTheme)
     }
     
     var body: some Scene {
@@ -43,9 +51,6 @@ struct ADHDCoachApp: App {
                     .environmentObject(locationManager)
                     .environmentObject(themeManager)
                     .onAppear {
-                        // Force update the theme when the app appears
-                        themeManager.setTheme(themeManager.currentTheme)
-                        
                         // Request permissions when app launches
                         eventKitManager.requestAccess()
                         
@@ -70,7 +75,6 @@ struct ADHDCoachApp: App {
                         }
                     }
                     .onChange(of: colorScheme) { _, _ in
-                        // Update the global accent color when the color scheme changes
                         themeManager.setTheme(themeManager.currentTheme)
                     }
             } else {
@@ -78,12 +82,7 @@ struct ADHDCoachApp: App {
                     .environmentObject(chatManager)
                     .environmentObject(locationManager)
                     .environmentObject(themeManager)
-                    .onAppear {
-                        // Force update the theme when the app appears
-                        themeManager.setTheme(themeManager.currentTheme)
-                    }
                     .onChange(of: colorScheme) { _, _ in
-                        // Update the global accent color when the color scheme changes
                         themeManager.setTheme(themeManager.currentTheme)
                     }
             }
@@ -106,8 +105,8 @@ struct ADHDCoachApp: App {
             } else if newPhase == .active {
                 print("⏱️ App becoming active")
                 
-                // Force update the theme when the app becomes active
-                themeManager.setTheme(themeManager.currentTheme)
+                // Set theme when app becomes active
+                self.themeManager.setTheme(self.themeManager.currentTheme)
                 
                 // Check if we have a last session time
                 if let lastSessionTime = UserDefaults.standard.object(forKey: "last_app_session_time") as? TimeInterval {

@@ -32,47 +32,16 @@ class ThemeManager: ObservableObject {
         return colorScheme == .dark ? currentTheme.darkModeAccentColor : currentTheme.accentColor
     }
     
-    // Update the global accent color
     private func updateGlobalAccentColor() {
-        // Set the global accent color
         let isDarkMode = UITraitCollection.current.userInterfaceStyle == .dark
         let tintColor = UIColor(isDarkMode ? currentTheme.darkModeAccentColor : currentTheme.accentColor)
         
-        // Reset any existing appearance settings
-        let defaultAppearance = UINavigationBarAppearance()
-        defaultAppearance.configureWithDefaultBackground()
-        
-        // Create a new appearance
-        let appearance = UINavigationBarAppearance()
-        appearance.configureWithDefaultBackground()
-        
-        // Configure back button appearance
-        let backImage = UIImage(systemName: "chevron.left")?.withTintColor(tintColor, renderingMode: .alwaysOriginal)
-        appearance.setBackIndicatorImage(backImage, transitionMaskImage: backImage)
-        
-        // Apply to UIKit elements
-        UINavigationBar.appearance().standardAppearance = appearance
-        UINavigationBar.appearance().compactAppearance = appearance
-        UINavigationBar.appearance().scrollEdgeAppearance = appearance
-        UINavigationBar.appearance().tintColor = tintColor
-        
-        // Apply to UIBarButtonItem
-        UIBarButtonItem.appearance().tintColor = tintColor
-        
-        // Apply to specific UIBarButtonItem types
-        UIBarButtonItem.appearance(whenContainedInInstancesOf: [UINavigationBar.self]).tintColor = tintColor
-        
-        // Force update all windows
-        for scene in UIApplication.shared.connectedScenes {
-            if let windowScene = scene as? UIWindowScene {
-                for window in windowScene.windows {
-                    window.tintColor = tintColor
-                    for view in window.subviews {
-                        view.setNeedsLayout()
-                        view.setNeedsDisplay()
-                    }
-                }
-            }
+        // Set window tint color
+        for window in UIApplication.shared.windows {
+            window.tintColor = tintColor
         }
+        
+        // Notify observers
+        NotificationCenter.default.post(name: NSNotification.Name("ThemeDidChangeNotification"), object: nil)
     }
 }

@@ -43,7 +43,7 @@ struct OnboardingView: View {
             .padding()
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(colorScheme)
-            .applyThemeColor(themeManager: themeManager)
+            .applyThemeColor()
         }
     }
     
