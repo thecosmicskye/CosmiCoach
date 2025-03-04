@@ -78,7 +78,7 @@ struct OnboardingView: View {
             } label: {
                 Text("Continue")
                     .font(.headline)
-                    .foregroundColor(.black)
+                    .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(themeManager.accentColor(for: colorScheme))
@@ -152,7 +152,7 @@ struct OnboardingView: View {
                 } label: {
                     Text(isTestingKey ? "Testing..." : "Continue")
                         .font(.headline)
-                        .foregroundColor(.black)
+                        .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(themeManager.accentColor(for: colorScheme))
