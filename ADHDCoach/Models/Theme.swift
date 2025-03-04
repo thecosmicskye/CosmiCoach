@@ -10,8 +10,8 @@ struct Theme: Identifiable, Equatable {
     static let pink = Theme(
         id: "pink",
         name: "Pink",
-        accentColor: Color(red: 0.8, green: 0.2, blue: 0.7),
-        darkModeAccentColor: Color(red: 0.75, green: 0.3, blue: 0.4)
+        accentColor: Color(red: 0.98, green: 0.3, blue: 0.6),
+        darkModeAccentColor: Color(red: 0.95, green: 0.4, blue: 0.65)
     )
     
     static let blue = Theme(
