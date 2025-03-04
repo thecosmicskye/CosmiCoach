@@ -25,14 +25,22 @@ struct OnboardingView: View {
                 }
                 .padding(.top, 24)
                 
-                if currentStep == 0 {
+                TabView(selection: $currentStep) {
                     welcomeView
-                } else {
+                        .tag(0)
+                    
                     apiKeyView
+                        .tag(1)
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .animation(.spring(), value: currentStep)
+                .onChange(of: currentStep) { newValue in
+                    if newValue == 0 && apiKeyIsFocused {
+                        apiKeyIsFocused = false
+                    }
                 }
             }
             .padding()
-            .animation(.spring(), value: currentStep)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(colorScheme)
             .applyThemeColor(themeManager: themeManager)
@@ -66,9 +74,7 @@ struct OnboardingView: View {
             Spacer()
             
             Button {
-                withAnimation {
-                    currentStep = 1
-                }
+                currentStep = 1
             } label: {
                 Text("Continue")
                     .font(.headline)
