@@ -23,13 +23,23 @@ struct ContentView: View {
     
     // Setup keyboard appearance notification
     private func setupKeyboardObserver() {
+        // When keyboard shows, we want to scroll to bottom IF we're already at the bottom
         NotificationCenter.default.addObserver(
-            forName: UIResponder.keyboardDidShowNotification,
+            forName: UIResponder.keyboardWillShowNotification,
             object: nil,
             queue: .main
         ) { [self] _ in
-            // Trigger scroll to bottom when keyboard appears
-            scrollToBottom = true
+            // Check if auto-scroll is enabled or if we're at the bottom
+            let isAtBottom = UserDefaults.standard.bool(forKey: "ChatIsAtBottom")
+            
+            // Only scroll when keyboard shows if we're explicitly at bottom
+            // Don't use the "last message is from Claude" logic as it causes unwanted scrolling
+            if isAtBottom {
+                // Delay the scroll slightly to allow layout to update
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    scrollToBottom = true
+                }
+            }
         }
     }
     
@@ -218,6 +228,10 @@ struct ContentView: View {
         // Trigger scroll to bottom after adding user message
         scrollToBottom = true
         
+        // Ensure we mark as at bottom when sending a message
+        UserDefaults.standard.set(true, forKey: "ChatIsAtBottom")
+        UserDefaults.standard.synchronize()
+        
         // Send to Claude API
         Task {
             // Get context from EventKit
@@ -330,12 +344,24 @@ struct ChatScrollView: View {
             }
             .onChange(of: shouldScrollToBottom) { _, newValue in
                 if newValue {
+                    // Only manually scroll to bottom for explicit scroll requests
                     scrollToBottom(proxy: proxy)
                     shouldScrollToBottom = false
                     // Re-enable auto-scrolling when manually scrolled to bottom
                     autoScrollEnabled = true
                 }
             }
+            // Disable any keyboard-related scrolling entirely
+            .simultaneousGesture(
+                DragGesture().onChanged { _ in
+                    // During any scroll gesture, disable keyboard auto-scroll
+                    // This captures user intent to scroll independently
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("UserScrollingNotification"),
+                        object: nil
+                    )
+                }
+            )
             .onAppear {
                 // Scroll to bottom on first appear
                 scrollToBottom(proxy: proxy)
@@ -343,8 +369,11 @@ struct ChatScrollView: View {
         }
     }
     
-    // Helper function to scroll to bottom
     private func scrollToBottom(proxy: ScrollViewProxy, animated: Bool = true) {
+        // Mark as at bottom when we explicitly scroll
+        UserDefaults.standard.set(true, forKey: "ChatIsAtBottom")
+        UserDefaults.standard.synchronize()
+        
         DispatchQueue.main.async {
             if animated {
                 withAnimation {
@@ -355,6 +384,7 @@ struct ChatScrollView: View {
             }
         }
     }
+    
 }
 
 // Detect scroll position changes
@@ -363,6 +393,10 @@ struct ScrollDetector: UIViewRepresentable {
     
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
+        
+        // Setup keyboard observers in the coordinator
+        context.coordinator.setupKeyboardObservers()
+        
         return view
     }
     
@@ -387,12 +421,119 @@ struct ScrollDetector: UIViewRepresentable {
     class Coordinator: NSObject, UIScrollViewDelegate {
         var parent: ScrollDetector
         var scrollView: UIScrollView?
+        var isDragging = false
+        var isKeyboardDismissing = false
         
         init(_ parent: ScrollDetector) {
             self.parent = parent
+            super.init()
+        }
+        
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+        
+        func setupKeyboardObservers() {
+            // Listen for user scrolling notification
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(userStartedScrolling),
+                name: NSNotification.Name("UserScrollingNotification"),
+                object: nil
+            )
+            
+            // Observe keyboard will hide to detect keyboard dismissal
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(keyboardWillHide),
+                name: UIResponder.keyboardWillHideNotification,
+                object: nil
+            )
+            
+            // Reset keyboard state when showing
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(keyboardDidShow),
+                name: UIResponder.keyboardDidShowNotification,
+                object: nil
+            )
+        }
+        
+        @objc func userStartedScrolling() {
+            // User initiated scrolling - disable auto-scroll completely
+            parent.autoScrollEnabled = false
+        }
+        
+        @objc func keyboardWillHide() {
+            // Flag that keyboard is dismissing to prevent auto-scroll changes
+            isKeyboardDismissing = true
+            
+            // When keyboard hides, we want to DISABLE auto-scroll completely
+            // to prevent unwanted scrolling during dismissal
+            let scrollPosition = UserDefaults.standard.bool(forKey: "ChatIsAtBottom")
+            if !scrollPosition {
+                // Force disable auto-scroll if we're not at bottom
+                parent.autoScrollEnabled = false
+                
+                // Also explicitly save this state
+                UserDefaults.standard.set(false, forKey: "ChatIsAtBottom")
+                UserDefaults.standard.synchronize()
+            }
+            
+            // Reset after a short delay (after dismiss animation)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.isKeyboardDismissing = false
+            }
+        }
+        
+        @objc func keyboardDidShow() {
+            // Keyboard is visible, reset flag
+            isKeyboardDismissing = false
+        }
+        
+        func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+            isDragging = true
+        }
+        
+        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+            // Only update auto-scroll when user actively drags, not when keyboard dismissal causes scrolling
+            isDragging = false
+            // If not decelerating, check position
+            if !decelerate && !isKeyboardDismissing {
+                updateAutoScrollState(scrollView)
+            }
+        }
+        
+        func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            // When scrolling stops after user interaction, update auto-scroll state
+            // Only if not in the middle of keyboard dismissal
+            if !isKeyboardDismissing {
+                updateAutoScrollState(scrollView)
+            }
         }
         
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            // When scrolling while dragging, immediately disable auto-scroll
+            if isDragging {
+                // When user is manually scrolling, disable auto-scroll immediately
+                // This prevents unwanted scrolling during keyboard dismiss
+                parent.autoScrollEnabled = false
+                
+                // Also update position state so keyboard dismiss doesn't trigger scrolls
+                let contentHeight = scrollView.contentSize.height
+                let scrollViewHeight = scrollView.frame.size.height
+                let scrollOffset = scrollView.contentOffset.y
+                let bottomPosition = contentHeight - scrollViewHeight
+                
+                // If we're not at the bottom, make sure state reflects this
+                if (bottomPosition - scrollOffset) > 44 {
+                    UserDefaults.standard.set(false, forKey: "ChatIsAtBottom")
+                    UserDefaults.standard.synchronize()
+                }
+            }
+        }
+        
+        private func updateAutoScrollState(_ scrollView: UIScrollView) {
             let contentHeight = scrollView.contentSize.height
             let scrollViewHeight = scrollView.frame.size.height
             let scrollOffset = scrollView.contentOffset.y
@@ -400,6 +541,11 @@ struct ScrollDetector: UIViewRepresentable {
             
             // If we're within 44 points of the bottom, consider it "at bottom"
             let isAtBottom = (bottomPosition - scrollOffset) <= 44
+            
+            // Save current position to UserDefaults for keyboard observer
+            // Use synchronize to ensure value is immediately available
+            UserDefaults.standard.set(isAtBottom, forKey: "ChatIsAtBottom")
+            UserDefaults.standard.synchronize()
             
             // Only update if the value is changing to avoid unnecessary @Binding updates
             if parent.autoScrollEnabled != isAtBottom {
