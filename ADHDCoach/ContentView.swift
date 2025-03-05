@@ -874,6 +874,14 @@ class KeyboardAccessoryController: UIViewController {
     private func updateSendButtonAppearance() {
         let textIsEmpty = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
         sendButton.tintColor = (isDisabled || textIsEmpty) ? .gray : themeColor
+        
+        // Remove any existing targets to avoid multiple attachments
+        sendButton.removeTarget(nil, action: nil, for: .touchUpInside)
+        
+        // Only add the action target if text is not empty and not disabled
+        if !textIsEmpty && !isDisabled {
+            sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
+        }
     }
     
     override func viewDidAppear(_ animated: Bool) {
@@ -907,7 +915,7 @@ class KeyboardAccessoryController: UIViewController {
         // Configure text field
         updateTextFieldAppearance()
         textField.delegate = delegate
-        textField.returnKeyType = .send
+        textField.returnKeyType = .default
         textField.autocorrectionType = .yes
         textField.text = textFieldText
         
@@ -918,7 +926,6 @@ class KeyboardAccessoryController: UIViewController {
         let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
         sendButton.setImage(UIImage(systemName: "arrow.up.circle.fill", withConfiguration: config), for: .normal)
         updateSendButtonAppearance()
-        sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
         
         // Add container tap handler
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(containerTapped))
@@ -957,6 +964,11 @@ class KeyboardAccessoryController: UIViewController {
     }
     
     @objc func sendTapped() {
+        // Prevent any action if text field is empty
+        guard let text = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
+            return
+        }
+        
         if let delegate = delegate {
             _ = delegate.textFieldShouldReturn?(textField)
             textField.resignFirstResponder()
