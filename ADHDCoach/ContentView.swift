@@ -94,7 +94,9 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         // Dismiss keyboard when tapping on the scroll view area
-                        isInputFocused = false
+                        if isInputFocused {
+                            isInputFocused = false
+                        }
                     }
                 
                                     // Using our keyboard-attached input
@@ -236,7 +238,7 @@ struct ContentView: View {
         guard let text = KeyboardAccessoryController.currentText?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return }
         
-        // Dismiss keyboard after sending
+        // Dismiss keyboard after sending - height update will be handled by keyboard notifications
         isInputFocused = false
         
         // Add user message to chat
@@ -628,6 +630,8 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         controller.textFieldText = text
         controller.isKeyboardVisible = isKeyboardVisible
         
+        // Set initial keyboard state
+        
         if textFieldFocused.wrappedValue {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 controller.activateTextField()
@@ -655,7 +659,14 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
             uiViewController.updateTextFieldAppearance()
         }
         
-        // Update appearance when theme or color scheme changes
+        // Update container based on focus state if needed
+        let shouldBeFocused = textFieldFocused.wrappedValue
+        if shouldBeFocused != uiViewController.textField.isFirstResponder {
+            // Only update container if there's an actual change in state
+            uiViewController.updateContainerHeight(forKeyboardHidden: !shouldBeFocused)
+        }
+        
+        // Update appearance when theme, color scheme, or keyboard state changes
         if context.coordinator.parent.themeColor != themeColor || 
            context.coordinator.parent.colorScheme != colorScheme ||
            context.coordinator.parent.isDisabled != isDisabled ||
@@ -691,13 +702,27 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
             
             // Update keyboard visibility state
             parent.isKeyboardVisible = true
+            
+            // Update container height in controller
+            if let controller = textField.getKeyboardAccessoryController() {
+                controller.updateContainerHeight(forKeyboardHidden: false)
+            }
         }
         
         func textFieldDidEndEditing(_ textField: UITextField) {
+            // Set focus state to false in the SwiftUI binding
             parent.textFieldFocused.wrappedValue = false
             
             // Update keyboard visibility state
             parent.isKeyboardVisible = false
+            
+            // Update container height in controller
+            if let controller = textField.getKeyboardAccessoryController() {
+                // Ensure this happens immediately for proper safe area padding
+                DispatchQueue.main.async {
+                    controller.updateContainerHeight(forKeyboardHidden: true)
+                }
+            }
         }
         
         func textFieldShouldReturn(_ textField: UITextField) -> Bool {
@@ -731,20 +756,20 @@ class KeyboardAccessoryController: UIViewController {
         return view
     }()
     
-    // Track keyboard visibility
+    // Track keyboard state
     var isKeyboardVisible: Bool = false
     
-    // We'll control container height instead of individual constraints
-    private var containerHeightConstraint: NSLayoutConstraint?
+    // Keep track of last applied height to prevent unnecessary updates
+    private var lastAppliedHeight: CGFloat = 90.0
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // Set up the container view with proper height
+        // Set up the container view
         containerView.translatesAutoresizingMaskIntoConstraints = false
-        let height = isKeyboardVisible ? 60.0 : 90.0
-        containerHeightConstraint = containerView.heightAnchor.constraint(equalToConstant: height)
-        containerHeightConstraint?.isActive = true
+        // Initial height should be 90.0 (for safe area padding) since keyboard is not shown by default
+        containerView.frame.size.height = 90.0
+        lastAppliedHeight = 90.0
         
         // Set the shared instance for easier access
         KeyboardAccessoryController.sharedInstance = self
@@ -795,24 +820,57 @@ class KeyboardAccessoryController: UIViewController {
     @objc private func keyboardWillShow(_ notification: Notification) {
         isKeyboardVisible = true
         updateTextFieldAppearance()
-        updateContainerConstraints()
+        updateContainerHeight(forKeyboardHidden: false)
     }
     
     @objc private func keyboardWillHide(_ notification: Notification) {
         isKeyboardVisible = false
         updateTextFieldAppearance()
-        updateContainerConstraints()
+        
+        // Get animation parameters if available
+        var duration: TimeInterval = 0.25
+        if let userInfo = notification.userInfo,
+           let animDuration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval {
+            duration = animDuration
+        }
+        
+        // Do a single immediate update
+        updateContainerHeight(forKeyboardHidden: true)
+        
+        // Then a single delayed update timed with keyboard animation
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+            self.updateContainerHeight(forKeyboardHidden: true)
+        }
     }
     
     
-    private func updateContainerConstraints() {
-        // Update the container height constraint if it exists
-        if let constraint = containerHeightConstraint {
-            constraint.constant = isKeyboardVisible ? 60.0 : 90.0 // Taller when keyboard is NOT visible
-            UIView.animate(withDuration: 0.3) {
-                self.view.layoutIfNeeded()
-            }
+    func updateContainerHeight(forKeyboardHidden: Bool) {
+        // Set appropriate height based on keyboard state
+        let newHeight: CGFloat = forKeyboardHidden ? 90.0 : 60.0
+        
+        // Check if we're already at the desired height to prevent flickering
+        if abs(lastAppliedHeight - newHeight) < 0.1 {
+            return // Skip if height is already correct
         }
+        
+        // Update frame directly
+        var newFrame = containerView.frame
+        newFrame.size.height = newHeight
+        containerView.frame = newFrame
+        
+        // Update parent frame if possible
+        if let inputAccessoryView = self.inputAccessoryView {
+            inputAccessoryView.frame.size.height = newHeight
+        }
+        
+        // Remember this height
+        lastAppliedHeight = newHeight
+    }
+    
+    
+    // Forward the legacy method to our new implementation
+    func updateContainerConstraints() {
+        updateContainerHeight(forKeyboardHidden: !textField.isFirstResponder)
     }
     
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -859,10 +917,11 @@ class KeyboardAccessoryController: UIViewController {
             attributes: [NSAttributedString.Key.foregroundColor: UIColor.placeholderText]
         )
         
-        // Update the keyboard-related layout if needed
+        // Update the keyboard visibility state
         if isKeyboardVisible != isKeyboardActive {
             isKeyboardVisible = isKeyboardActive
-            updateContainerConstraints()
+            // Update container height based on keyboard state
+            updateContainerHeight(forKeyboardHidden: !isKeyboardActive)
         }
     }
     
@@ -897,21 +956,35 @@ class KeyboardAccessoryController: UIViewController {
         guard let userInfo = notification.userInfo,
               let endFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
               let duration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
-              let curve = userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt,
-              endFrame.origin.y >= UIScreen.main.bounds.height,
-              textField.isFirstResponder else { return }
+              let curve = userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt else { return }
         
-        UIView.animate(
-            withDuration: duration,
-            delay: 0,
-            options: UIView.AnimationOptions(rawValue: curve),
-            animations: {
-                self.textField.resignFirstResponder()
-            }
-        )
+        // Detect swipe to dismiss keyboard
+        if endFrame.origin.y >= UIScreen.main.bounds.height && textField.isFirstResponder {
+            print("Keyboard being dismissed by swipe gesture")
+            
+            // Update the container height BEFORE resigning first responder
+            updateContainerHeight(forKeyboardHidden: true)
+            
+            // Then resign first responder
+            UIView.animate(
+                withDuration: duration,
+                delay: 0,
+                options: UIView.AnimationOptions(rawValue: curve),
+                animations: {
+                    self.textField.resignFirstResponder()
+                },
+                completion: { _ in
+                    // One final update after animation completes
+                    self.updateContainerHeight(forKeyboardHidden: true)
+                }
+            )
+        }
     }
     
     private func setupViews() {
+        // Set initial container view size - use 90.0 as default safe area padding height
+        containerView.frame = CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 90.0)
+        
         // Configure text field
         updateTextFieldAppearance()
         textField.delegate = delegate
@@ -980,6 +1053,9 @@ class KeyboardAccessoryController: UIViewController {
             becomeFirstResponder()
         }
         textField.becomeFirstResponder()
+        
+        // Update container height when activating
+        updateContainerHeight(forKeyboardHidden: false)
     }
     
     // These methods enable the keyboard input accessory view
@@ -988,6 +1064,9 @@ class KeyboardAccessoryController: UIViewController {
     }
     
     override var inputAccessoryView: UIView? {
+        // Set the height based on focus state before returning
+        let height = textField.isFirstResponder ? 60.0 : 90.0
+        containerView.frame.size.height = height
         return containerView
     }
     
