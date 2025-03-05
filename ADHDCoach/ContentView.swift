@@ -737,15 +737,23 @@ class KeyboardAccessoryController: UIViewController {
     lazy var containerView: UIView = {
         let view = UIView()
         updateContainerAppearance(view)
-        view.frame = CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 60)
         return view
     }()
     
     // Track keyboard visibility
     var isKeyboardVisible: Bool = false
     
+    // We'll control container height instead of individual constraints
+    private var containerHeightConstraint: NSLayoutConstraint?
+    
     override func viewDidLoad() {
         super.viewDidLoad()
+        
+        // Set up the container view with proper height
+        containerView.translatesAutoresizingMaskIntoConstraints = false
+        let height = isKeyboardVisible ? 60.0 : 90.0
+        containerHeightConstraint = containerView.heightAnchor.constraint(equalToConstant: height)
+        containerHeightConstraint?.isActive = true
         
         // Set the shared instance for easier access
         KeyboardAccessoryController.sharedInstance = self
@@ -796,11 +804,24 @@ class KeyboardAccessoryController: UIViewController {
     @objc private func keyboardWillShow(_ notification: Notification) {
         isKeyboardVisible = true
         updateTextFieldAppearance()
+        updateContainerConstraints()
     }
     
     @objc private func keyboardWillHide(_ notification: Notification) {
         isKeyboardVisible = false
         updateTextFieldAppearance()
+        updateContainerConstraints()
+    }
+    
+    
+    private func updateContainerConstraints() {
+        // Update the container height constraint if it exists
+        if let constraint = containerHeightConstraint {
+            constraint.constant = isKeyboardVisible ? 60.0 : 90.0 // Taller when keyboard is NOT visible
+            UIView.animate(withDuration: 0.3) {
+                self.view.layoutIfNeeded()
+            }
+        }
     }
     
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -822,6 +843,7 @@ class KeyboardAccessoryController: UIViewController {
         updateContainerAppearance(containerView)
         updateTextFieldAppearance()
         updateSendButtonAppearance()
+        updateContainerConstraints()
     }
     
     private func updateContainerAppearance(_ view: UIView) {
@@ -843,6 +865,12 @@ class KeyboardAccessoryController: UIViewController {
             string: "Message",
             attributes: [NSAttributedString.Key.foregroundColor: UIColor.placeholderText]
         )
+        
+        // Update the keyboard-related layout if needed
+        if isKeyboardVisible != isKeyboardActive {
+            isKeyboardVisible = isKeyboardActive
+            updateContainerConstraints()
+        }
     }
     
     // Method to maintain compatibility with older code
@@ -916,16 +944,18 @@ class KeyboardAccessoryController: UIViewController {
         textField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 15, height: textField.frame.height))
         textField.rightViewMode = .always
         
+        // Set fixed constraints that won't change
         NSLayoutConstraint.activate([
-            textField.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16),
-            textField.topAnchor.constraint(equalTo: containerView.topAnchor, constant: 10),
-            textField.bottomAnchor.constraint(equalTo: containerView.bottomAnchor, constant: -10),
+            textField.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16.0),
+            // Fixed height and centerY alignment ensures consistent sizing regardless of container height
+            textField.heightAnchor.constraint(equalToConstant: 36.0),
+            textField.centerYAnchor.constraint(equalTo: containerView.topAnchor, constant: 30.0),
             
-            sendButton.leadingAnchor.constraint(equalTo: textField.trailingAnchor, constant: 8),
-            sendButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16),
+            sendButton.leadingAnchor.constraint(equalTo: textField.trailingAnchor, constant: 8.0),
+            sendButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16.0),
             sendButton.centerYAnchor.constraint(equalTo: textField.centerYAnchor),
-            sendButton.widthAnchor.constraint(equalToConstant: 44),
-            sendButton.heightAnchor.constraint(equalToConstant: 44)
+            sendButton.widthAnchor.constraint(equalToConstant: 44.0),
+            sendButton.heightAnchor.constraint(equalToConstant: 44.0)
         ])
     }
     
