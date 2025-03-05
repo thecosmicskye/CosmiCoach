@@ -689,21 +689,12 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         func textFieldDidBeginEditing(_ textField: UITextField) {
             parent.textFieldFocused.wrappedValue = true
             
-            // Change text field to blue when keyboard is open
-            textField.backgroundColor = .systemBlue
-            textField.textColor = .white
-            
             // Update keyboard visibility state
             parent.isKeyboardVisible = true
         }
         
         func textFieldDidEndEditing(_ textField: UITextField) {
             parent.textFieldFocused.wrappedValue = false
-            
-            // Reset text field to default color when keyboard is closed
-            let isDarkMode = parent.colorScheme == .dark
-            textField.backgroundColor = isDarkMode ? .secondarySystemBackground : .secondarySystemBackground
-            textField.textColor = isDarkMode ? .white : .black
             
             // Update keyboard visibility state
             parent.isKeyboardVisible = false
@@ -852,12 +843,14 @@ class KeyboardAccessoryController: UIViewController {
     }
     
     func updateTextFieldAppearance() {
-        // Set background to blue when the text field is first responder
+        // Set background color based on mode, without the blue highlight
         let isKeyboardActive = textField.isFirstResponder
+        let backgroundColor = isDarkMode ? UIColor.secondarySystemBackground : UIColor.secondarySystemBackground
+        let textColor = isDarkMode ? UIColor.white : UIColor.black
         
-        // Set background color based on keyboard state
-        textField.backgroundColor = isKeyboardActive ? .systemBlue : (isDarkMode ? .secondarySystemBackground : .secondarySystemBackground)
-        textField.textColor = isKeyboardActive ? .white : (isDarkMode ? .white : .black)
+        // Apply consistent styling
+        textField.backgroundColor = backgroundColor
+        textField.textColor = textColor
         textField.borderStyle = .none
         textField.layer.cornerRadius = 18
         textField.clipsToBounds = true
