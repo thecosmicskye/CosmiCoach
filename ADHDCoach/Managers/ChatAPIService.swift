@@ -318,9 +318,6 @@ class ChatAPIService {
                     break
                 }
                 
-                // Log raw response data for debugging
-                print("💡 RAW RESPONSE: \(jsonStr)")
-                
                 // Parse the JSON
                 if let data = jsonStr.data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -423,9 +420,7 @@ class ChatAPIService {
                             let inputJsonDelta = delta["type"] as? String, inputJsonDelta == "input_json_delta",
                             let partialJson = delta["partial_json"] as? String {
                         
-                        print("💡 Tool input JSON delta: \(partialJson)")
-                        
-                        // Accumulate the input json
+                        // Accumulate the input json without printing details
                         self.currentToolInputJson += partialJson
                     }
                     // Check for message_delta with stop_reason = "tool_use"
@@ -991,9 +986,6 @@ class ChatAPIService {
                     break
                 }
                 
-                // Log raw response data for debugging
-                print("💡 FOLLOW-UP RAW RESPONSE: \(jsonStr)")
-                
                 // Parse the JSON
                 if let data = jsonStr.data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -1116,9 +1108,7 @@ class ChatAPIService {
                             let inputJsonDelta = delta["type"] as? String, inputJsonDelta == "input_json_delta",
                             let partialJson = delta["partial_json"] as? String {
                         
-                        print("💡 Follow-up tool input JSON delta: \(partialJson)")
-                        
-                        // Accumulate the input json
+                        // Accumulate the input json without printing details
                         self.currentToolInputJson += partialJson
                     }
                     // Check for message_delta with stop_reason = "tool_use"
@@ -1448,9 +1438,6 @@ class ChatAPIService {
                 if jsonStr == "[DONE]" {
                     break
                 }
-                
-                // Log raw response data for debugging
-                print("💡 CONTINUATION RAW RESPONSE: \(jsonStr)")
                 
                 // Parse the JSON
                 if let data = jsonStr.data(using: .utf8),
