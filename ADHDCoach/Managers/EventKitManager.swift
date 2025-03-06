@@ -91,7 +91,7 @@ class EventKitManager: ObservableObject {
     
     // MARK: - Operation Status Handling
     
-    private func createOperationStatusMessage(messageId: UUID?, chatManager: ChatManager?, operationType: String) async -> UUID? {
+    private func createOperationStatusMessage(messageId: UUID?, chatManager: ChatManager?, operationType: OperationType) async -> UUID? {
         guard let messageId = messageId, let chatManager = chatManager else { return nil }
         
         return await MainActor.run {
@@ -157,7 +157,7 @@ class EventKitManager: ObservableObject {
             let statusMessageId = await createOperationStatusMessage(
                 messageId: messageId,
                 chatManager: chatManager,
-                operationType: "Added Calendar Event"
+                operationType: .addCalendarEvent
             )
             
             let event = EKEvent(eventStore: self.eventStore)
@@ -217,7 +217,7 @@ class EventKitManager: ObservableObject {
             let statusMessageId = await createOperationStatusMessage(
                 messageId: messageId,
                 chatManager: chatManager,
-                operationType: "Updated Calendar Event"
+                operationType: .updateCalendarEvent
             )
             
             guard let event = self.eventStore.event(withIdentifier: id) else {
@@ -301,7 +301,7 @@ class EventKitManager: ObservableObject {
             let statusMessageId = await createOperationStatusMessage(
                 messageId: messageId,
                 chatManager: chatManager,
-                operationType: "Deleted Calendar Event"
+                operationType: .deleteCalendarEvent
             )
             
             // Try to get the event
@@ -450,7 +450,7 @@ class EventKitManager: ObservableObject {
             let statusMessageId = await createOperationStatusMessage(
                 messageId: messageId,
                 chatManager: chatManager,
-                operationType: "Added Reminder"
+                operationType: .addReminder
             )
             
             success = await addReminderAsync(title: title, dueDate: dueDate, notes: notes, listName: listName)
@@ -628,7 +628,7 @@ class EventKitManager: ObservableObject {
             let statusMessageId = await createOperationStatusMessage(
                 messageId: messageId,
                 chatManager: chatManager,
-                operationType: "Updated Reminder"
+                operationType: .updateReminder
             )
             
             result = await updateReminder(id: id, title: title, dueDate: dueDate, notes: notes, isCompleted: isCompleted, listName: listName)
@@ -687,7 +687,7 @@ class EventKitManager: ObservableObject {
             let statusMessageId = await createOperationStatusMessage(
                 messageId: messageId,
                 chatManager: chatManager,
-                operationType: "Deleted Reminder"
+                operationType: .deleteReminder
             )
             
             result = await deleteReminder(id: id)
