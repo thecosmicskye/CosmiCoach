@@ -158,7 +158,7 @@ struct SettingsView: View {
                 Section(header: Text("Memory Management")) {
                     Button("View Memory File") {
                         Task {
-                            await memoryManager.loadMemory()
+                            let _ = await memoryManager.readMemory()
                             showingMemoryViewer = true
                         }
                     }
@@ -199,7 +199,7 @@ struct SettingsView: View {
                                    FileManager.default.fileExists(atPath: fileURL.path) {
                                     try? FileManager.default.removeItem(at: fileURL)
                                 }
-                                await memoryManager.loadMemory() // This will recreate with default content
+                                let _ = await memoryManager.readMemory() // This will recreate with default content
                             }
                         }
                         Button("Cancel", role: .cancel) {}
@@ -237,7 +237,7 @@ struct SettingsView: View {
                             // Verify memory file still exists after chat deletion
                             Task {
                                 // Ensure memory is loaded after chat deletion
-                                await memoryManager.loadMemory()
+                                let _ = await memoryManager.readMemory()
                                 
                                 if let fileURL = memoryManager.getMemoryFileURL() {
                                     print("Memory file exists after chat deletion: \(FileManager.default.fileExists(atPath: fileURL.path))")

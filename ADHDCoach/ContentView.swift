@@ -162,7 +162,7 @@ struct ContentView: View {
                     // Ensure memory is properly loaded
                     Task {
                         print("⏱️ ContentView.onAppear - Task started for memory loading and automatic message")
-                        await memoryManager.loadMemory()
+                        let _ = await memoryManager.readMemory()
                         if let fileURL = memoryManager.getMemoryFileURL() {
                             print("⏱️ ContentView.onAppear - Memory file exists: \(FileManager.default.fileExists(atPath: fileURL.path))")
                             print("⏱️ ContentView.onAppear - Memory content length: \(memoryManager.memoryContent.count)")
@@ -183,7 +183,7 @@ struct ContentView: View {
                     print("⏱️ ContentView.onAppear - This is the FIRST appearance (hasAppearedBefore=false), setting to true")
                     // Just load memory but don't check for automatic messages on first appearance
                     Task {
-                        await memoryManager.loadMemory()
+                        let _ = await memoryManager.readMemory()
                         if let fileURL = memoryManager.getMemoryFileURL() {
                             print("⏱️ ContentView.onAppear - Memory file exists: \(FileManager.default.fileExists(atPath: fileURL.path))")
                             print("⏱️ ContentView.onAppear - Memory content length: \(memoryManager.memoryContent.count)")
@@ -219,7 +219,7 @@ struct ContentView: View {
                             // This is critical because the normal onAppear doesn't seem to be firing consistently
                             Task {
                                 print("⏱️ ContentView.onChange - Starting task for automatic message check at \(Date())")
-                                await memoryManager.loadMemory()
+                                let _ = await memoryManager.readMemory()
                                 
                                 // Check and potentially send an automatic message
                                 await chatManager.checkAndSendAutomaticMessage()
