@@ -575,6 +575,25 @@ class ChatAPIService {
             if !pendingToolResults.isEmpty {
                 print("💡 Sending follow-up request with \(pendingToolResults.count) pending tool results after stream completion")
                 
+                // Ensure the context is updated before sending follow-up requests
+                // This makes sure Claude has the latest memory, calendar and reminder state
+                if !completeConversationHistory.isEmpty {
+                    // Get the updated context message
+                    let updatedContextMessage = APIRequestBuilder.createContextMessage(
+                        memoryContent: lastMemoryContent,
+                        calendarContext: lastCalendarContext,
+                        remindersContext: lastRemindersContext,
+                        locationContext: lastLocationContext,
+                        conversationHistory: lastConversationHistory
+                    )
+                    
+                    // Replace the first message (context) with updated content
+                    if completeConversationHistory[0]["role"] as? String == "user" {
+                        completeConversationHistory[0] = updatedContextMessage
+                        print("💡 Updated context message with latest state before tool follow-up")
+                    }
+                }
+                
                 // Make sure we have a tool_use message before adding tool_result
                 // Otherwise API returns error: "tool_result block(s) provided when previous message does not contain any tool_use blocks"
                 if let assistantMessage = completeConversationHistory.last(where: {
@@ -757,6 +776,25 @@ class ChatAPIService {
         guard !pendingToolResults.isEmpty else {
             print("💡 No pending tool results to send in follow-up request")
             return
+        }
+        
+        // Always ensure the context is up to date before any follow-up request
+        // This fixes the issue where Claude has outdated memory state in follow-ups
+        if !completeConversationHistory.isEmpty {
+            // Get the updated context message
+            let updatedContextMessage = APIRequestBuilder.createContextMessage(
+                memoryContent: lastMemoryContent,
+                calendarContext: lastCalendarContext,
+                remindersContext: lastRemindersContext,
+                locationContext: lastLocationContext,
+                conversationHistory: lastConversationHistory
+            )
+            
+            // Replace the first message (context) with updated content
+            if completeConversationHistory[0]["role"] as? String == "user" {
+                completeConversationHistory[0] = updatedContextMessage
+                print("💡 Updated context message with latest memory/data state in follow-up")
+            }
         }
         
         // Create a new assistant message with the tool uses that have corresponding results
@@ -1310,9 +1348,13 @@ class ChatAPIService {
         finalizeStreamingMessage: @escaping () -> Void,
         isProcessingCallback: @escaping (Bool) -> Void
     ) async {
+        // Always fetch the latest context data before creating the context message
+        print("💡 Getting latest context data for continuation message")
+        
         // Recreate the context message with the latest data
         if !completeConversationHistory.isEmpty {
-            // Get the updated context message
+            // Ensure we have the most up-to-date context
+            // This fixes issues where Claude might not see the latest state changes
             let updatedContextMessage = APIRequestBuilder.createContextMessage(
                 memoryContent: lastMemoryContent,
                 calendarContext: lastCalendarContext,
@@ -1324,7 +1366,7 @@ class ChatAPIService {
             // Replace the first message (context) with updated content
             if completeConversationHistory[0]["role"] as? String == "user" {
                 completeConversationHistory[0] = updatedContextMessage
-                print("💡 Updated context message with latest memory data mid-conversation")
+                print("💡 Updated context message with latest state in continuation message")
             }
         }
         

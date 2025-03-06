@@ -31,24 +31,39 @@ class ChatOperationStatusManager {
     }
     
     /**
+     * Returns combined operation status messages for a specific chat message.
+     * Similar operations (same action and item type) will be combined with count.
+     *
+     * @param messageId The UUID of the chat message
+     * @return An array of combined operation status messages
+     */
+    func combinedStatusMessagesForMessage(_ messageId: UUID) -> [OperationStatusMessage] {
+        let messages = statusMessagesForMessage(messageId)
+        return OperationStatusMessage.combineMessages(messages)
+    }
+    
+    /**
      * Adds a new operation status message for a specific chat message.
      *
      * @param messageId The UUID of the chat message
      * @param operationType The type of operation (using the OperationType enum)
      * @param status The current status of the operation (default: .inProgress)
      * @param details Optional details about the operation
+     * @param count The number of items affected (default: 1)
      * @return The newly created operation status message
      */
     func addOperationStatusMessage(
         forMessageId messageId: UUID,
         operationType: OperationType,
         status: OperationStatus = .inProgress,
-        details: String? = nil
+        details: String? = nil,
+        count: Int = 1
     ) -> OperationStatusMessage {
         let statusMessage = OperationStatusMessage(
             operationType: operationType,
             status: status,
-            details: details
+            details: details,
+            count: count
         )
         
         // Initialize the array if it doesn't exist
@@ -65,52 +80,7 @@ class ChatOperationStatusManager {
         return statusMessage
     }
     
-    /**
-     * Adds a new operation status message for a specific chat message.
-     * (String-based version for backward compatibility)
-     *
-     * @param messageId The UUID of the chat message
-     * @param operationType The type of operation as a string
-     * @param status The current status of the operation (default: .inProgress)
-     * @param details Optional details about the operation
-     * @return The newly created operation status message
-     */
-    func addOperationStatusMessage(
-        forMessageId messageId: UUID,
-        operationType: String,
-        status: OperationStatus = .inProgress,
-        details: String? = nil
-    ) -> OperationStatusMessage {
-        // Try to convert to enum if possible
-        if let opType = OperationType(rawValue: operationType) {
-            return addOperationStatusMessage(
-                forMessageId: messageId,
-                operationType: opType,
-                status: status,
-                details: details
-            )
-        }
-        
-        // String-based version for backward compatibility
-        let statusMessage = OperationStatusMessage(
-            operationType: operationType,
-            status: status,
-            details: details
-        )
-        
-        // Initialize the array if it doesn't exist
-        if operationStatusMessages[messageId] == nil {
-            operationStatusMessages[messageId] = []
-        }
-        
-        // Add the status message
-        operationStatusMessages[messageId]?.append(statusMessage)
-        
-        // Save to persistence
-        saveOperationStatusMessages()
-        
-        return statusMessage
-    }
+    // Note: The string-based version has been removed as it's no longer needed
     
     /**
      * Updates an existing operation status message.

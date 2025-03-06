@@ -35,17 +35,30 @@ struct OperationStatusView: View {
 #Preview {
     VStack {
         OperationStatusView(statusMessage: OperationStatusMessage(
-            operationType: "Adding Reminder",
+            operationType: .addReminder,
             status: .inProgress
         ))
         
         OperationStatusView(statusMessage: OperationStatusMessage(
-            operationType: "Adding Reminder",
-            status: .success
+            operationType: .addReminder,
+            status: .success,
+            count: 1
         ))
         
         OperationStatusView(statusMessage: OperationStatusMessage(
-            operationType: "Adding Reminder",
+            operationType: .addReminder,
+            status: .success,
+            count: 3
+        ))
+        
+        OperationStatusView(statusMessage: OperationStatusMessage(
+            operationType: .deleteCalendarEvent,
+            status: .success,
+            count: 2
+        ))
+        
+        OperationStatusView(statusMessage: OperationStatusMessage(
+            operationType: .addReminder,
             status: .failure,
             details: "Permission denied"
         ))
