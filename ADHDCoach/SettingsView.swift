@@ -158,21 +158,51 @@ struct SettingsView: View {
                 Section(header: Text("Memory Management")) {
                     Button("View Memory File") {
                         Task {
+                            // Ensure we're getting the latest memory content from disk
                             let _ = await memoryManager.readMemory()
-                            showingMemoryViewer = true
+                            
+                            // Make sure the API service also has the latest memory content
+                            await chatManager.refreshContextData()
+                            print("📝 View Memory: Refreshed context data in API service")
+                            
+                            await MainActor.run {
+                                showingMemoryViewer = true
+                            }
                         }
                     }
                     .foregroundColor(themeManager.accentColor(for: colorScheme))
                     .sheet(isPresented: $showingMemoryViewer) {
                         NavigationStack {
                             ScrollView {
-                                Text(memoryManager.memoryContent)
-                                    .padding()
-                                    .textSelection(.enabled)
+                                // Use a separate State variable for memory content in the viewer
+                                VStack {
+                                    Text(memoryManager.memoryContent)
+                                        .padding()
+                                        .textSelection(.enabled)
+                                    
+                                    Text("Last updated: \(Date().formatted(date: .abbreviated, time: .standard))")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .padding(.bottom)
+                                }
                             }
                             .navigationTitle("Memory File")
                             .applyThemeColor()
                             .toolbar {
+                                ToolbarItem(placement: .navigationBarTrailing) {
+                                    Button("Refresh") {
+                                        Task {
+                                            // Force a reload of memory content from disk
+                                            let _ = await memoryManager.readMemory()
+                                            
+                                            // Make sure the API service also has the latest memory content
+                                            await chatManager.refreshContextData()
+                                            print("📝 Memory Refreshed: Updated context data in API service")
+                                        }
+                                    }
+                                    .foregroundColor(themeManager.accentColor(for: colorScheme))
+                                }
+                                
                                 ToolbarItem(placement: .navigationBarTrailing) {
                                     Button("Done") {
                                         showingMemoryViewer = false
@@ -199,7 +229,36 @@ struct SettingsView: View {
                                    FileManager.default.fileExists(atPath: fileURL.path) {
                                     try? FileManager.default.removeItem(at: fileURL)
                                 }
+                                
+                                // Reload memory and ensure API service is updated
                                 let _ = await memoryManager.readMemory() // This will recreate with default content
+                                
+                                // Refresh the context data in the API service
+                                await chatManager.refreshContextData()
+                                print("📝 Memory reset: Refreshed context data in API service")
+                                
+                                // Show confirmation to user
+                                await MainActor.run {
+                                    let generator = UINotificationFeedbackGenerator()
+                                    generator.notificationOccurred(.success)
+                                    
+                                    testResult = "✅ Memory reset successfully!"
+                                    
+                                    // Clear the success message after a delay
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                        if testResult == "✅ Memory reset successfully!" {
+                                            testResult = nil
+                                        }
+                                    }
+                                    
+                                    // Force reload of memory viewer if it's open
+                                    if showingMemoryViewer {
+                                        showingMemoryViewer = false
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                            showingMemoryViewer = true
+                                        }
+                                    }
+                                }
                             }
                         }
                         Button("Cancel", role: .cancel) {}
@@ -219,25 +278,17 @@ struct SettingsView: View {
                         titleVisibility: .visible
                     ) {
                         Button("Delete", role: .destructive) {
-                            // First log memory status before deletion
-                            if let fileURL = memoryManager.getMemoryFileURL() {
-                                print("Memory file exists before chat deletion: \(FileManager.default.fileExists(atPath: fileURL.path))")
-                                print("Memory file path: \(fileURL.path)")
-                            }
+                            // Use the proper ChatManager method to clear all chat messages
+                            chatManager.clearAllMessages()
                             
-                            // Clear chat messages from UserDefaults
-                            UserDefaults.standard.removeObject(forKey: "chat_messages")
-                            UserDefaults.standard.removeObject(forKey: "streaming_message_id")
-                            UserDefaults.standard.removeObject(forKey: "last_streaming_content")
-                            UserDefaults.standard.set(false, forKey: "chat_processing_state")
-                            
-                            // Post notification to refresh chat view
-                            NotificationCenter.default.post(name: NSNotification.Name("ChatHistoryDeleted"), object: nil)
-                            
-                            // Verify memory file still exists after chat deletion
+                            // Verify memory file still exists after chat deletion and reload it
                             Task {
                                 // Ensure memory is loaded after chat deletion
                                 let _ = await memoryManager.readMemory()
+                                
+                                // Refresh the context data in the API service 
+                                await chatManager.refreshContextData()
+                                print("📝 Chat history deleted: Refreshed context data in API service")
                                 
                                 if let fileURL = memoryManager.getMemoryFileURL() {
                                     print("Memory file exists after chat deletion: \(FileManager.default.fileExists(atPath: fileURL.path))")
@@ -255,6 +306,14 @@ struct SettingsView: View {
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                                         if testResult == "✅ Chat history deleted!" {
                                             testResult = nil
+                                        }
+                                    }
+                                    
+                                    // Force reload of memory viewer if it's open
+                                    if showingMemoryViewer {
+                                        showingMemoryViewer = false
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                            showingMemoryViewer = true
                                         }
                                     }
                                 }

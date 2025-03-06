@@ -113,24 +113,44 @@ class APIRequestBuilder {
         locationContext: String,
         conversationHistory: String
     ) -> [String: Any] {
+        // Log context details
+        print("🧠 Creating context message:")
+        print("🧠 - Memory content length: \(memoryContent.count) chars")
+        print("🧠 - Calendar context length: \(calendarContext.count) chars")
+        print("🧠 - Reminders context length: \(remindersContext.count) chars")
+        print("🧠 - Location context length: \(locationContext.count) chars")
+        print("🧠 - Conversation history length: \(conversationHistory.count) chars")
+        
+        let contextText = """
+        Current time: \(formatCurrentDateTime())
+        
+        USER MEMORY:
+        \(memoryContent)
+        
+        CALENDAR EVENTS:
+        \(calendarContext)
+        
+        REMINDERS:
+        \(remindersContext)
+        
+        \(locationContext)
+        
+        CONVERSATION HISTORY:
+        \(conversationHistory)
+        """
+        
+        // Print a snippet of the memory content to verify it's being included
+        if memoryContent.count > 0 {
+            let memoryPreview = String(memoryContent.prefix(200)) + (memoryContent.count > 200 ? "..." : "")
+            print("🧠 Memory content preview: \(memoryPreview)")
+        } else {
+            print("🧠 Warning: Memory content is empty!")
+        }
+        
+        print("🧠 Total context text length: \(contextText.count) chars")
+        
         return ["role": "user", "content": [
-            ["type": "text", "text": """
-            Current time: \(formatCurrentDateTime())
-            
-            USER MEMORY:
-            \(memoryContent)
-            
-            CALENDAR EVENTS:
-            \(calendarContext)
-            
-            REMINDERS:
-            \(remindersContext)
-            
-            \(locationContext)
-            
-            CONVERSATION HISTORY:
-            \(conversationHistory)
-            """]
+            ["type": "text", "text": contextText]
         ]]
     }
     
