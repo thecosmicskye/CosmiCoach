@@ -8,6 +8,24 @@ import Foundation
  * - Processing streaming responses
  * - Handling tool use requests from Claude
  * - Managing API authentication and error handling
+ *
+ * Error handling supports both HTTP errors and stream errors:
+ * 
+ * HTTP error code format:
+ * - 400 (invalid_request_error): Issues with request format/content
+ * - 401 (authentication_error): API key issues
+ * - 403 (permission_error): API key permission issues
+ * - 404 (not_found_error): Resource not found
+ * - 413 (request_too_large): Request exceeds maximum allowed size
+ * - 429 (rate_limit_error): Rate limit exceeded
+ * - 500 (api_error): Unexpected internal error
+ * - 529 (overloaded_error): API temporarily overloaded
+ *
+ * Stream errors (appear in the response stream):
+ * - overloaded_error: API is temporarily overloaded
+ * - api_error: Unexpected internal error during streaming
+ *
+ * All errors are converted to user-friendly messages via the createUserFriendlyErrorMessage method.
  */
 class ChatAPIService {
     /// Callback for processing tool use requests from Claude
@@ -51,12 +69,7 @@ class ChatAPIService {
     5. Analyze patterns in task completion over time
     6. Use the provided calendar events and reminders to give context-aware advice
     7. IMPORTANT: You MUST use the provided tools to create, modify, or delete calendar events, reminders, and memories
-       - Use add_calendar_event tool when the user asks to create a single calendar event
-       - Use add_calendar_events_batch tool when the user asks to create multiple calendar events
-       - Use add_reminder tool when the user asks to create a single reminder
-       - Use add_reminders_batch tool when the user asks to create multiple reminders
-       - Use add_memory tool when you need to store a single piece of important information
-       - Use add_memories_batch tool when you need to store multiple pieces of important information
+       - Use the appropriate tools for calendar events, reminders, and memories
        - DO NOT respond with text saying you've created a calendar event or reminder - use the tools
     8. Be empathetic and understanding of ADHD challenges
     9. Maintain important user information in structured memory categories
@@ -82,16 +95,6 @@ class ChatAPIService {
     - The memory content is visible at the top of each conversation under USER MEMORY INFORMATION
     - DO NOT add calendar events or reminders as memories
     - Avoid duplicating memories
-
-    IMPORTANT: When working with multiple items (multiple calendar events, reminders, or memories), always use the batch tools:
-    - add_calendar_events_batch: Use this to add multiple calendar events in a single operation
-    - modify_calendar_events_batch: Use this to modify multiple calendar events in a single operation
-    - delete_calendar_events_batch: Use this to delete multiple calendar events in a single operation
-    - add_reminders_batch: Use this to add multiple reminders in a single operation
-    - modify_reminders_batch: Use this to modify multiple reminders in a single operation
-    - delete_reminders_batch: Use this to delete multiple reminders in a single operation
-    - add_memories_batch: Use this to add multiple memories in a single operation
-    - remove_memories_batch: Use this to remove multiple memories in a single operation
     """
     
     /// Store the last assistant message with tool use for follow-up requests
@@ -277,22 +280,33 @@ class ChatAPIService {
                 // Try to extract error message from response
                 let statusCode = httpResponse.statusCode
                 var errorDetails = ""
+                var errorType = ""
                 
                 if let responseString = String(data: errorData, encoding: .utf8) {
                     print("💡 API ERROR RESPONSE: \(responseString)")
                     
                     if let errorJson = try? JSONSerialization.jsonObject(with: errorData) as? [String: Any],
-                       let error = errorJson["error"] as? [String: Any],
-                       let message = error["message"] as? String {
-                        errorDetails = ". \(message)"
-                        print("💡 ERROR MESSAGE: \(message)")
+                       let error = errorJson["error"] as? [String: Any] {
+                        if let message = error["message"] as? String {
+                            errorDetails = message
+                            print("💡 ERROR MESSAGE: \(message)")
+                        }
+                        if let type = error["type"] as? String {
+                            errorType = type
+                            print("💡 ERROR TYPE: \(type)")
+                        }
                     }
                 }
                 
-                let finalErrorMessage = "Error communicating with Claude API. Status code: \(statusCode)\(errorDetails)"
+                // Create user-friendly error message based on status code
+                let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                    statusCode: statusCode,
+                    errorType: errorType,
+                    errorDetails: errorDetails
+                )
                 
                 finalizeStreamingMessage()
-                _ = updateStreamingMessage(finalErrorMessage)
+                _ = updateStreamingMessage(userFriendlyMessage)
                 isProcessingCallback(false)
                 return
             }
@@ -319,6 +333,34 @@ class ChatAPIService {
                 // Parse the JSON
                 if let data = jsonStr.data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    
+                    // Check for error events in the stream
+                    if json["type"] as? String == "error",
+                       let error = json["error"] as? [String: Any] {
+                        var errorType = ""
+                        var errorMessage = ""
+                        
+                        if let type = error["type"] as? String {
+                            errorType = type
+                            print("💡 STREAM ERROR TYPE: \(type)")
+                        }
+                        
+                        if let message = error["message"] as? String {
+                            errorMessage = message
+                            print("💡 STREAM ERROR MESSAGE: \(message)")
+                        }
+                        
+                        let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                            statusCode: 0, // Use 0 to indicate it's a stream error, not an HTTP error
+                            errorType: errorType,
+                            errorDetails: "" // Don't append the original error, it's often redundant
+                        )
+                        
+                        _ = updateStreamingMessage(userFriendlyMessage)
+                        finalizeStreamingMessage()
+                        isProcessingCallback(false)
+                        return
+                    }
                     
                     // Track cache performance metrics
                     if json["type"] as? String == "message_start",
@@ -488,6 +530,20 @@ class ChatAPIService {
                             print("💡 EXECUTING COLLECTED TOOL CALL: \(toolName)")
                             print("💡 With input: \(toolInput)")
                             
+                            // Store this tool use in lastAssistantMessageWithToolUse for proper validation
+                            if lastAssistantMessageWithToolUse == nil {
+                                lastAssistantMessageWithToolUse = [
+                                    "role": "assistant", 
+                                    "content": [[
+                                        "type": "tool_use",
+                                        "id": toolId,
+                                        "name": toolName,
+                                        "input": toolInput
+                                    ]]
+                                ]
+                                print("💡 Created new lastAssistantMessageWithToolUse")
+                            }
+                            
                             // Process the tool use based on the tool name
                             let result = await processToolUse(toolName, toolId, toolInput)
                             
@@ -497,14 +553,17 @@ class ChatAPIService {
                             // Store the tool result for the next API call
                             pendingToolResults.append((toolId: toolId, content: result))
                             
-                            // Automatically send a follow-up request with the tool results
-                            // to continue the conversation after tool use
-                            await sendFollowUpRequestWithToolResults(
-                                toolDefinitions: toolDefinitions,
-                                updateStreamingMessage: updateStreamingMessage,
-                                finalizeStreamingMessage: finalizeStreamingMessage,
-                                isProcessingCallback: isProcessingCallback
-                            )
+                            // Process all collected tool uses first, then send a follow-up request
+                            // This prevents multiple duplicate operations from occurring
+                            
+                            // We now collect all tool results first (in pendingToolResults)
+                            // and will send them all at once in a single follow-up request
+                            // at the end of streaming process.
+                            
+                            // NOTE: We intentionally DO NOT immediately trigger 
+                            // a follow-up request here. Instead, the streaming loop
+                            // will naturally end, and then we'll process all pending 
+                            // tool results at once to avoid duplicates.
                         }
                     }
                     // Handle regular text delta
@@ -542,13 +601,48 @@ class ChatAPIService {
                 lastTextContentBeforeToolUse = ""
             }
             
-            // Finalize the assistant message
-            finalizeStreamingMessage()
-            isProcessingCallback(false)
+            // Check if we have pending tool results that need to be processed
+            if !pendingToolResults.isEmpty {
+                print("💡 Sending follow-up request with \(pendingToolResults.count) pending tool results after stream completion")
+                
+                // Make sure we have a tool_use message before adding tool_result
+                // Otherwise API returns error: "tool_result block(s) provided when previous message does not contain any tool_use blocks"
+                if let assistantMessage = completeConversationHistory.last(where: {
+                    ($0["role"] as? String) == "assistant"
+                }), let content = assistantMessage["content"] as? [[String: Any]] {
+                    
+                    let hasToolUse = content.contains(where: {
+                        ($0["type"] as? String) == "tool_use"
+                    })
+                    
+                    if hasToolUse {
+                        // Send a follow-up request with all collected tool results
+                        await sendFollowUpRequestWithToolResults(
+                            toolDefinitions: toolDefinitions,
+                            updateStreamingMessage: updateStreamingMessage,
+                            finalizeStreamingMessage: finalizeStreamingMessage,
+                            isProcessingCallback: isProcessingCallback
+                        )
+                    } else {
+                        print("💡 Cannot add tool_results because the last assistant message has no tool_use blocks")
+                        finalizeStreamingMessage()
+                        isProcessingCallback(false)
+                    }
+                } else {
+                    print("💡 Cannot add tool_results because there's no assistant message with tool_use blocks")
+                    finalizeStreamingMessage()
+                    isProcessingCallback(false)
+                }
+            } else {
+                // No tool results to process, finalize the message
+                finalizeStreamingMessage()
+                isProcessingCallback(false)
+            }
             
         } catch {
             finalizeStreamingMessage()
-            _ = updateStreamingMessage("Error: \(error.localizedDescription)")
+            let errorMessage = "Sorry, there was an error connecting to the service: \(error.localizedDescription)"
+            _ = updateStreamingMessage(errorMessage)
             isProcessingCallback(false)
         }
     }
@@ -637,13 +731,34 @@ class ChatAPIService {
                     }
                     return "✅ API key is valid with tools support!"
                 } else {
-                    // Try to extract error message
+                    // Try to extract error type and message
+                    var errorDetails = ""
+                    var errorType = ""
+                    
                     if let responseString = String(data: data, encoding: .utf8) {
                         print("💡 API Test Error Response: \(responseString)")
-                        return "❌ Error: \(responseString)"
-                    } else {
-                        return "❌ Error: Status code \(httpResponse.statusCode)"
+                        
+                        if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let error = errorJson["error"] as? [String: Any] {
+                            if let message = error["message"] as? String {
+                                errorDetails = message
+                                print("💡 TEST ERROR MESSAGE: \(message)")
+                            }
+                            if let type = error["type"] as? String {
+                                errorType = type
+                                print("💡 TEST ERROR TYPE: \(type)")
+                            }
+                        }
                     }
+                    
+                    // Create user-friendly error message based on status code
+                    let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                        statusCode: httpResponse.statusCode,
+                        errorType: errorType,
+                        errorDetails: errorDetails
+                    )
+                    
+                    return "❌ \(userFriendlyMessage)"
                 }
             } else {
                 return "❌ Error: Invalid HTTP response"
@@ -815,6 +930,8 @@ class ChatAPIService {
             "content": toolUseBlocks
         ]
         
+        print("💡 Created assistant message with \(toolUseBlocks.count) tool use blocks")
+        
         // Add the assistant's text content if available
         if !lastTextContentBeforeToolUse.isEmpty {
             // Create an assistant message with the text content
@@ -902,21 +1019,33 @@ class ChatAPIService {
                 // Try to extract error message from response
                 let statusCode = httpResponse.statusCode
                 var errorDetails = ""
+                var errorType = ""
                 
                 if let responseString = String(data: errorData, encoding: .utf8) {
                     print("💡 FOLLOW-UP API ERROR RESPONSE: \(responseString)")
                     
                     if let errorJson = try? JSONSerialization.jsonObject(with: errorData) as? [String: Any],
-                       let error = errorJson["error"] as? [String: Any],
-                       let message = error["message"] as? String {
-                        errorDetails = ". \(message)"
-                        print("💡 FOLLOW-UP ERROR MESSAGE: \(message)")
+                       let error = errorJson["error"] as? [String: Any] {
+                        if let message = error["message"] as? String {
+                            errorDetails = message
+                            print("💡 FOLLOW-UP ERROR MESSAGE: \(message)")
+                        }
+                        if let type = error["type"] as? String {
+                            errorType = type
+                            print("💡 FOLLOW-UP ERROR TYPE: \(type)")
+                        }
                     }
                 }
                 
-                let finalErrorMessage = "\n\nError continuing response after tool use. Status code: \(statusCode)\(errorDetails)"
+                // Create user-friendly error message based on status code
+                let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                    statusCode: statusCode,
+                    errorType: errorType,
+                    errorDetails: errorDetails,
+                    isFollowUp: true
+                )
                 
-                _ = updateStreamingMessage(finalErrorMessage)
+                _ = updateStreamingMessage(userFriendlyMessage)
                 finalizeStreamingMessage()
                 isProcessingCallback(false)
                 return
@@ -944,6 +1073,35 @@ class ChatAPIService {
                 // Parse the JSON
                 if let data = jsonStr.data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    
+                    // Check for error events in the stream
+                    if json["type"] as? String == "error",
+                       let error = json["error"] as? [String: Any] {
+                        var errorType = ""
+                        var errorMessage = ""
+                        
+                        if let type = error["type"] as? String {
+                            errorType = type
+                            print("💡 FOLLOW-UP STREAM ERROR TYPE: \(type)")
+                        }
+                        
+                        if let message = error["message"] as? String {
+                            errorMessage = message
+                            print("💡 FOLLOW-UP STREAM ERROR MESSAGE: \(message)")
+                        }
+                        
+                        let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                            statusCode: 0, // Use 0 to indicate it's a stream error, not an HTTP error
+                            errorType: errorType,
+                            errorDetails: "", // Don't append the original error, it's often redundant
+                            isFollowUp: true
+                        )
+                        
+                        _ = updateStreamingMessage(userFriendlyMessage)
+                        finalizeStreamingMessage()
+                        isProcessingCallback(false)
+                        return
+                    }
                     
                     // Track cache performance metrics
                     if json["type"] as? String == "message_start",
@@ -1117,13 +1275,9 @@ class ChatAPIService {
                             // Store the tool result for the next API call
                             pendingToolResults.append((toolId: toolId, content: result))
                             
-                            // Recursively send another follow-up request with the new tool results
-                            await sendFollowUpRequestWithToolResults(
-                                toolDefinitions: toolDefinitions,
-                                updateStreamingMessage: updateStreamingMessage,
-                                finalizeStreamingMessage: finalizeStreamingMessage,
-                                isProcessingCallback: isProcessingCallback
-                            )
+                            // Don't make recursive calls to sendFollowUpRequestWithToolResults
+                            // Instead, collect all tool results and process them at the end
+                            print("💡 Collected tool result for later processing")
                         }
                     }
                     // Handle regular text delta
@@ -1161,14 +1315,291 @@ class ChatAPIService {
                 lastTextContentBeforeToolUse = ""
             }
             
+            // Check if we have pending tool results that need to be processed
+            if !pendingToolResults.isEmpty {
+                print("💡 Sending follow-up request with \(pendingToolResults.count) pending tool results after follow-up completion")
+                
+                // Make sure we have a tool_use message before adding tool_result
+                // Otherwise API returns error: "tool_result block(s) provided when previous message does not contain any tool_use blocks"
+                if let lastAssistantMessage = completeConversationHistory.last(where: { 
+                    ($0["role"] as? String) == "assistant" 
+                }), let content = lastAssistantMessage["content"] as? [[String: Any]] {
+                    
+                    let hasToolUse = content.contains(where: {
+                        ($0["type"] as? String) == "tool_use"
+                    })
+                    
+                    if hasToolUse {
+                        // We have tool_use blocks, so we can add tool_result blocks
+                        // Clear current pending results so we don't get into an infinite loop
+                        let currentPendingResults = pendingToolResults
+                        pendingToolResults = []
+                        
+                        // Create a new batch of tool results for the next request
+                        var newToolResultBlocks: [[String: Any]] = []
+                        for result in currentPendingResults {
+                            newToolResultBlocks.append([
+                                "type": "tool_result",
+                                "tool_use_id": result.toolId,
+                                "content": result.content
+                            ])
+                        }
+                        
+                        // Create and add a new user message with these tool results
+                        let additionalUserMessage: [String: Any] = ["role": "user", "content": newToolResultBlocks]
+                        completeConversationHistory.append(additionalUserMessage)
+                        
+                        // Continue the conversation with all tool results included
+                        await sendMessageWithCurrentState(
+                            toolDefinitions: toolDefinitions,
+                            updateStreamingMessage: updateStreamingMessage,
+                            finalizeStreamingMessage: finalizeStreamingMessage,
+                            isProcessingCallback: isProcessingCallback
+                        )
+                    } else {
+                        print("💡 Cannot add tool_results because the last assistant message has no tool_use blocks")
+                        finalizeStreamingMessage()
+                        isProcessingCallback(false)
+                    }
+                } else {
+                    print("💡 Cannot add tool_results because there's no assistant message with tool_use blocks")
+                    finalizeStreamingMessage()
+                    isProcessingCallback(false)
+                }
+            } else {
+                // No tool results to process, finalize the message
+                finalizeStreamingMessage()
+                isProcessingCallback(false)
+            }
+            
+        } catch {
+            let errorMessage = "\n\nUnable to continue: There was an error connecting to the service. \(error.localizedDescription)"
+            _ = updateStreamingMessage(errorMessage)
+            finalizeStreamingMessage()
+            isProcessingCallback(false)
+        }
+    }
+    
+    /**
+     * Sends a message to Claude using the current conversation state.
+     * 
+     * This is a helper method used to continue a conversation after tool use
+     * without creating duplicate tool calls.
+     *
+     * @param toolDefinitions Array of tool definitions that Claude can use
+     * @param updateStreamingMessage Callback to update the UI with streaming content
+     * @param finalizeStreamingMessage Callback to finalize the message when streaming is complete
+     * @param isProcessingCallback Callback to update the processing state
+     */
+    private func sendMessageWithCurrentState(
+        toolDefinitions: [[String: Any]],
+        updateStreamingMessage: @escaping (String) -> String,
+        finalizeStreamingMessage: @escaping () -> Void,
+        isProcessingCallback: @escaping (Bool) -> Void
+    ) async {
+        // Create the request body with system as a top-level parameter and tools
+        let requestBody = buildRequestBodyWithCaching(
+            systemPrompt: systemPrompt,
+            toolDefinitions: toolDefinitions,
+            messages: completeConversationHistory
+        )
+        
+        // Create the request
+        var request = URLRequest(url: streamingURL)
+        configureRequestHeaders(&request)
+        
+        do {
+            let requestData = try JSONSerialization.data(withJSONObject: requestBody)
+            request.httpBody = requestData
+            
+            // Print the actual request JSON for debugging
+            if let requestStr = String(data: requestData, encoding: .utf8) {
+                print("💡 CONTINUATION API REQUEST: \(String(requestStr.prefix(1000))) [...]") // Only print first 1000 chars
+            }
+            
+            // Create a URLSession data task with delegate
+            let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                isProcessingCallback(false)
+                return
+            }
+            
+            print("💡 CONTINUATION API RESPONSE STATUS CODE: \(httpResponse.statusCode)")
+            
+            if httpResponse.statusCode != 200 {
+                var errorData = Data()
+                for try await byte in asyncBytes {
+                    errorData.append(byte)
+                }
+                
+                // Try to extract error message from response
+                let statusCode = httpResponse.statusCode
+                var errorDetails = ""
+                var errorType = ""
+                
+                if let responseString = String(data: errorData, encoding: .utf8) {
+                    print("💡 CONTINUATION API ERROR RESPONSE: \(responseString)")
+                    
+                    if let errorJson = try? JSONSerialization.jsonObject(with: errorData) as? [String: Any],
+                       let error = errorJson["error"] as? [String: Any] {
+                        if let message = error["message"] as? String {
+                            errorDetails = message
+                        }
+                        if let type = error["type"] as? String {
+                            errorType = type
+                        }
+                    }
+                }
+                
+                // Create user-friendly error message based on status code
+                let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                    statusCode: statusCode,
+                    errorType: errorType,
+                    errorDetails: errorDetails,
+                    isFollowUp: true
+                )
+                
+                _ = updateStreamingMessage(userFriendlyMessage)
+                finalizeStreamingMessage()
+                isProcessingCallback(false)
+                return
+            }
+            
+            // Process the streaming response 
+            for try await line in asyncBytes.lines {
+                // Skip empty lines
+                guard !line.isEmpty else { continue }
+                
+                // SSE format has "data: " prefix
+                guard line.hasPrefix("data: ") else { continue }
+                
+                // Remove the "data: " prefix
+                let jsonStr = line.dropFirst(6)
+                
+                // Handle the stream end event
+                if jsonStr == "[DONE]" {
+                    break
+                }
+                
+                // Log raw response data for debugging
+                print("💡 CONTINUATION RAW RESPONSE: \(jsonStr)")
+                
+                // Parse the JSON
+                if let data = jsonStr.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    
+                    // Handle regular text delta
+                    if let contentDelta = json["delta"] as? [String: Any],
+                       let textContent = contentDelta["text"] as? String {
+                        // Send the new content to the MainActor for UI updates
+                        let _ = updateStreamingMessage(textContent)
+                    }
+                }
+            }
+            
             // Finalize the assistant message
             finalizeStreamingMessage()
             isProcessingCallback(false)
             
         } catch {
-            _ = updateStreamingMessage("\n\nError continuing response after tool use: \(error.localizedDescription)")
+            let errorMessage = "\n\nUnable to continue: There was an error connecting to the service. \(error.localizedDescription)"
+            _ = updateStreamingMessage(errorMessage)
             finalizeStreamingMessage()
             isProcessingCallback(false)
+        }
+    }
+
+    /**
+     * Creates a user-friendly error message based on the HTTP status code and error type.
+     *
+     * @param statusCode The HTTP status code from the API response
+     * @param errorType The error type from the API response
+     * @param errorDetails Additional error details from the API response
+     * @param isFollowUp Whether this error occurred during a follow-up request
+     * @return A user-friendly error message
+     */
+    private func createUserFriendlyErrorMessage(
+        statusCode: Int,
+        errorType: String,
+        errorDetails: String,
+        isFollowUp: Bool = false
+    ) -> String {
+        let prefix = isFollowUp ? "\n\nUnable to continue: " : "Sorry, I encountered an issue: "
+        
+        // Special case for stream errors (statusCode == 0)
+        if statusCode == 0 {
+            // Handle stream-specific errors
+            switch errorType {
+            case "overloaded_error":
+                return "\(prefix)The assistant service is currently overloaded. Please try again in a few moments\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            case "api_error":
+                return "\(prefix)The assistant service is experiencing internal errors. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            default:
+                return "\(prefix)Error communicating with assistant service\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            }
+        }
+        
+        // Check for specific error types and status codes
+        switch statusCode {
+        case 400:
+            if errorType == "invalid_request_error" {
+                return "\(prefix)There was an issue with my request. Please try again or simplify your request\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            } else {
+                return "\(prefix)There was a problem with how I'm trying to talk to the assistant. Please try again\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            }
+            
+        case 401:
+            if errorType == "authentication_error" {
+                return "\(prefix)There's an issue with the API key. Please check your API key in settings\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            } else {
+                return "\(prefix)Not authorized to use this service. Please check your API key in settings\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            }
+            
+        case 403:
+            if errorType == "permission_error" {
+                return "\(prefix)The API key doesn't have permission to use this service. Please check your API subscription\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            } else {
+                return "\(prefix)Access denied. Please check your API subscription\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            }
+            
+        case 404:
+            if errorType == "not_found_error" {
+                return "\(prefix)The service endpoint couldn't be found. Please update the app or try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            } else {
+                return "\(prefix)The requested resource was not found. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            }
+            
+        case 413:
+            if errorType == "request_too_large" {
+                return "\(prefix)Your request was too large. Please try a shorter message or clear some conversation history\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            } else {
+                return "\(prefix)The message was too large to process. Please try a shorter message\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            }
+            
+        case 429:
+            if errorType == "rate_limit_error" {
+                return "\(prefix)Rate limit exceeded. Please wait a moment and try again\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            } else {
+                return "\(prefix)Too many requests. Please wait a moment and try again\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            }
+            
+        case 500:
+            if errorType == "api_error" {
+                return "\(prefix)The assistant service is experiencing internal errors. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            } else {
+                return "\(prefix)An unexpected error occurred. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            }
+            
+        case 529:
+            if errorType == "overloaded_error" {
+                return "\(prefix)The assistant service is currently overloaded. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            } else {
+                return "\(prefix)The service is temporarily unavailable. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
+            }
+            
+        default:
+            return "\(prefix)Error communicating with assistant service. Status code: \(statusCode)\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
         }
     }
     
