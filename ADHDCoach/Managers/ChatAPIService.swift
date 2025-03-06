@@ -430,15 +430,8 @@ class ChatAPIService {
                         
                         print("💡 Message stopped for tool use")
                         
-                        // Add a line break after tool_use to ensure proper formatting when we continue
-                        // Make sure the content ends with a double newline for proper spacing
-                        if !lastTextContentBeforeToolUse.hasSuffix("\n\n") {
-                            if lastTextContentBeforeToolUse.hasSuffix("\n") {
-                                lastTextContentBeforeToolUse += "\n"
-                            } else {
-                                lastTextContentBeforeToolUse += "\n\n"
-                            }
-                        }
+                        // We don't need to add line breaks manually as the Claude API will handle text formatting
+                        // Just ensure we've saved the current content for context
                         
                         // Create usable tool input from collected JSON chunks
                         var toolInput: [String: Any] = [:]
@@ -531,31 +524,25 @@ class ChatAPIService {
                     // Handle regular text delta
                     else if let contentDelta = json["delta"] as? [String: Any],
                          let textContent = contentDelta["text"] as? String {
-                        // If this is the first text content after a tool use and the last message ended with a tool,
-                        // make sure we start with a newline
-                        if lastTextContentBeforeToolUse.isEmpty && pendingToolResults.isEmpty {
-                            // This is a new message or continuation after tool use was processed
-                            let lastMessageWasToolUse = completeConversationHistory.last(where: {
-                                ($0["role"] as? String) == "user" && 
-                                ($0["content"] as? [[String: Any]])?.contains(where: { ($0["type"] as? String) == "tool_result" }) == true
-                            }) != nil
+                        // We don't need to add any special formatting to text content
+                        // Claude API will handle text formatting correctly
+                        
+                        // If this is the very first text content after tool use has completed
+                        // and the current streaming message is empty, add a space
+                        if !pendingToolResults.isEmpty && lastTextContentBeforeToolUse.isEmpty && 
+                           !textContent.isEmpty && !textContent.hasPrefix(" ") {
+                            // Accumulate text content for context in follow-up requests
+                            lastTextContentBeforeToolUse = " " + textContent
                             
-                            if lastMessageWasToolUse {
-                                // Start with a newline if we're continuing after a tool result
-                                lastTextContentBeforeToolUse = "\n"
-                            }
+                            // Add space before the text to fix missing space after tool use
+                            _ = updateStreamingMessage(" " + textContent)
+                        } else {
+                            // Accumulate text content for context in follow-up requests
+                            lastTextContentBeforeToolUse += textContent
+                            
+                            // Send the new content without modification
+                            _ = updateStreamingMessage(textContent)
                         }
-                        
-                        // Accumulate text content for context in follow-up requests
-                        lastTextContentBeforeToolUse += textContent
-                        
-                        // Send the new content to the MainActor for UI updates
-                        // and get back the full accumulated content
-                        let updatedContent = updateStreamingMessage(textContent)
-                        
-                        // We still need to use the result of the updateStreamingMessage callback
-                        // even though we're not tracking the full response anymore
-                        let _ = updatedContent
                     }
                 }
             }
@@ -1118,15 +1105,8 @@ class ChatAPIService {
                         
                         print("💡 Follow-up message stopped for tool use")
                         
-                        // Add a line break after tool_use to ensure proper formatting when we continue
-                        // Make sure the content ends with a double newline for proper spacing
-                        if !lastTextContentBeforeToolUse.hasSuffix("\n\n") {
-                            if lastTextContentBeforeToolUse.hasSuffix("\n") {
-                                lastTextContentBeforeToolUse += "\n"
-                            } else {
-                                lastTextContentBeforeToolUse += "\n\n"
-                            }
-                        }
+                        // We don't need to add line breaks manually as the Claude API will handle text formatting
+                        // Just ensure we've saved the current content for context
                         
                         // Create usable tool input from collected JSON chunks
                         var toolInput: [String: Any] = [:]
@@ -1173,31 +1153,25 @@ class ChatAPIService {
                     // Handle regular text delta
                     else if let contentDelta = json["delta"] as? [String: Any],
                             let textContent = contentDelta["text"] as? String {
-                        // If this is the first text content after a tool use and the last message ended with a tool,
-                        // make sure we start with a newline
-                        if lastTextContentBeforeToolUse.isEmpty && pendingToolResults.isEmpty {
-                            // This is a new message or continuation after tool use was processed
-                            let lastMessageWasToolUse = completeConversationHistory.last(where: {
-                                ($0["role"] as? String) == "user" && 
-                                ($0["content"] as? [[String: Any]])?.contains(where: { ($0["type"] as? String) == "tool_result" }) == true
-                            }) != nil
+                        // We don't need to add any special formatting to text content
+                        // Claude API will handle text formatting correctly
+                        
+                        // If this is the very first text content after tool use has completed
+                        // and the current streaming message is empty, add a space
+                        if !pendingToolResults.isEmpty && lastTextContentBeforeToolUse.isEmpty && 
+                           !textContent.isEmpty && !textContent.hasPrefix(" ") {
+                            // Accumulate text content for context in follow-up requests
+                            lastTextContentBeforeToolUse = " " + textContent
                             
-                            if lastMessageWasToolUse {
-                                // Start with a newline if we're continuing after a tool result
-                                lastTextContentBeforeToolUse = "\n"
-                            }
+                            // Add space before the text to fix missing space after tool use
+                            _ = updateStreamingMessage(" " + textContent)
+                        } else {
+                            // Accumulate text content for context in follow-up requests
+                            lastTextContentBeforeToolUse += textContent
+                            
+                            // Send the new content without modification
+                            _ = updateStreamingMessage(textContent)
                         }
-                        
-                        // Accumulate text content for context in follow-up requests
-                        lastTextContentBeforeToolUse += textContent
-                        
-                        // Send the new content to the MainActor for UI updates
-                        // and get back the full accumulated content
-                        let updatedContent = updateStreamingMessage(textContent)
-                        
-                        // We still need to use the result of the updateStreamingMessage callback
-                        // even though we're not tracking the full response anymore
-                        let _ = updatedContent
                     }
                 }
             }
@@ -1446,8 +1420,22 @@ class ChatAPIService {
                     // Handle regular text delta
                     if let contentDelta = json["delta"] as? [String: Any],
                        let textContent = contentDelta["text"] as? String {
-                        // Send the new content to the MainActor for UI updates
-                        let _ = updateStreamingMessage(textContent)
+                        // If this is the very first text content after tool use has completed
+                        // and the current streaming message is empty, add a space
+                        if !pendingToolResults.isEmpty && lastTextContentBeforeToolUse.isEmpty && 
+                           !textContent.isEmpty && !textContent.hasPrefix(" ") {
+                            // Accumulate text content for context in follow-up requests
+                            lastTextContentBeforeToolUse = " " + textContent
+                            
+                            // Add space before the text to fix missing space after tool use
+                            _ = updateStreamingMessage(" " + textContent)
+                        } else {
+                            // Accumulate text content for context in follow-up requests
+                            lastTextContentBeforeToolUse += textContent
+                            
+                            // Send the new content without modification
+                            _ = updateStreamingMessage(textContent)
+                        }
                     }
                 }
             }
