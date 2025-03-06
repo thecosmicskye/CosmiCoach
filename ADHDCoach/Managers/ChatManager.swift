@@ -1649,14 +1649,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             // Find the appropriate memory category
             let memoryCategory = MemoryCategory.allCases.first { $0.rawValue.lowercased() == category.lowercased() } ?? .notes
             print("⚙️ Mapped category string to enum: \(memoryCategory.rawValue)")
-            
-            // Check if content seems to be a calendar event or reminder
-            let (isRestricted, restrictedTerm) = memoryManager.isCalendarOrReminderItem(content: content)
-            if isRestricted {
-                print("⚙️ ERROR: Memory content rejected - appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\"")
-                return "Error: Memory content appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\". Please use the appropriate tools instead."
-            }
-            
+
             // Add memory
             do {
                 print("⚙️ Calling memoryManager.addMemory...")
@@ -1696,15 +1689,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 
                 // Find the appropriate memory category
                 let memoryCategory = MemoryCategory.allCases.first { $0.rawValue.lowercased() == category.lowercased() } ?? .notes
-                
-                // Check if content seems to be a calendar event or reminder
-                let (isRestricted, restrictedTerm) = memoryManager.isCalendarOrReminderItem(content: content)
-                if isRestricted {
-                    print("⚙️ Memory content appears to be a calendar event or reminder. Detected term: \"\(restrictedTerm)\"")
-                    failureCount += 1
-                    continue
-                }
-                
+
                 // Add memory
                 do {
                     try await memoryManager.addMemory(content: content, category: memoryCategory, importance: importance)

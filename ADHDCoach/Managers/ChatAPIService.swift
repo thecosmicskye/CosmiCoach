@@ -73,7 +73,8 @@ class ChatAPIService {
     - Delete outdated information in memories
     - When adding specific facts, add them as separate memory items instead of combining multiple facts
     - The memory content is visible at the top of each conversation under USER MEMORY INFORMATION
-    - DO NOT add calendar events or reminders as memories
+    - DO NOT add calendar events or reminders as memories - this information is already provided in the context
+    - Calendar events and reminders should only be managed with their respective tools, not stored in memory
     - Avoid duplicating memories
     """
     

@@ -126,7 +126,7 @@ struct ADHDCoachApp: App {
                             // Launch a task to check for automatic messages directly from the app level
                             Task {
                                 print("⏱️ App-level - Starting direct automatic message check at \(Date())")
-                                await memoryManager.loadMemory()
+                                let _ = await memoryManager.readMemory()
                                 
                                 // Update location if enabled
                                 if enableLocationAwareness && locationManager.locationAccessGranted {
