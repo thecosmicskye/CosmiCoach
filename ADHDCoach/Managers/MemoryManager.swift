@@ -145,56 +145,211 @@ class MemoryManager: ObservableObject {
         }
     }
     
-    func addMemory(content: String, category: MemoryCategory, importance: Int = 3) async throws {
+    func addMemory(content: String, category: MemoryCategory, importance: Int = 3, messageId: UUID? = nil, chatManager: ChatManager? = nil) async throws {
         print("📝 Attempting to add memory: \"\(content)\" with category: \(category.rawValue), importance: \(importance)")
+
+        var statusMessageId: UUID? = nil
+        
+        // Create status message if chat context is available
+        if let messageId = messageId, let chatManager = chatManager {
+            await MainActor.run {
+                let statusMessage = chatManager.addOperationStatusMessage(
+                    forMessageId: messageId,
+                    operationType: OperationType.addMemory,
+                    status: .inProgress
+                )
+                statusMessageId = statusMessage.id
+            }
+        }
 
         let newMemory = MemoryItem(content: content, category: category, importance: importance)
         
-        await MainActor.run {
-            memories.append(newMemory)
-            self.memoryContent = formatMemoriesForClaude()
-            print("📝 Memory successfully added with ID: \(newMemory.id)")
+        do {
+            await MainActor.run {
+                memories.append(newMemory)
+                self.memoryContent = formatMemoriesForClaude()
+                print("📝 Memory successfully added with ID: \(newMemory.id)")
+            }
+            
+            try await saveMemories()
+            print("📝 Memory saved to persistent storage")
+            
+            // Update operation status to success
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                await MainActor.run {
+                    chatManager.updateOperationStatusMessage(
+                        forMessageId: messageId,
+                        statusMessageId: statusMessageId,
+                        status: .success
+                    )
+                }
+            }
+            
+            return
+        } catch {
+            print("📝 Error adding memory: \(error.localizedDescription)")
+            
+            // Update operation status to failure
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                await MainActor.run {
+                    chatManager.updateOperationStatusMessage(
+                        forMessageId: messageId,
+                        statusMessageId: statusMessageId,
+                        status: .failure,
+                        details: error.localizedDescription
+                    )
+                }
+            }
+            
+            throw error
         }
-        
-        try await saveMemories()
-        print("📝 Memory saved to persistent storage")
     }
     
-    func updateMemory(id: UUID, newContent: String? = nil, newCategory: MemoryCategory? = nil, newImportance: Int? = nil) async throws {
+    func updateMemory(id: UUID, newContent: String? = nil, newCategory: MemoryCategory? = nil, newImportance: Int? = nil, messageId: UUID? = nil, chatManager: ChatManager? = nil) async throws {
+        var statusMessageId: UUID? = nil
+        
+        // Create status message if chat context is available
+        if let messageId = messageId, let chatManager = chatManager {
+            await MainActor.run {
+                let statusMessage = chatManager.addOperationStatusMessage(
+                    forMessageId: messageId,
+                    operationType: OperationType.updateMemory,
+                    status: .inProgress
+                )
+                statusMessageId = statusMessage.id
+            }
+        }
+        
         guard let index = await MainActor.run(body: { memories.firstIndex(where: { $0.id == id }) }) else {
-            throw NSError(domain: "MemoryManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "Memory not found"])
+            let errorMessage = "Memory not found with ID: \(id)"
+            
+            // Update operation status to failure
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                await MainActor.run {
+                    chatManager.updateOperationStatusMessage(
+                        forMessageId: messageId,
+                        statusMessageId: statusMessageId,
+                        status: .failure,
+                        details: errorMessage
+                    )
+                }
+            }
+            
+            throw NSError(domain: "MemoryManager", code: 2, userInfo: [NSLocalizedDescriptionKey: errorMessage])
         }
 
-        await MainActor.run {
-            let existingMemory = memories[index]
+        do {
+            await MainActor.run {
+                let existingMemory = memories[index]
+                
+                // Create a new memory item with updated values
+                let updatedMemory = MemoryItem(
+                    id: existingMemory.id,
+                    content: newContent ?? existingMemory.content,
+                    category: newCategory ?? existingMemory.category,
+                    importance: newImportance ?? existingMemory.importance,
+                    timestamp: existingMemory.timestamp
+                )
+                
+                memories[index] = updatedMemory
+                self.memoryContent = formatMemoriesForClaude()
+            }
             
-            // Create a new memory item with updated values
-            let updatedMemory = MemoryItem(
-                id: existingMemory.id,
-                content: newContent ?? existingMemory.content,
-                category: newCategory ?? existingMemory.category,
-                importance: newImportance ?? existingMemory.importance,
-                timestamp: existingMemory.timestamp
-            )
+            try await saveMemories()
             
-            memories[index] = updatedMemory
-            self.memoryContent = formatMemoriesForClaude()
+            // Update operation status to success
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                await MainActor.run {
+                    chatManager.updateOperationStatusMessage(
+                        forMessageId: messageId,
+                        statusMessageId: statusMessageId,
+                        status: .success
+                    )
+                }
+            }
+        } catch {
+            // Update operation status to failure
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                await MainActor.run {
+                    chatManager.updateOperationStatusMessage(
+                        forMessageId: messageId,
+                        statusMessageId: statusMessageId,
+                        status: .failure,
+                        details: error.localizedDescription
+                    )
+                }
+            }
+            
+            throw error
         }
-        
-        try await saveMemories()
     }
     
-    func deleteMemory(id: UUID) async throws {
+    func deleteMemory(id: UUID, messageId: UUID? = nil, chatManager: ChatManager? = nil) async throws {
+        var statusMessageId: UUID? = nil
+        
+        // Create status message if chat context is available
+        if let messageId = messageId, let chatManager = chatManager {
+            await MainActor.run {
+                let statusMessage = chatManager.addOperationStatusMessage(
+                    forMessageId: messageId,
+                    operationType: OperationType.deleteMemory,
+                    status: .inProgress
+                )
+                statusMessageId = statusMessage.id
+            }
+        }
+        
         guard let index = await MainActor.run(body: { memories.firstIndex(where: { $0.id == id }) }) else {
-            throw NSError(domain: "MemoryManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "Memory not found"])
+            let errorMessage = "Memory not found with ID: \(id)"
+            
+            // Update operation status to failure
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                await MainActor.run {
+                    chatManager.updateOperationStatusMessage(
+                        forMessageId: messageId,
+                        statusMessageId: statusMessageId,
+                        status: .failure,
+                        details: errorMessage
+                    )
+                }
+            }
+            
+            throw NSError(domain: "MemoryManager", code: 2, userInfo: [NSLocalizedDescriptionKey: errorMessage])
         }
         
-        await MainActor.run {
-            memories.remove(at: index)
-            self.memoryContent = formatMemoriesForClaude()
+        do {
+            await MainActor.run {
+                memories.remove(at: index)
+                self.memoryContent = formatMemoriesForClaude()
+            }
+            
+            try await saveMemories()
+            
+            // Update operation status to success
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                await MainActor.run {
+                    chatManager.updateOperationStatusMessage(
+                        forMessageId: messageId,
+                        statusMessageId: statusMessageId,
+                        status: .success
+                    )
+                }
+            }
+        } catch {
+            // Update operation status to failure
+            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
+                await MainActor.run {
+                    chatManager.updateOperationStatusMessage(
+                        forMessageId: messageId,
+                        statusMessageId: statusMessageId,
+                        status: .failure,
+                        details: error.localizedDescription
+                    )
+                }
+            }
+            
+            throw error
         }
-        
-        try await saveMemories()
     }
     
     // Get all memories as a formatted string for Claude

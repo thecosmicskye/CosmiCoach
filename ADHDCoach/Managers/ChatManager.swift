@@ -379,7 +379,32 @@ class ChatManager: ObservableObject, @unchecked Sendable {
      * @return The newly created operation status message
      */
     @MainActor
+    func addOperationStatusMessage(forMessageId messageId: UUID, operationType: OperationType, status: OperationStatus = .inProgress, details: String? = nil) -> OperationStatusMessage {
+        let statusMessage = statusManager.addOperationStatusMessage(
+            forMessageId: messageId,
+            operationType: operationType,
+            status: status,
+            details: details
+        )
+        
+        // Update the local copy
+        if operationStatusMessages[messageId] == nil {
+            operationStatusMessages[messageId] = []
+        }
+        operationStatusMessages[messageId]?.append(statusMessage)
+        
+        return statusMessage
+    }
+    
+    // For backward compatibility
+    @MainActor
     func addOperationStatusMessage(forMessageId messageId: UUID, operationType: String, status: OperationStatus = .inProgress, details: String? = nil) -> OperationStatusMessage {
+        // Try to map the string to an OperationType
+        if let opType = OperationType(rawValue: operationType) {
+            return addOperationStatusMessage(forMessageId: messageId, operationType: opType, status: status, details: details)
+        }
+        
+        // Fall back to string version if no enum match
         let statusMessage = statusManager.addOperationStatusMessage(
             forMessageId: messageId,
             operationType: operationType,
@@ -1767,10 +1792,16 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             let memoryCategory = MemoryCategory.allCases.first { $0.rawValue.lowercased() == category.lowercased() } ?? .notes
             print("⚙️ Mapped category string to enum: \(memoryCategory.rawValue)")
 
-            // Add memory
+            // Add memory with operation status tracking
             do {
-                print("⚙️ Calling memoryManager.addMemory...")
-                try await memoryManager.addMemory(content: content, category: memoryCategory, importance: importance)
+                print("⚙️ Calling memoryManager.addMemory with operation status...")
+                try await memoryManager.addMemory(
+                    content: content, 
+                    category: memoryCategory, 
+                    importance: importance,
+                    messageId: messageId,
+                    chatManager: self
+                )
                 print("⚙️ Memory successfully added")
                 
                 // Refresh context with the updated memories
@@ -1792,6 +1823,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             // Get access to MemoryManager
             guard let memoryManager = await getMemoryManager() else {
                 return "Error: MemoryManager not available"
+            }
+            
+            // Create a batch operation status message
+            let statusMessageId = await MainActor.run {
+                let message = addOperationStatusMessage(
+                    forMessageId: messageId!,
+                    operationType: OperationType.batchMemoryOperation,
+                    status: .inProgress,
+                    details: "Adding \(memoriesArray.count) memories"
+                )
+                return message.id
             }
             
             var successCount = 0
@@ -1821,6 +1863,16 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 }
             }
             
+            // Update the batch operation status message
+            await MainActor.run {
+                updateOperationStatusMessage(
+                    forMessageId: messageId!,
+                    statusMessageId: statusMessageId,
+                    status: .success,
+                    details: "Added \(successCount) of \(memoriesArray.count) memories"
+                )
+            }
+            
             // Refresh context with the updated memories
             await refreshContextData()
             
@@ -1848,7 +1900,11 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             // Check if we found a memory with the given content
             if let memoryId = memoryId {
                 do {
-                    try await memoryManager.deleteMemory(id: memoryId)
+                    try await memoryManager.deleteMemory(
+                        id: memoryId,
+                        messageId: messageId,
+                        chatManager: self
+                    )
                     
                     // Refresh context with the updated memories
                     await refreshContextData()
@@ -1858,6 +1914,18 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     return "Failed to remove memory: \(error.localizedDescription)"
                 }
             } else {
+                // Create a failure status message for memory not found
+                if let messageId = messageId {
+                    await MainActor.run {
+                        addOperationStatusMessage(
+                            forMessageId: messageId,
+                            operationType: OperationType.deleteMemory,
+                            status: .failure,
+                            details: "No memory found with content: \(content)"
+                        )
+                    }
+                }
+                
                 return "Error: No memory found with content: \(content)"
             }
             
@@ -1873,6 +1941,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 return "Error: MemoryManager not available"
             }
             
+            // Create a batch operation status message
+            let statusMessageId = await MainActor.run {
+                let message = addOperationStatusMessage(
+                    forMessageId: messageId!,
+                    operationType: OperationType.batchMemoryOperation,
+                    status: .inProgress,
+                    details: "Removing \(contents.count) memories"
+                )
+                return message.id
+            }
+            
             var successCount = 0
             var failureCount = 0
             
@@ -1883,7 +1962,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     if let memory = memoryManager.memories.first(where: { $0.content == content }) {
                         return memory.id
                     }
-                    return UUID()  // Return a placeholder UUID instead of nil
+                    return nil
                 }
                 
                 // Check if we found a memory with the given content
@@ -1899,6 +1978,16 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     print("⚙️ No memory found with content: \(content)")
                     failureCount += 1
                 }
+            }
+            
+            // Update the batch operation status message
+            await MainActor.run {
+                updateOperationStatusMessage(
+                    forMessageId: messageId!,
+                    statusMessageId: statusMessageId,
+                    status: .success,
+                    details: "Removed \(successCount) of \(contents.count) memories"
+                )
             }
             
             // Refresh context with the updated memories

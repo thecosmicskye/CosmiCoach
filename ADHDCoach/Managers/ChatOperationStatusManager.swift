@@ -34,7 +34,43 @@ class ChatOperationStatusManager {
      * Adds a new operation status message for a specific chat message.
      *
      * @param messageId The UUID of the chat message
-     * @param operationType The type of operation (e.g., "Add Calendar Event")
+     * @param operationType The type of operation (using the OperationType enum)
+     * @param status The current status of the operation (default: .inProgress)
+     * @param details Optional details about the operation
+     * @return The newly created operation status message
+     */
+    func addOperationStatusMessage(
+        forMessageId messageId: UUID,
+        operationType: OperationType,
+        status: OperationStatus = .inProgress,
+        details: String? = nil
+    ) -> OperationStatusMessage {
+        let statusMessage = OperationStatusMessage(
+            operationType: operationType,
+            status: status,
+            details: details
+        )
+        
+        // Initialize the array if it doesn't exist
+        if operationStatusMessages[messageId] == nil {
+            operationStatusMessages[messageId] = []
+        }
+        
+        // Add the status message
+        operationStatusMessages[messageId]?.append(statusMessage)
+        
+        // Save to persistence
+        saveOperationStatusMessages()
+        
+        return statusMessage
+    }
+    
+    /**
+     * Adds a new operation status message for a specific chat message.
+     * (String-based version for backward compatibility)
+     *
+     * @param messageId The UUID of the chat message
+     * @param operationType The type of operation as a string
      * @param status The current status of the operation (default: .inProgress)
      * @param details Optional details about the operation
      * @return The newly created operation status message
@@ -45,6 +81,17 @@ class ChatOperationStatusManager {
         status: OperationStatus = .inProgress,
         details: String? = nil
     ) -> OperationStatusMessage {
+        // Try to convert to enum if possible
+        if let opType = OperationType(rawValue: operationType) {
+            return addOperationStatusMessage(
+                forMessageId: messageId,
+                operationType: opType,
+                status: status,
+                details: details
+            )
+        }
+        
+        // String-based version for backward compatibility
         let statusMessage = OperationStatusMessage(
             operationType: operationType,
             status: status,
