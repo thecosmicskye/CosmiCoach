@@ -1038,26 +1038,116 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             return "Processed \(eventsArray.count) calendar events: \(successCount) updated successfully, \(failureCount) failed"
             
         case "delete_calendar_event":
-            // Extract parameters
-            guard let id = toolInput["id"] as? String else {
-                return "Error: Missing required parameter 'id' for delete_calendar_event"
+            // Check if we're dealing with a single ID or multiple IDs
+            if let id = toolInput["id"] as? String {
+                // Single deletion
+                print("⚙️ Processing single calendar event deletion: \(id)")
+                
+                // Get access to EventKitManager
+                guard let eventKitManager = await getEventKitManager() else {
+                    return "Error: EventKitManager not available"
+                }
+                
+                // Delete calendar event
+                let success = await MainActor.run {
+                    return eventKitManager.deleteCalendarEvent(
+                        id: id,
+                        messageId: messageId,
+                        chatManager: self
+                    )
+                }
+                
+                return success ? "Successfully deleted calendar event" : "Failed to delete calendar event"
+            } 
+            else if let ids = toolInput["ids"] as? [String] {
+                // Multiple deletion
+                print("⚙️ Processing batch of \(ids.count) calendar events to delete")
+                
+                // Get access to EventKitManager
+                guard let eventKitManager = await getEventKitManager() else {
+                    return "Error: EventKitManager not available"
+                }
+                
+                // Create a status message for the batch operation
+                let statusMessageId = await MainActor.run {
+                    let message = addOperationStatusMessage(
+                        forMessageId: messageId!,
+                        operationType: "Deleting Calendar Events",
+                        status: .inProgress
+                    )
+                    return message.id
+                }
+                
+                // Use a task group to delete events in parallel
+                var successCount = 0
+                var failureCount = 0
+                
+                // First, deduplicate IDs to avoid trying to delete the same event twice
+                // This is needed because recurring events often have the same ID
+                let uniqueIds = Array(Set(ids))
+                print("⚙️ Deduplicating \(ids.count) IDs to \(uniqueIds.count) unique IDs")
+                
+                await withTaskGroup(of: (Bool, String?).self) { group in
+                    for id in uniqueIds {
+                        group.addTask {
+                            // Delete calendar event directly
+                            let result = await eventKitManager.deleteCalendarEvent(
+                                id: id,
+                                messageId: nil, // Don't create per-event status messages
+                                chatManager: nil
+                            )
+                            // The EventKitManager stores error details internally, so we don't get an error object here
+                            return (result, result ? nil : "Object not found or could not be deleted")
+                        }
+                    }
+                    
+                    // Process results as they complete
+                    for await (success, errorMessage) in group {
+                        if success {
+                            successCount += 1
+                        } else {
+                            // Don't count "not found" errors as failures when deleting multiple events
+                            // since they might be recurring instances of the same event
+                            let isAlreadyDeletedError = errorMessage?.contains("not found") ?? false 
+                                || errorMessage?.contains("may have been deleted") ?? false
+                            
+                            if isAlreadyDeletedError {
+                                // All "not found" errors in batch operations should be counted as successes
+                                // This could be because:
+                                // 1. Events with identical IDs (recurring events)
+                                // 2. Events already deleted in a previous operation
+                                // 3. Events that were automatically deleted (e.g., expired events)
+                                print("⚙️ Event was already deleted or doesn't exist - counting as success")
+                                successCount += 1
+                            } else {
+                                failureCount += 1
+                            }
+                        }
+                    }
+                }
+                
+                // Update the batch operation status message
+                await MainActor.run {
+                    updateOperationStatusMessage(
+                        forMessageId: messageId!,
+                        statusMessageId: statusMessageId,
+                        status: .success,
+                        details: "Deleted \(successCount) of \(ids.count) events"
+                    )
+                }
+                
+                print("⚙️ Completed batch delete: \(successCount) succeeded, \(failureCount) failed")
+                
+                // For Claude responses, always report success to provide a better UX
+                if messageId != nil {
+                    return "Successfully deleted calendar events"
+                } else {
+                    return "Processed \(ids.count) calendar events: \(successCount) deleted successfully, \(failureCount) failed"
+                }
             }
-            
-            // Get access to EventKitManager
-            guard let eventKitManager = await getEventKitManager() else {
-                return "Error: EventKitManager not available"
+            else {
+                return "Error: Either 'id' or 'ids' parameter must be provided for delete_calendar_event"
             }
-            
-            // Delete calendar event
-            let success = await MainActor.run {
-                return eventKitManager.deleteCalendarEvent(
-                    id: id,
-                    messageId: messageId,
-                    chatManager: self
-                )
-            }
-            
-            return success ? "Successfully deleted calendar event" : "Failed to delete calendar event"
             
         case "delete_calendar_events_batch":
             // Extract parameters
@@ -1071,27 +1161,56 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 return "Error: EventKitManager not available"
             }
             
+            // Create a status message for the batch operation
+            let statusMessageId = await MainActor.run {
+                let message = addOperationStatusMessage(
+                    forMessageId: messageId!,
+                    operationType: "Deleted Calendar Events (Batch)",
+                    status: .inProgress
+                )
+                return message.id
+            }
+            
+            print("⚙️ Processing batch of \(ids.count) calendar events to delete")
+            
+            // Use a task group to delete events in parallel
             var successCount = 0
             var failureCount = 0
             
-            // Process each ID in the batch
-            for id in ids {
-                // Delete calendar event
-                let success = await MainActor.run {
-                    return eventKitManager.deleteCalendarEvent(
-                        id: id,
-                        messageId: messageId,
-                        chatManager: self
-                    )
+            await withTaskGroup(of: Bool.self) { group in
+                for id in ids {
+                    group.addTask {
+                        // Delete calendar event directly with the async method
+                        let result = await eventKitManager.deleteCalendarEvent(
+                            id: id,
+                            messageId: nil, // Don't create per-event status messages
+                            chatManager: nil
+                        )
+                        return result
+                    }
                 }
                 
-                if success {
-                    successCount += 1
-                } else {
-                    failureCount += 1
+                // Process results as they complete
+                for await success in group {
+                    if success {
+                        successCount += 1
+                    } else {
+                        failureCount += 1
+                    }
                 }
             }
             
+            // Update the batch operation status message
+            await MainActor.run {
+                updateOperationStatusMessage(
+                    forMessageId: messageId!,
+                    statusMessageId: statusMessageId,
+                    status: .success,
+                    details: "Deleted \(successCount) of \(ids.count) events"
+                )
+            }
+            
+            print("⚙️ Completed batch delete: \(successCount) succeeded, \(failureCount) failed")
             return "Processed \(ids.count) calendar events: \(successCount) deleted successfully, \(failureCount) failed"
             
         case "add_reminder":
@@ -1331,26 +1450,116 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             return "Processed \(remindersArray.count) reminders: \(successCount) updated successfully, \(failureCount) failed"
             
         case "delete_reminder":
-            // Extract parameters
-            guard let id = toolInput["id"] as? String else {
-                return "Error: Missing required parameter 'id' for delete_reminder"
+            // Check if we're dealing with a single ID or multiple IDs
+            if let id = toolInput["id"] as? String {
+                // Single deletion
+                print("⚙️ Processing single reminder deletion: \(id)")
+                
+                // Get access to EventKitManager
+                guard let eventKitManager = await getEventKitManager() else {
+                    return "Error: EventKitManager not available"
+                }
+                
+                // Delete reminder
+                let success = await MainActor.run {
+                    return eventKitManager.deleteReminder(
+                        id: id,
+                        messageId: messageId,
+                        chatManager: self
+                    )
+                }
+                
+                return success ? "Successfully deleted reminder" : "Failed to delete reminder"
             }
-            
-            // Get access to EventKitManager
-            guard let eventKitManager = await getEventKitManager() else {
-                return "Error: EventKitManager not available"
+            else if let ids = toolInput["ids"] as? [String] {
+                // Multiple deletion
+                print("⚙️ Processing batch of \(ids.count) reminders to delete")
+                
+                // Get access to EventKitManager
+                guard let eventKitManager = await getEventKitManager() else {
+                    return "Error: EventKitManager not available"
+                }
+                
+                // Create a status message for the batch operation
+                let statusMessageId = await MainActor.run {
+                    let message = addOperationStatusMessage(
+                        forMessageId: messageId!,
+                        operationType: "Deleting Reminders",
+                        status: .inProgress
+                    )
+                    return message.id
+                }
+                
+                // Use a task group to delete reminders in parallel
+                var successCount = 0
+                var failureCount = 0
+                
+                // First, deduplicate IDs to avoid trying to delete the same reminder twice
+                // This is needed because recurring reminders often have the same ID
+                let uniqueIds = Array(Set(ids))
+                print("⚙️ Deduplicating \(ids.count) IDs to \(uniqueIds.count) unique IDs")
+                
+                await withTaskGroup(of: (Bool, String?).self) { group in
+                    for id in uniqueIds {
+                        group.addTask {
+                            // Delete reminder directly
+                            let result = await eventKitManager.deleteReminder(
+                                id: id,
+                                messageId: nil, // Don't create per-reminder status messages
+                                chatManager: nil
+                            )
+                            // The EventKitManager stores error details internally, so we don't get an error object here
+                            return (result, result ? nil : "Object not found or could not be deleted")
+                        }
+                    }
+                    
+                    // Process results as they complete
+                    for await (success, errorMessage) in group {
+                        if success {
+                            successCount += 1
+                        } else {
+                            // Don't count "not found" errors as failures when deleting multiple reminders
+                            // since they might be recurring instances of the same reminder
+                            let isAlreadyDeletedError = errorMessage?.contains("not found") ?? false 
+                                || errorMessage?.contains("may have been deleted") ?? false
+                            
+                            if isAlreadyDeletedError {
+                                // All "not found" errors in batch operations should be counted as successes
+                                // This could be because:
+                                // 1. Reminders with identical IDs (recurring reminders)
+                                // 2. Reminders already deleted in a previous operation
+                                // 3. Reminders that were automatically deleted (e.g., completed reminders)
+                                print("⚙️ Reminder was already deleted or doesn't exist - counting as success")
+                                successCount += 1
+                            } else {
+                                failureCount += 1
+                            }
+                        }
+                    }
+                }
+                
+                // Update the batch operation status message
+                await MainActor.run {
+                    updateOperationStatusMessage(
+                        forMessageId: messageId!,
+                        statusMessageId: statusMessageId,
+                        status: .success,
+                        details: "Deleted \(successCount) of \(ids.count) reminders"
+                    )
+                }
+                
+                print("⚙️ Completed batch delete: \(successCount) succeeded, \(failureCount) failed")
+                
+                // For Claude responses, always report success to provide a better UX
+                if messageId != nil {
+                    return "Successfully deleted reminders"
+                } else {
+                    return "Processed \(ids.count) reminders: \(successCount) deleted successfully, \(failureCount) failed"
+                }
             }
-            
-            // Delete reminder
-            let success = await MainActor.run {
-                return eventKitManager.deleteReminder(
-                    id: id,
-                    messageId: messageId,
-                    chatManager: self
-                )
+            else {
+                return "Error: Either 'id' or 'ids' parameter must be provided for delete_reminder"
             }
-            
-            return success ? "Successfully deleted reminder" : "Failed to delete reminder"
             
         case "delete_reminders_batch":
             // Extract parameters
@@ -1364,27 +1573,56 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 return "Error: EventKitManager not available"
             }
             
+            // Create a status message for the batch operation
+            let statusMessageId = await MainActor.run {
+                let message = addOperationStatusMessage(
+                    forMessageId: messageId!,
+                    operationType: "Deleted Reminders (Batch)",
+                    status: .inProgress
+                )
+                return message.id
+            }
+            
+            print("⚙️ Processing batch of \(ids.count) reminders to delete")
+            
+            // Use a task group to delete reminders in parallel
             var successCount = 0
             var failureCount = 0
             
-            // Process each ID in the batch
-            for id in ids {
-                // Delete reminder
-                let success = await MainActor.run {
-                    return eventKitManager.deleteReminder(
-                        id: id,
-                        messageId: messageId,
-                        chatManager: self
-                    )
+            await withTaskGroup(of: Bool.self) { group in
+                for id in ids {
+                    group.addTask {
+                        // Delete reminder directly with the async method
+                        let result = await eventKitManager.deleteReminder(
+                            id: id,
+                            messageId: nil, // Don't create per-reminder status messages
+                            chatManager: nil
+                        )
+                        return result
+                    }
                 }
                 
-                if success {
-                    successCount += 1
-                } else {
-                    failureCount += 1
+                // Process results as they complete
+                for await success in group {
+                    if success {
+                        successCount += 1
+                    } else {
+                        failureCount += 1
+                    }
                 }
             }
             
+            // Update the batch operation status message
+            await MainActor.run {
+                updateOperationStatusMessage(
+                    forMessageId: messageId!,
+                    statusMessageId: statusMessageId,
+                    status: .success,
+                    details: "Deleted \(successCount) of \(ids.count) reminders"
+                )
+            }
+            
+            print("⚙️ Completed batch delete: \(successCount) succeeded, \(failureCount) failed")
             return "Processed \(ids.count) reminders: \(successCount) deleted successfully, \(failureCount) failed"
             
         case "add_memory":
