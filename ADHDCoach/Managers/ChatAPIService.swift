@@ -189,7 +189,36 @@ class ChatAPIService {
                 messages.append(toolResultsMessage)
                 print("Added tool results to messages array")
             } else {
-                print("Skipping tool results because there are no previous messages with tool use")
+                // Even if there are no explicit tool_use blocks, we should still create
+                // a synthetic assistant message with a tool_use so the tool results can be displayed
+                print("Creating synthetic tool use message for tool results")
+                
+                // Create a synthetic assistant message with the tool uses
+                var assistantToolUseBlocks: [[String: Any]] = []
+                
+                for result in pendingToolResults {
+                    // Create a tool use block for each pending result
+                    assistantToolUseBlocks.append([
+                        "type": "tool_use",
+                        "id": result.toolId,
+                        "name": result.toolId.contains("add_memory") ? "add_memory" : "unknown_tool",
+                        "input": ["content": "Auto-added tool use for result processing"]
+                    ])
+                }
+                
+                if !assistantToolUseBlocks.isEmpty {
+                    // Add the synthetic assistant message with tool uses
+                    let assistantMessage: [String: Any] = [
+                        "role": "assistant",
+                        "content": assistantToolUseBlocks
+                    ]
+                    messages.append(assistantMessage)
+                    
+                    // Now add the tool results message
+                    let toolResultsMessage = APIRequestBuilder.createToolResultsMessage(toolResults: pendingToolResults)
+                    messages.append(toolResultsMessage)
+                    print("Added synthetic tool use and results to messages array")
+                }
             }
             
             // Clear the pending results after adding them
@@ -552,9 +581,23 @@ class ChatAPIService {
                             isProcessingCallback: isProcessingCallback
                         )
                     } else {
-                        print("💡 Cannot add tool_results because the last assistant message has no tool_use blocks")
-                        finalizeStreamingMessage()
-                        isProcessingCallback(false)
+                        print("💡 Converting tool results into a new user message for better handling")
+                        
+                        // Instead of failing, let's add a user message containing the tool result information
+                        let userMessage = "I've just performed the following actions: " + 
+                            pendingToolResults.map { "• \($0.content)" }.joined(separator: "\n")
+                        
+                        // Add the user message to the conversation history
+                        let userMessageObj = APIRequestBuilder.createUserMessage(text: userMessage)
+                        completeConversationHistory.append(userMessageObj)
+                        
+                        // Continue the conversation with this new message
+                        await sendMessageWithCurrentState(
+                            toolDefinitions: toolDefinitions,
+                            updateStreamingMessage: updateStreamingMessage,
+                            finalizeStreamingMessage: finalizeStreamingMessage,
+                            isProcessingCallback: isProcessingCallback
+                        )
                     }
                 } else {
                     print("💡 Cannot add tool_results because there's no assistant message with tool_use blocks")
@@ -808,6 +851,24 @@ class ChatAPIService {
         
         // Clear the pending results
         pendingToolResults = []
+        
+        // Update the context message with the latest memory data
+        if !completeConversationHistory.isEmpty {
+            // Get the updated context message
+            let updatedContextMessage = APIRequestBuilder.createContextMessage(
+                memoryContent: lastMemoryContent,
+                calendarContext: lastCalendarContext,
+                remindersContext: lastRemindersContext,
+                locationContext: lastLocationContext,
+                conversationHistory: lastConversationHistory
+            )
+            
+            // Replace the first message (context) with updated content
+            if completeConversationHistory[0]["role"] as? String == "user" {
+                completeConversationHistory[0] = updatedContextMessage
+                print("💡 Updated context message with latest memory data for tool follow-up")
+            }
+        }
         
         // Use the complete conversation history for the messages array
         let messages = completeConversationHistory
@@ -1155,14 +1216,42 @@ class ChatAPIService {
                             isProcessingCallback: isProcessingCallback
                         )
                     } else {
-                        print("💡 Cannot add tool_results because the last assistant message has no tool_use blocks")
-                        finalizeStreamingMessage()
-                        isProcessingCallback(false)
+                        print("💡 Converting tool results into a new user message for better handling")
+                        
+                        // Instead of failing, let's add a user message containing the tool result information
+                        let userMessage = "I've just performed the following actions: " + 
+                            pendingToolResults.map { "• \($0.content)" }.joined(separator: "\n")
+                        
+                        // Add the user message to the conversation history
+                        let userMessageObj = APIRequestBuilder.createUserMessage(text: userMessage)
+                        completeConversationHistory.append(userMessageObj)
+                        
+                        // Continue the conversation with this new message
+                        await sendMessageWithCurrentState(
+                            toolDefinitions: toolDefinitions,
+                            updateStreamingMessage: updateStreamingMessage,
+                            finalizeStreamingMessage: finalizeStreamingMessage,
+                            isProcessingCallback: isProcessingCallback
+                        )
                     }
                 } else {
-                    print("💡 Cannot add tool_results because there's no assistant message with tool_use blocks")
-                    finalizeStreamingMessage()
-                    isProcessingCallback(false)
+                    print("💡 Converting tool results into a new user message for better handling")
+                    
+                    // Create a meaningful user message from the tool results
+                    let userMessage = "I've just performed the following actions: " + 
+                        pendingToolResults.map { "• \($0.content)" }.joined(separator: "\n")
+                    
+                    // Add the user message to the conversation history
+                    let userMessageObj = APIRequestBuilder.createUserMessage(text: userMessage)
+                    completeConversationHistory.append(userMessageObj)
+                    
+                    // Continue the conversation with this new message
+                    await sendMessageWithCurrentState(
+                        toolDefinitions: toolDefinitions,
+                        updateStreamingMessage: updateStreamingMessage,
+                        finalizeStreamingMessage: finalizeStreamingMessage,
+                        isProcessingCallback: isProcessingCallback
+                    )
                 }
             } else {
                 // No tool results to process, finalize the message
@@ -1195,6 +1284,24 @@ class ChatAPIService {
         finalizeStreamingMessage: @escaping () -> Void,
         isProcessingCallback: @escaping (Bool) -> Void
     ) async {
+        // Recreate the context message with the latest data
+        if !completeConversationHistory.isEmpty {
+            // Get the updated context message
+            let updatedContextMessage = APIRequestBuilder.createContextMessage(
+                memoryContent: lastMemoryContent,
+                calendarContext: lastCalendarContext,
+                remindersContext: lastRemindersContext,
+                locationContext: lastLocationContext,
+                conversationHistory: lastConversationHistory
+            )
+            
+            // Replace the first message (context) with updated content
+            if completeConversationHistory[0]["role"] as? String == "user" {
+                completeConversationHistory[0] = updatedContextMessage
+                print("💡 Updated context message with latest memory data mid-conversation")
+            }
+        }
+        
         // Create the request body with system as a top-level parameter and tools
         let requestBody = APIRequestBuilder.buildRequestBodyWithCaching(
             systemPrompt: systemPrompt,
@@ -1349,5 +1456,51 @@ class ChatAPIService {
             print("API key test error: \(error.localizedDescription)")
             return false
         }
+    }
+    
+    // MARK: - Context Update Methods
+    
+    /**
+     * Updates the memory content stored in the context.
+     * This ensures Claude has access to the latest memory data during a conversation.
+     *
+     * @param memoryContent The updated memory content string
+     */
+    func updateMemoryContext(_ memoryContent: String) async {
+        self.lastMemoryContent = memoryContent
+        print("💡 Memory context updated in API service (length: \(memoryContent.count) chars)")
+    }
+    
+    /**
+     * Updates the calendar events stored in the context.
+     * This ensures Claude has access to the latest calendar data during a conversation.
+     *
+     * @param calendarContext The updated calendar events formatted as a string
+     */
+    func updateCalendarContext(_ calendarContext: String) async {
+        self.lastCalendarContext = calendarContext
+        print("💡 Calendar context updated in API service (length: \(calendarContext.count) chars)")
+    }
+    
+    /**
+     * Updates the reminders stored in the context.
+     * This ensures Claude has access to the latest reminders data during a conversation.
+     *
+     * @param remindersContext The updated reminders formatted as a string
+     */
+    func updateRemindersContext(_ remindersContext: String) async {
+        self.lastRemindersContext = remindersContext
+        print("💡 Reminders context updated in API service (length: \(remindersContext.count) chars)")
+    }
+    
+    /**
+     * Updates the location information stored in the context.
+     * This ensures Claude has access to the latest location data during a conversation.
+     *
+     * @param locationContext The updated location information as a string
+     */
+    func updateLocationContext(_ locationContext: String) async {
+        self.lastLocationContext = locationContext
+        print("💡 Location context updated in API service (length: \(locationContext.count) chars)")
     }
 }

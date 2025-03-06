@@ -133,9 +133,12 @@ class ChatToolHandler {
      *
      * @param response The text response from Claude
      * @param memoryManager The memory manager to use for updates
+     * @param chatManager Optional ChatManager for context refreshing
+     * @return Boolean indicating if memory was updated
      */
-    func processMemoryUpdates(response: String, memoryManager: MemoryManager) async {
+    func processMemoryUpdates(response: String, memoryManager: MemoryManager, chatManager: ChatManager? = nil) async -> Bool {
         // Support both old and new memory update formats for backward compatibility
+        var memoryUpdated = false
         
         // 1. Check for old format memory updates
         let memoryUpdatePattern = "\\[MEMORY_UPDATE\\]([\\s\\S]*?)\\[\\/MEMORY_UPDATE\\]"
@@ -152,6 +155,7 @@ class ChatToolHandler {
                     
                     if success {
                         print("Successfully applied legacy memory update")
+                        memoryUpdated = true
                     } else {
                         print("Failed to apply legacy memory update")
                     }
@@ -166,7 +170,16 @@ class ChatToolHandler {
         
         if success {
             print("Successfully processed structured memory instructions")
+            memoryUpdated = true
         }
+        
+        // 3. Refresh context if memory was updated and chatManager is provided
+        if memoryUpdated && chatManager != nil {
+            print("Memory was updated, refreshing context data")
+            await chatManager?.refreshContextData()
+        }
+        
+        return memoryUpdated
     }
     
     /**

@@ -193,6 +193,23 @@ class ChatManager: ObservableObject, @unchecked Sendable {
     // MARK: - Message Management
     
     /**
+     * Clears all chat messages.
+     */
+    @MainActor
+    func clearAllMessages() {
+        // Clear messages from UserDefaults
+        persistenceManager.clearAllMessages()
+        
+        // Clear messages from memory
+        messages = []
+        currentStreamingMessageId = nil
+        isProcessing = false
+        
+        // Post notification to refresh chat view
+        NotificationCenter.default.post(name: NSNotification.Name("ChatHistoryDeleted"), object: nil)
+    }
+    
+    /**
      * Adds a user message to the chat.
      *
      * @param content The content of the user message
@@ -506,8 +523,16 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         )
         
         // Process any memory updates from the response
-        if let lastMessage = await MainActor.run(body: { messages.last }) {
-            await toolHandler.processMemoryUpdates(response: lastMessage.content, memoryManager: memoryManager!)
+        if let lastMessage = await MainActor.run(body: { messages.last }), let manager = memoryManager {
+            let memoryUpdated = await toolHandler.processMemoryUpdates(response: lastMessage.content, memoryManager: manager, chatManager: self)
+            
+            // If memory wasn't updated through the text response, 
+            // but tool calls might have modified memories, calendar events, or reminders
+            if !memoryUpdated {
+                // Make sure context window stays up-to-date
+                await refreshContextData()
+                print("🔄 Manually refreshing context after regular message to ensure API has latest data")
+            }
         }
     }
     
@@ -714,8 +739,16 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         )
         
         // Process any memory updates from the response
-        if let lastMessage = await MainActor.run(body: { messages.last }) {
-            await toolHandler.processMemoryUpdates(response: lastMessage.content, memoryManager: memoryManager!)
+        if let lastMessage = await MainActor.run(body: { messages.last }), let manager = memoryManager {
+            let memoryUpdated = await toolHandler.processMemoryUpdates(response: lastMessage.content, memoryManager: manager, chatManager: self)
+            
+            // If memory wasn't updated through the text response, 
+            // but tool calls might have modified memories, calendar events, or reminders
+            if !memoryUpdated {
+                // Make sure context window stays up-to-date
+                await refreshContextData()
+                print("🔄 Manually refreshing context after automatic message to ensure API has latest data")
+            }
         }
     }
     
@@ -846,6 +879,10 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             
             // Even when successful, the success variable may be false due to race conditions
             // Always return success for now to avoid confusing UI indicators
+            
+            // Refresh context with the updated calendar events
+            await refreshContextData()
+            
             return "Successfully added calendar event"
             
         case "add_calendar_events_batch":
@@ -906,6 +943,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 }
             }
             
+            // Refresh context with the updated calendar events
+            await refreshContextData()
+            
             return "Processed \(eventsArray.count) calendar events: \(successCount) added successfully, \(failureCount) failed"
             
         case "modify_calendar_event":
@@ -957,6 +997,11 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     messageId: messageId,
                     chatManager: self
                 )
+            }
+            
+            // Refresh context with the updated calendar events if successful
+            if success || messageId != nil {
+                await refreshContextData()
             }
             
             return success ? "Successfully updated calendar event" : "Failed to update calendar event"
@@ -1035,6 +1080,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 }
             }
             
+            // Refresh context with the updated calendar events
+            await refreshContextData()
+            
             return "Processed \(eventsArray.count) calendar events: \(successCount) updated successfully, \(failureCount) failed"
             
         case "delete_calendar_event":
@@ -1055,6 +1103,11 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                         messageId: messageId,
                         chatManager: self
                     )
+                }
+                
+                // Refresh context with the updated calendar events if successful
+                if success || messageId != nil {
+                    await refreshContextData()
                 }
                 
                 return success ? "Successfully deleted calendar event" : "Failed to delete calendar event"
@@ -1137,6 +1190,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 }
                 
                 print("⚙️ Completed batch delete: \(successCount) succeeded, \(failureCount) failed")
+                
+                // Refresh context with the updated calendar events
+                await refreshContextData()
                 
                 // For Claude responses, always report success to provide a better UX
                 if messageId != nil {
@@ -1263,6 +1319,10 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             }
             
             // Similarly to calendar events, always return success to avoid confusing UI
+            
+            // Refresh context with the updated reminders
+            await refreshContextData()
+            
             return "Successfully added reminder"
             
         case "add_reminders_batch":
@@ -1330,6 +1390,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 }
             }
             
+            // Refresh context with the updated reminders
+            await refreshContextData()
+            
             return "Processed \(remindersArray.count) reminders: \(successCount) added successfully, \(failureCount) failed"
             
         case "modify_reminder":
@@ -1376,6 +1439,11 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     messageId: messageId,
                     chatManager: self
                 )
+            }
+            
+            // Refresh context with the updated reminders if successful
+            if success || messageId != nil {
+                await refreshContextData()
             }
             
             return success ? "Successfully updated reminder" : "Failed to update reminder"
@@ -1447,6 +1515,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 }
             }
             
+            // Refresh context with the updated reminders
+            await refreshContextData()
+            
             return "Processed \(remindersArray.count) reminders: \(successCount) updated successfully, \(failureCount) failed"
             
         case "delete_reminder":
@@ -1467,6 +1538,11 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                         messageId: messageId,
                         chatManager: self
                     )
+                }
+                
+                // Refresh context with the updated reminders if successful
+                if success || messageId != nil {
+                    await refreshContextData()
                 }
                 
                 return success ? "Successfully deleted reminder" : "Failed to delete reminder"
@@ -1549,6 +1625,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 }
                 
                 print("⚙️ Completed batch delete: \(successCount) succeeded, \(failureCount) failed")
+                
+                // Refresh context with the updated reminders
+                await refreshContextData()
                 
                 // For Claude responses, always report success to provide a better UX
                 if messageId != nil {
@@ -1655,6 +1734,10 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 print("⚙️ Calling memoryManager.addMemory...")
                 try await memoryManager.addMemory(content: content, category: memoryCategory, importance: importance)
                 print("⚙️ Memory successfully added")
+                
+                // Refresh context with the updated memories
+                await refreshContextData()
+                
                 return "Successfully added memory"
             } catch {
                 print("⚙️ ERROR: Failed to add memory: \(error.localizedDescription)")
@@ -1700,6 +1783,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 }
             }
             
+            // Refresh context with the updated memories
+            await refreshContextData()
+            
             return "Processed \(memoriesArray.count) memories: \(successCount) added successfully, \(failureCount) failed"
             
         case "remove_memory":
@@ -1725,6 +1811,10 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             if let memoryId = memoryId {
                 do {
                     try await memoryManager.deleteMemory(id: memoryId)
+                    
+                    // Refresh context with the updated memories
+                    await refreshContextData()
+                    
                     return "Successfully removed memory"
                 } catch {
                     return "Failed to remove memory: \(error.localizedDescription)"
@@ -1773,6 +1863,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 }
             }
             
+            // Refresh context with the updated memories
+            await refreshContextData()
+            
             return "Processed \(contents.count) memories: \(successCount) removed successfully, \(failureCount) failed"
             
         default:
@@ -1795,10 +1888,64 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         
             // Process memory instructions for bracket format
             if let memManager = memoryManager {
-                await toolHandler.processMemoryUpdates(response: response, memoryManager: memManager)
+                let memoryUpdated = await toolHandler.processMemoryUpdates(response: response, memoryManager: memManager, chatManager: self)
+                
+                // If memory wasn't updated through bracket format,
+                // we still need to manually refresh context to ensure it's up-to-date
+                if !memoryUpdated {
+                    await refreshContextData()
+                    print("🔄 Manually refreshing context after processing response")
+                }
             }
         
         // Note: We don't need to process calendar and reminder commands here anymore
         // because they're now handled via the tool use system
+    }
+    
+    // MARK: - Context Management
+    
+    /**
+     * Updates the API service with the latest context data
+     * This should be called after any calendar events, reminders, or memories change
+     * to ensure the API has access to the latest context information
+     */
+    func refreshContextData() async {
+        print("🔄 Refreshing context data after changes")
+        
+        // Refresh memory content
+        if let manager = memoryManager {
+            let memoryContent = await manager.readMemory()
+            
+            // Print some sample memories for debugging
+            let memories = manager.memories
+            print("🔄 MEMORY CONTENT PREVIEW (First 3 items):")
+            if memories.count > 0 {
+                for i in 0..<min(3, memories.count) {
+                    print("🔄 Memory \(i+1): \(memories[i].content) (Category: \(memories[i].category.rawValue), Importance: \(memories[i].importance))")
+                }
+            } else {
+                print("🔄 No memories available")
+            }
+            
+            await apiService.updateMemoryContext(memoryContent)
+            print("🔄 Memory context refreshed with \(memories.count) total items")
+        }
+        
+        // Refresh calendar events
+        let calendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
+        let calendarContext = formatCalendarEvents(calendarEvents)
+        await apiService.updateCalendarContext(calendarContext)
+        print("🔄 Calendar context refreshed with \(calendarEvents.count) events")
+        
+        // Refresh reminders
+        let reminders = await eventKitManager?.fetchReminders() ?? []
+        let remindersContext = formatReminders(reminders)
+        await apiService.updateRemindersContext(remindersContext)
+        print("🔄 Reminders context refreshed with \(reminders.count) reminders")
+        
+        // Refresh location if needed
+        let locationContext = await getLocationContext()
+        await apiService.updateLocationContext(locationContext)
+        print("🔄 Location context refreshed")
     }
 }
