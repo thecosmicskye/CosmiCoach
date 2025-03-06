@@ -336,6 +336,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
     }
     
     /**
+     * Returns combined operation status messages for a specific chat message.
+     * Similar operations (same action and item type) will be combined with count.
+     *
+     * @param message The chat message
+     * @return An array of combined operation status messages
+     */
+    func combinedStatusMessagesForMessage(_ message: ChatMessage) -> [OperationStatusMessage] {
+        return statusManager.combinedStatusMessagesForMessage(message.id)
+    }
+    
+    /**
      * Adds a new operation status message for a specific chat message.
      *
      * @param messageId The UUID of the chat message
@@ -345,37 +356,19 @@ class ChatManager: ObservableObject, @unchecked Sendable {
      * @return The newly created operation status message
      */
     @MainActor
-    func addOperationStatusMessage(forMessageId messageId: UUID, operationType: OperationType, status: OperationStatus = .inProgress, details: String? = nil) -> OperationStatusMessage {
+    func addOperationStatusMessage(
+        forMessageId messageId: UUID, 
+        operationType: OperationType, 
+        status: OperationStatus = .inProgress, 
+        details: String? = nil,
+        count: Int = 1
+    ) -> OperationStatusMessage {
         let statusMessage = statusManager.addOperationStatusMessage(
             forMessageId: messageId,
             operationType: operationType,
             status: status,
-            details: details
-        )
-        
-        // Update the local copy
-        if operationStatusMessages[messageId] == nil {
-            operationStatusMessages[messageId] = []
-        }
-        operationStatusMessages[messageId]?.append(statusMessage)
-        
-        return statusMessage
-    }
-    
-    // For backward compatibility
-    @MainActor
-    func addOperationStatusMessage(forMessageId messageId: UUID, operationType: String, status: OperationStatus = .inProgress, details: String? = nil) -> OperationStatusMessage {
-        // Try to map the string to an OperationType
-        if let opType = OperationType(rawValue: operationType) {
-            return addOperationStatusMessage(forMessageId: messageId, operationType: opType, status: status, details: details)
-        }
-        
-        // Fall back to string version if no enum match
-        let statusMessage = statusManager.addOperationStatusMessage(
-            forMessageId: messageId,
-            operationType: operationType,
-            status: status,
-            details: details
+            details: details,
+            count: count
         )
         
         // Update the local copy
@@ -1154,7 +1147,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 let statusMessageId = await MainActor.run {
                     let message = addOperationStatusMessage(
                         forMessageId: messageId!,
-                        operationType: "Deleting Calendar Events",
+                        operationType: .deleteCalendarEvent,
                         status: .inProgress
                     )
                     return message.id
@@ -1250,7 +1243,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             let statusMessageId = await MainActor.run {
                 let message = addOperationStatusMessage(
                     forMessageId: messageId!,
-                    operationType: "Deleted Calendar Events (Batch)",
+                    operationType: .batchCalendarOperation,
                     status: .inProgress
                 )
                 return message.id
@@ -1589,7 +1582,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 let statusMessageId = await MainActor.run {
                     let message = addOperationStatusMessage(
                         forMessageId: messageId!,
-                        operationType: "Deleting Reminders",
+                        operationType: .deleteReminder,
                         status: .inProgress
                     )
                     return message.id
@@ -1685,7 +1678,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             let statusMessageId = await MainActor.run {
                 let message = addOperationStatusMessage(
                     forMessageId: messageId!,
-                    operationType: "Deleted Reminders (Batch)",
+                    operationType: .batchReminderOperation,
                     status: .inProgress
                 )
                 return message.id

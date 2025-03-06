@@ -86,7 +86,7 @@ struct ContentView: View {
                     // Chat messages list
                     ChatScrollView(
                         messages: chatManager.messages,
-                        statusMessagesProvider: chatManager.statusMessagesForMessage,
+                        statusMessagesProvider: chatManager.combinedStatusMessagesForMessage,
                         streamingUpdateCount: chatManager.streamingUpdateCount,
                         shouldScrollToBottom: $scrollToBottom,
                         isEmpty: chatManager.messages.isEmpty
