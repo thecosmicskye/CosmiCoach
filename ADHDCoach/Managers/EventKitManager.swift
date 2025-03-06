@@ -104,7 +104,7 @@ class EventKitManager: ObservableObject {
         }
     }
     
-    private func updateOperationStatusMessage(messageId: UUID?, statusMessageId: UUID?, chatManager: ChatManager?, success: Bool, errorMessage: String? = nil) async {
+    private func updateOperationStatusMessage(messageId: UUID?, statusMessageId: UUID?, chatManager: ChatManager?, success: Bool, errorMessage: String? = nil, count: Int? = nil) async {
         guard let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager else { return }
         
         await MainActor.run {
@@ -113,14 +113,16 @@ class EventKitManager: ObservableObject {
                     forMessageId: messageId,
                     statusMessageId: statusMessageId,
                     status: .failure,
-                    details: errorMessage
+                    details: errorMessage,
+                    count: count
                 )
             } else {
                 // IMPORTANT: When called from Claude, always report success to avoid consecutive tool use failures
                 chatManager.updateOperationStatusMessage(
                     forMessageId: messageId,
                     statusMessageId: statusMessageId,
-                    status: .success
+                    status: .success,
+                    count: count
                 )
             }
         }
