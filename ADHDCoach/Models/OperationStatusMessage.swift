@@ -25,7 +25,7 @@ enum OperationAction: String, Codable {
         case .add: return "Added"
         case .update: return "Updated"
         case .delete: return "Deleted"
-        case .batch: return "Completed"
+        case .batch: return "" // Just use the operation type's action from the tool context
         }
     }
 }
@@ -157,7 +157,15 @@ struct OperationStatusMessage: Identifiable, Codable {
         case .success:
             let action = operationType.action.pastTense
             let itemType = count > 1 ? operationType.itemType.plural : operationType.itemType.rawValue
-            return "\(action) \(count) \(itemType)"
+            
+            // Handle batch operations - the actual action is in the context
+            if operationType.action == .batch {
+                // Here we would typically use the operation context, but instead
+                // we'll rely on the correct operationType being set for batch operations
+                return "\(action) \(count) \(itemType)"
+            } else {
+                return "\(action) \(count) \(itemType)"
+            }
         case .failure:
             return "\(operationType.rawValue) Failed\(details != nil ? ": \(details!)" : "")"
         }

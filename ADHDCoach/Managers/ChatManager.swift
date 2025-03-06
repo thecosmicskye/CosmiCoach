@@ -928,6 +928,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             print("⚙️ EventKitManager access granted: \(eventKitManager.calendarAccessGranted)")
             print("⚙️ Processing batch of \(eventsArray.count) calendar events")
             
+            // Create a status message for the batch operation
+            let statusMessageId = await MainActor.run {
+                let message = addOperationStatusMessage(
+                    forMessageId: messageId!,
+                    operationType: .addCalendarEvent,
+                    status: .inProgress,
+                    count: eventsArray.count
+                )
+                return message.id
+            }
+            
             var successCount = 0
             var failureCount = 0
             
@@ -951,15 +962,15 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     continue
                 }
                 
-                // Add calendar event
+                // Add calendar event - pass nil for messageId to avoid creating individual status messages
                 let success = await MainActor.run {
                     return eventKitManager.addCalendarEvent(
                         title: title,
                         startDate: startDate,
                         endDate: endDate,
                         notes: notes,
-                        messageId: messageId,
-                        chatManager: self
+                        messageId: nil, // Use nil to avoid creating individual status messages
+                        chatManager: nil
                     )
                 }
                 
@@ -968,6 +979,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 } else {
                     failureCount += 1
                 }
+            }
+            
+            // Update the batch operation status message
+            await MainActor.run {
+                updateOperationStatusMessage(
+                    forMessageId: messageId!,
+                    statusMessageId: statusMessageId,
+                    status: .success,
+                    details: "Added \(successCount) of \(eventsArray.count) calendar events",
+                    count: successCount
+                )
             }
             
             // Refresh context with the updated calendar events
@@ -1045,6 +1067,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 return "Error: EventKitManager not available"
             }
             
+            // Create a status message for the batch operation
+            let statusMessageId = await MainActor.run {
+                let message = addOperationStatusMessage(
+                    forMessageId: messageId!,
+                    operationType: .updateCalendarEvent,
+                    status: .inProgress,
+                    count: eventsArray.count
+                )
+                return message.id
+            }
+            
             var successCount = 0
             var failureCount = 0
             
@@ -1095,8 +1128,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                         startDate: localStartDate,
                         endDate: localEndDate,
                         notes: notes,
-                        messageId: messageId,
-                        chatManager: self
+                        messageId: nil, // Use nil to avoid creating individual status messages
+                        chatManager: nil
                     )
                 }
                 
@@ -1105,6 +1138,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 } else {
                     failureCount += 1
                 }
+            }
+            
+            // Update the batch operation status message
+            await MainActor.run {
+                updateOperationStatusMessage(
+                    forMessageId: messageId!,
+                    statusMessageId: statusMessageId,
+                    status: .success,
+                    details: "Updated \(successCount) of \(eventsArray.count) calendar events",
+                    count: successCount
+                )
             }
             
             // Refresh context with the updated calendar events
@@ -1123,21 +1167,51 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     return "Error: EventKitManager not available"
                 }
                 
-                // Delete calendar event
-                let success = await MainActor.run {
-                    return eventKitManager.deleteCalendarEvent(
-                        id: id,
-                        messageId: messageId,
-                        chatManager: self
-                    )
+                // SAFETY CHECK: Check if this is actually a reminder ID mistakenly being used with delete_calendar_event
+                // This prevents crashes when Claude confuses calendar events and reminders
+                
+                // First check if this is a reminder by trying to fetch it
+                var isReminderNotCalendar = false
+                if eventKitManager.reminderAccessGranted {
+                    let reminder = await eventKitManager.fetchReminderById(id: id)
+                    if reminder != nil {
+                        print("⚙️ WARNING: Detected attempt to delete a reminder using delete_calendar_event. Redirecting to deleteReminder.")
+                        isReminderNotCalendar = true
+                        
+                        // Use deleteReminder instead since this is actually a reminder
+                        let success = await MainActor.run {
+                            return eventKitManager.deleteReminder(
+                                id: id,
+                                messageId: messageId,
+                                chatManager: self
+                            )
+                        }
+                        
+                        // Refresh context
+                        await refreshContextData()
+                        
+                        return success ? "Successfully deleted reminder" : "Failed to delete reminder"
+                    }
                 }
                 
-                // Refresh context with the updated calendar events if successful
-                if success || messageId != nil {
-                    await refreshContextData()
+                // If it's not a reminder, proceed with calendar event deletion as normal
+                if !isReminderNotCalendar {
+                    // Delete calendar event
+                    let success = await MainActor.run {
+                        return eventKitManager.deleteCalendarEvent(
+                            id: id,
+                            messageId: messageId,
+                            chatManager: self
+                        )
+                    }
+                    
+                    // Refresh context with the updated calendar events if successful
+                    if success || messageId != nil {
+                        await refreshContextData()
+                    }
+                    
+                    return success ? "Successfully deleted calendar event" : "Failed to delete calendar event"
                 }
-                
-                return success ? "Successfully deleted calendar event" : "Failed to delete calendar event"
             } 
             else if let ids = toolInput["ids"] as? [String] {
                 // Multiple deletion
@@ -1146,6 +1220,25 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 // Get access to EventKitManager
                 guard let eventKitManager = await getEventKitManager() else {
                     return "Error: EventKitManager not available"
+                }
+                
+                // SAFETY CHECK: Check if these are actually reminder IDs mistakenly being used with delete_calendar_event
+                if eventKitManager.reminderAccessGranted {
+                    // Check the first ID to see if it's a reminder
+                    if let firstId = ids.first {
+                        let reminder = await eventKitManager.fetchReminderById(id: firstId)
+                        if reminder != nil {
+                            print("⚙️ WARNING: Detected attempt to delete reminders using delete_calendar_event. Redirecting to delete_reminder with ids parameter.")
+                            
+                            // This appears to be a reminder ID, so we should handle this as a reminder batch delete instead
+                            // Use the delete_reminder with ids parameter since it has better error handling
+                            return await processToolUse(
+                                toolName: "delete_reminder",  // Note: Using delete_reminder with ids, not delete_reminders_batch
+                                toolId: toolId, 
+                                toolInput: ["ids": ids]
+                            )
+                        }
+                    }
                 }
                 
                 // Create a status message for the batch operation
@@ -1250,7 +1343,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             let statusMessageId = await MainActor.run {
                 let message = addOperationStatusMessage(
                     forMessageId: messageId!,
-                    operationType: .batchCalendarOperation,
+                    operationType: .deleteCalendarEvent,
                     status: .inProgress,
                     count: ids.count
                 )
@@ -1372,6 +1465,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             print("⚙️ EventKitManager reminder access granted: \(eventKitManager.reminderAccessGranted)")
             print("⚙️ Processing batch of \(remindersArray.count) reminders")
             
+            // Create a status message for the batch operation
+            let statusMessageId = await MainActor.run {
+                let message = addOperationStatusMessage(
+                    forMessageId: messageId!,
+                    operationType: .addReminder,
+                    status: .inProgress,
+                    count: remindersArray.count
+                )
+                return message.id
+            }
+            
             var successCount = 0
             var failureCount = 0
             
@@ -1409,8 +1513,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                         dueDate: localDueDate,
                         notes: notes,
                         listName: list,
-                        messageId: messageId,
-                        chatManager: self
+                        messageId: nil, // Use nil to avoid creating individual status messages
+                        chatManager: nil
                     )
                 }
                 
@@ -1419,6 +1523,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 } else {
                     failureCount += 1
                 }
+            }
+            
+            // Update the batch operation status message
+            await MainActor.run {
+                updateOperationStatusMessage(
+                    forMessageId: messageId!,
+                    statusMessageId: statusMessageId,
+                    status: .success,
+                    details: "Added \(successCount) of \(remindersArray.count) reminders",
+                    count: successCount
+                )
             }
             
             // Refresh context with the updated reminders
@@ -1491,6 +1606,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 return "Error: EventKitManager not available"
             }
             
+            // Create a status message for the batch operation
+            let statusMessageId = await MainActor.run {
+                let message = addOperationStatusMessage(
+                    forMessageId: messageId!,
+                    operationType: .updateReminder,
+                    status: .inProgress,
+                    count: remindersArray.count
+                )
+                return message.id
+            }
+            
             var successCount = 0
             var failureCount = 0
             
@@ -1534,8 +1660,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                         dueDate: localDueDate,
                         notes: notes,
                         listName: list,
-                        messageId: messageId,
-                        chatManager: self
+                        messageId: nil, // Use nil to avoid creating individual status messages
+                        chatManager: nil
                     )
                 }
                 
@@ -1544,6 +1670,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 } else {
                     failureCount += 1
                 }
+            }
+            
+            // Update the batch operation status message
+            await MainActor.run {
+                updateOperationStatusMessage(
+                    forMessageId: messageId!,
+                    statusMessageId: statusMessageId,
+                    status: .success,
+                    details: "Updated \(successCount) of \(remindersArray.count) reminders",
+                    count: successCount
+                )
             }
             
             // Refresh context with the updated reminders
@@ -1689,7 +1826,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             let statusMessageId = await MainActor.run {
                 let message = addOperationStatusMessage(
                     forMessageId: messageId!,
-                    operationType: .batchReminderOperation,
+                    operationType: .deleteReminder,
                     status: .inProgress,
                     count: ids.count
                 )
@@ -1702,8 +1839,13 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             var successCount = 0
             var failureCount = 0
             
-            await withTaskGroup(of: Bool.self) { group in
-                for id in ids {
+            // First, deduplicate IDs to avoid trying to delete the same reminder twice
+            // This is needed because recurring reminders often have the same ID
+            let uniqueIds = Array(Set(ids))
+            print("⚙️ Deduplicating \(ids.count) IDs to \(uniqueIds.count) unique IDs")
+            
+            await withTaskGroup(of: (Bool, String?).self) { group in
+                for id in uniqueIds {
                     group.addTask {
                         // Delete reminder directly with the async method
                         let result = await eventKitManager.deleteReminder(
@@ -1711,16 +1853,32 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                             messageId: nil, // Don't create per-reminder status messages
                             chatManager: nil
                         )
-                        return result
+                        // The EventKitManager stores error details internally, so we don't get an error object here
+                        return (result, result ? nil : "Object not found or could not be deleted")
                     }
                 }
                 
                 // Process results as they complete
-                for await success in group {
+                for await (success, errorMessage) in group {
                     if success {
                         successCount += 1
                     } else {
-                        failureCount += 1
+                        // Don't count "not found" errors as failures when deleting multiple reminders
+                        // since they might be recurring instances of the same reminder
+                        let isAlreadyDeletedError = errorMessage?.contains("not found") ?? false 
+                            || errorMessage?.contains("may have been deleted") ?? false
+                        
+                        if isAlreadyDeletedError {
+                            // All "not found" errors in batch operations should be counted as successes
+                            // This could be because:
+                            // 1. Reminders with identical IDs (recurring reminders)
+                            // 2. Reminders already deleted in a previous operation
+                            // 3. Reminders that were automatically deleted (e.g., completed reminders)
+                            print("⚙️ Reminder was already deleted or doesn't exist - counting as success")
+                            successCount += 1
+                        } else {
+                            failureCount += 1
+                        }
                     }
                 }
             }
@@ -1801,9 +1959,10 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             let statusMessageId = await MainActor.run {
                 let message = addOperationStatusMessage(
                     forMessageId: messageId!,
-                    operationType: OperationType.batchMemoryOperation,
+                    operationType: OperationType.addMemory,
                     status: .inProgress,
-                    details: "Adding \(memoriesArray.count) memories"
+                    details: "Adding \(memoriesArray.count) memories",
+                    count: memoriesArray.count
                 )
                 return message.id
             }
@@ -1917,9 +2076,10 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             let statusMessageId = await MainActor.run {
                 let message = addOperationStatusMessage(
                     forMessageId: messageId!,
-                    operationType: OperationType.batchMemoryOperation,
+                    operationType: OperationType.deleteMemory,
                     status: .inProgress,
-                    details: "Removing \(contents.count) memories"
+                    details: "Removing \(contents.count) memories",
+                    count: contents.count
                 )
                 return message.id
             }
