@@ -304,26 +304,65 @@ class EventKitManager: ObservableObject {
                 operationType: "Deleted Calendar Event"
             )
             
-            guard let event = self.eventStore.event(withIdentifier: id) else {
-                let errorMessage = "Event not found with ID: \(id)"
-                print(errorMessage)
+            // Try to get the event
+            let event: EKEvent?
+            do {
+                event = self.eventStore.event(withIdentifier: id)
+            } catch let error as NSError {
+                // Handle errors when fetching the event
+                print("Error getting event with identifier \(id): \(error)")
                 
-                // Update status message to failure
-                await updateOperationStatusMessage(
-                    messageId: messageId,
-                    statusMessageId: statusMessageId,
-                    chatManager: chatManager,
-                    success: false,
-                    errorMessage: errorMessage
-                )
+                // For "not found" errors in batch operations, we'll consider this a success
+                // (since the event has already been deleted or doesn't exist)
+                let isNotFoundError = error.domain == "EKCADErrorDomain" && error.code == 1010
+                if isNotFoundError && messageId == nil {
+                    print("📅 EventKitManager: Event \(id) was already deleted or doesn't exist - considering this a success for batch operations")
+                    success = true
+                } else {
+                    success = false
+                    if let statusMessageId = statusMessageId {
+                        await updateOperationStatusMessage(
+                            messageId: messageId,
+                            statusMessageId: statusMessageId,
+                            chatManager: chatManager,
+                            success: false,
+                            errorMessage: error.localizedDescription
+                        )
+                    }
+                }
                 
-                success = false
                 semaphore.signal()
                 return
             }
             
+            // If the event wasn't found but this is part of a batch operation, treat as success
+            if event == nil {
+                let errorMessage = "Event not found with ID: \(id)"
+                print(errorMessage)
+                
+                if messageId == nil {
+                    // For batch operations (when messageId is nil), consider "not found" a success
+                    print("📅 EventKitManager: Event \(id) not found - considering this a success for batch operations")
+                    success = true
+                } else {
+                    // Update status message to failure for single event deletions
+                    await updateOperationStatusMessage(
+                        messageId: messageId,
+                        statusMessageId: statusMessageId,
+                        chatManager: chatManager,
+                        success: false,
+                        errorMessage: errorMessage
+                    )
+                    success = false
+                }
+                
+                semaphore.signal()
+                return
+            }
+            
+            // Proceed with deletion if we found the event
             do {
-                try self.eventStore.remove(event, span: .thisEvent)
+                try self.eventStore.remove(event!, span: .thisEvent)
                 success = true
                 
                 // Update status message to success

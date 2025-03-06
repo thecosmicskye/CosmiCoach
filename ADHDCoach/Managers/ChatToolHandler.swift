@@ -42,8 +42,14 @@ class ChatToolHandler {
             ],
             [
                 "name": "delete_calendar_event",
-                "description": "Delete an existing calendar event from the user's calendar. Use this tool when the user wants to remove a single event.",
-                "input_schema": CalendarDeleteCommand.schema
+                "description": "Delete one or more calendar events from the user's calendar. This tool handles both single and multiple deletions. You MUST provide either the 'id' parameter OR the 'ids' parameter, but not both.",
+                "input_schema": [
+                    "type": "object",
+                    "properties": [
+                        "id": ["type": "string", "description": "The ID of a single calendar event to delete. Use only when deleting exactly one event."],
+                        "ids": ["type": "array", "description": "Array of calendar event IDs to delete. Use this when deleting one or more events.", "items": ["type": "string"]]
+                    ]
+                ]
             ],
             
             // Calendar Tools - Batch operations
@@ -56,11 +62,6 @@ class ChatToolHandler {
                 "name": "modify_calendar_events_batch",
                 "description": "Modify multiple existing calendar events in the user's calendar at once. Use this tool when the user wants to change multiple existing events in a single operation.",
                 "input_schema": CalendarModifyBatchCommand.schema
-            ],
-            [
-                "name": "delete_calendar_events_batch",
-                "description": "Delete multiple existing calendar events from the user's calendar at once. Use this tool when the user wants to remove multiple events in a single operation.",
-                "input_schema": CalendarDeleteBatchCommand.schema
             ],
             
             // Reminder Tools - Single item operations
@@ -76,8 +77,14 @@ class ChatToolHandler {
             ],
             [
                 "name": "delete_reminder",
-                "description": "Delete an existing reminder from the user's reminders. Use this tool when the user wants to remove a single reminder.",
-                "input_schema": ReminderDeleteCommand.schema
+                "description": "Delete one or more reminders from the user's reminders list. This tool handles both single and multiple deletions. You MUST provide either the 'id' parameter OR the 'ids' parameter, but not both.",
+                "input_schema": [
+                    "type": "object",
+                    "properties": [
+                        "id": ["type": "string", "description": "The ID of a single reminder to delete. Use only when deleting exactly one reminder."],
+                        "ids": ["type": "array", "description": "Array of reminder IDs to delete. Use this when deleting one or more reminders.", "items": ["type": "string"]]
+                    ]
+                ]
             ],
             
             // Reminder Tools - Batch operations
@@ -90,11 +97,6 @@ class ChatToolHandler {
                 "name": "modify_reminders_batch",
                 "description": "Modify multiple existing reminders in the user's reminders at once. Use this tool when the user wants to change multiple existing reminders in a single operation.",
                 "input_schema": ReminderModifyBatchCommand.schema
-            ],
-            [
-                "name": "delete_reminders_batch",
-                "description": "Delete multiple existing reminders from the user's reminders at once. Use this tool when the user wants to remove multiple reminders in a single operation.",
-                "input_schema": ReminderDeleteBatchCommand.schema
             ],
             
             // Memory Tools - Single item operations
