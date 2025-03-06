@@ -106,6 +106,21 @@ class ChatToolHandler {
                 "input_schema": MemoryAddCommand.schema
             ],
             [
+                "name": "update_memory",
+                "description": "Update an existing memory in the user's memory database. Use this tool when you need to modify information that already exists without deleting it.",
+                "input_schema": [
+                    "type": "object",
+                    "properties": [
+                        "id": ["type": "string", "description": "The ID of the memory to update, or the exact current content if you don't have the ID"],
+                        "old_content": ["type": "string", "description": "The exact current content of the memory to update (alternative to providing ID)"], 
+                        "content": ["type": "string", "description": "The new content for the memory"],
+                        "category": ["type": "string", "description": "Optional new category for the memory (Personal Information, Preferences, Behavior Patterns, Daily Basics, Medications, Goals, Miscellaneous Notes)"],
+                        "importance": ["type": "integer", "description": "Optional new importance level (1-5, with 5 being most important)"]
+                    ],
+                    "required": ["content"]
+                ]
+            ],
+            [
                 "name": "remove_memory",
                 "description": "Remove a memory from the user's memory database. Use this tool when information becomes outdated or is no longer relevant.",
                 "input_schema": MemoryRemoveCommand.schema
@@ -116,6 +131,31 @@ class ChatToolHandler {
                 "name": "add_memories_batch",
                 "description": "Add multiple memories to the user's memory database at once. Use this tool when you need to store multiple pieces of important information in a single operation.",
                 "input_schema": MemoryAddBatchCommand.schema
+            ],
+            [
+                "name": "update_memories_batch",
+                "description": "Update multiple existing memories in the user's memory database at once. Use this tool when you need to modify several pieces of information in a single operation.",
+                "input_schema": [
+                    "type": "object",
+                    "properties": [
+                        "memories": [
+                            "type": "array",
+                            "description": "Array of memories to update",
+                            "items": [
+                                "type": "object",
+                                "properties": [
+                                    "id": ["type": "string", "description": "The ID of the memory to update, or the exact current content if you don't have the ID"],
+                                    "old_content": ["type": "string", "description": "The exact current content of the memory to update (alternative to providing ID)"],
+                                    "content": ["type": "string", "description": "The new content for the memory"],
+                                    "category": ["type": "string", "description": "Optional new category for the memory (Personal Information, Preferences, Behavior Patterns, Daily Basics, Medications, Goals, Miscellaneous Notes)"],
+                                    "importance": ["type": "integer", "description": "Optional new importance level (1-5, with 5 being most important)"]
+                                ],
+                                "required": ["content"]
+                            ]
+                        ]
+                    ],
+                    "required": ["memories"]
+                ]
             ],
             [
                 "name": "remove_memories_batch",

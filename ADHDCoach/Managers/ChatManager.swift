@@ -2128,6 +2128,213 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             
             return "Processed \(contents.count) memories: \(successCount) removed successfully, \(failureCount) failed"
             
+        case "update_memory":
+            // Extract parameters
+            let idParam = toolInput["id"] as? String
+            let contentParam = toolInput["content"] as? String 
+            let oldContentParam = toolInput["old_content"] as? String
+            let categoryStr = toolInput["category"] as? String
+            let newImportance = toolInput["importance"] as? Int
+            
+            // Get access to MemoryManager
+            guard let memoryManager = await getMemoryManager() else {
+                return "Error: MemoryManager not available"
+            }
+            
+            // Fallback to content matching if UUID fails or isn't provided
+            var targetMemoryId: UUID? = nil
+            
+            // Try UUID first if provided
+            if let idParam = idParam {
+                if let uuid = UUID(uuidString: idParam) {
+                    // Valid UUID provided
+                    targetMemoryId = uuid
+                }
+            }
+            
+            // If no valid UUID, try to find memory by content
+            if targetMemoryId == nil && oldContentParam != nil {
+                // Find memory with matching content
+                let memoryWithContent = await MainActor.run {
+                    return memoryManager.memories.first(where: { $0.content == oldContentParam })
+                }
+                
+                if let memory = memoryWithContent {
+                    targetMemoryId = memory.id
+                    print("⚙️ Found memory by content matching: \(oldContentParam ?? "nil")")
+                }
+            }
+            
+            // If ID param wasn't a UUID and was provided as content, try that as fallback
+            if targetMemoryId == nil && idParam != nil {
+                // Try using the ID parameter as content search
+                let memoryWithIdAsContent = await MainActor.run {
+                    return memoryManager.memories.first(where: { $0.content == idParam })
+                }
+                
+                if let memory = memoryWithIdAsContent {
+                    targetMemoryId = memory.id
+                    print("⚙️ Found memory by using id parameter as content: \(idParam ?? "nil")")
+                }
+            }
+            
+            // Return error if we couldn't identify a memory to update
+            guard let targetMemoryId = targetMemoryId else {
+                return "Error: Could not find memory to update. Please provide either a valid UUID or the old content of the memory."
+            }
+            
+            // Convert category string to enum if provided
+            var newCategory: MemoryCategory? = nil
+            if let categoryStr = categoryStr {
+                newCategory = MemoryCategory.allCases.first { $0.rawValue.lowercased() == categoryStr.lowercased() } ?? .notes
+            }
+            
+            // Ensure we have at least one field to update
+            guard contentParam != nil || newCategory != nil || newImportance != nil else {
+                return "Error: At least one of 'content', 'category', or 'importance' must be provided for update_memory"
+            }
+            
+            // Update memory
+            do {
+                try await memoryManager.updateMemory(
+                    id: targetMemoryId,
+                    newContent: contentParam,
+                    newCategory: newCategory,
+                    newImportance: newImportance,
+                    messageId: messageId,
+                    chatManager: self
+                )
+                
+                // Refresh context with the updated memories
+                await refreshContextData()
+                
+                return "Successfully updated memory"
+            } catch {
+                return "Failed to update memory: \(error.localizedDescription)"
+            }
+            
+        case "update_memories_batch":
+            // Extract parameters
+            guard let memoriesArray = toolInput["memories"] as? [[String: Any]] else {
+                print("⚙️ Missing required parameter 'memories' for update_memories_batch")
+                return "Error: Missing required parameter 'memories' for update_memories_batch"
+            }
+            
+            // Get access to MemoryManager
+            guard let memoryManager = await getMemoryManager() else {
+                return "Error: MemoryManager not available"
+            }
+            
+            // Create a batch operation status message
+            let statusMessageId = await MainActor.run {
+                let message = addOperationStatusMessage(
+                    forMessageId: messageId!,
+                    operationType: OperationType.updateMemory,
+                    status: .inProgress,
+                    details: "Updating \(memoriesArray.count) memories",
+                    count: memoriesArray.count
+                )
+                return message.id
+            }
+            
+            var successCount = 0
+            var failureCount = 0
+            
+            // Process each memory in the batch
+            for memoryData in memoriesArray {
+                // Extract parameters for this memory
+                let idParam = memoryData["id"] as? String
+                let contentParam = memoryData["content"] as? String
+                let oldContentParam = memoryData["old_content"] as? String
+                let categoryStr = memoryData["category"] as? String
+                let newImportance = memoryData["importance"] as? Int
+                
+                // Fallback to content matching if UUID fails or isn't provided
+                var targetMemoryId: UUID? = nil
+                
+                // Try UUID first if provided
+                if let idParam = idParam {
+                    if let uuid = UUID(uuidString: idParam) {
+                        targetMemoryId = uuid
+                    }
+                }
+                
+                // If no valid UUID, try to find memory by content
+                if targetMemoryId == nil && oldContentParam != nil {
+                    // Find memory with matching content
+                    let memoryWithContent = await MainActor.run {
+                        return memoryManager.memories.first(where: { $0.content == oldContentParam })
+                    }
+                    
+                    if let memory = memoryWithContent {
+                        targetMemoryId = memory.id
+                        print("⚙️ Found memory by content matching: \(oldContentParam ?? "nil")")
+                    }
+                }
+                
+                // If ID param wasn't a UUID and was provided as content, try that as fallback
+                if targetMemoryId == nil && idParam != nil {
+                    // Try using the ID parameter as content search
+                    let memoryWithIdAsContent = await MainActor.run {
+                        return memoryManager.memories.first(where: { $0.content == idParam })
+                    }
+                    
+                    if let memory = memoryWithIdAsContent {
+                        targetMemoryId = memory.id
+                        print("⚙️ Found memory by using id parameter as content: \(idParam ?? "nil")")
+                    }
+                }
+                
+                // Skip this memory if we couldn't identify it
+                guard let memoryId = targetMemoryId else {
+                    print("⚙️ Could not find memory to update in batch")
+                    failureCount += 1
+                    continue
+                }
+                
+                // Convert category string to enum if provided
+                var newCategory: MemoryCategory? = nil
+                if let categoryStr = categoryStr {
+                    newCategory = MemoryCategory.allCases.first { $0.rawValue.lowercased() == categoryStr.lowercased() } ?? .notes
+                }
+                
+                // Skip if no fields to update
+                guard contentParam != nil || newCategory != nil || newImportance != nil else {
+                    failureCount += 1
+                    continue
+                }
+                
+                // Update memory
+                do {
+                    try await memoryManager.updateMemory(
+                        id: memoryId,
+                        newContent: contentParam,
+                        newCategory: newCategory,
+                        newImportance: newImportance
+                    )
+                    successCount += 1
+                } catch {
+                    print("⚙️ Failed to update memory in batch: \(error.localizedDescription)")
+                    failureCount += 1
+                }
+            }
+            
+            // Update the batch operation status message
+            await MainActor.run {
+                updateOperationStatusMessage(
+                    forMessageId: messageId!,
+                    statusMessageId: statusMessageId,
+                    status: .success,
+                    details: "Updated \(successCount) of \(memoriesArray.count) memories",
+                    count: successCount
+                )
+            }
+            
+            // Refresh context with the updated memories
+            await refreshContextData()
+            
+            return "Processed \(memoriesArray.count) memories: \(successCount) updated successfully, \(failureCount) failed"
+            
         default:
             return "Error: Unknown tool \(toolName)"
         }
