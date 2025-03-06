@@ -20,6 +20,8 @@
 		1A1A1A221A1A1A221A1A1A22 /* EventKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A322A2A2A322A2A2A32 /* EventKitManager.swift */; };
 		1A1A1A231A1A1A231A1A1A23 /* MemoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A332A2A2A332A2A2A33 /* MemoryManager.swift */; };
 		2A06F4922D711B770030A1AE /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A06F4912D711B770030A1AE /* LocationManager.swift */; };
+		2A712F0E2D79404100D148EC /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A712F0C2D79404100D148EC /* APIModels.swift */; };
+		2A712F0F2D79404100D148EC /* APIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */; };
 		2A771BA92D725173000B70E6 /* CommandModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A771BA82D725173000B70E6 /* CommandModels.swift */; };
 		2ABF1DA72D6FFEFE00E5A6C1 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A352A2A2A352A2A2A35 /* OnboardingView.swift */; };
 		2AD2B6082D6EFDFA00782E3F /* MemoryManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FF2D6EFDDA00782E3F /* MemoryManagerTests.swift */; };
@@ -73,6 +75,8 @@
 		2A2A2A362A2A2A362A2A2A38 /* Color+Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Theme.swift"; sourceTree = "<group>"; };
 		2A2A2A372A2A2A372A2A2A39 /* ThemeColorModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeColorModifier.swift; sourceTree = "<group>"; };
 		2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSelectionView.swift; sourceTree = "<group>"; };
+		2A712F0C2D79404100D148EC /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
+		2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequestBuilder.swift; sourceTree = "<group>"; };
 		2A771BA82D725173000B70E6 /* CommandModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandModels.swift; sourceTree = "<group>"; };
 		2A7B3FFF2D6EFCFC004CF1E4 /* CosmiCoachTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CosmiCoachTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		2AD2B5FC2D6EFDDA00782E3F /* ChatManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatManagerTests.swift; sourceTree = "<group>"; };
@@ -167,6 +171,8 @@
 				2A2A2A2A2A2A2A2A2A2A2A2B /* OperationStatusMessage.swift */,
 				2A771BA82D725173000B70E6 /* CommandModels.swift */,
 				2A2A2A342A2A2A342A2A2A36 /* Theme.swift */,
+				2A712F0C2D79404100D148EC /* APIModels.swift */,
+				2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -320,6 +326,8 @@
 				E4C961F42D73F9500012035F /* ThemeColorModifier.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1A /* ADHDCoachApp.swift in Sources */,
 				E4C961FF2D741EDF0012035F /* ChatAutomaticMessageService.swift in Sources */,
+				2A712F0E2D79404100D148EC /* APIModels.swift in Sources */,
+				2A712F0F2D79404100D148EC /* APIRequestBuilder.swift in Sources */,
 				E4C962002D741EDF0012035F /* ChatAPIService.swift in Sources */,
 				E4C962012D741EDF0012035F /* ChatOperationStatusManager.swift in Sources */,
 				E4C962022D741EDF0012035F /* ChatPersistenceManager.swift in Sources */,

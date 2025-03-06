@@ -8,24 +8,6 @@ import Foundation
  * - Processing streaming responses
  * - Handling tool use requests from Claude
  * - Managing API authentication and error handling
- *
- * Error handling supports both HTTP errors and stream errors:
- * 
- * HTTP error code format:
- * - 400 (invalid_request_error): Issues with request format/content
- * - 401 (authentication_error): API key issues
- * - 403 (permission_error): API key permission issues
- * - 404 (not_found_error): Resource not found
- * - 413 (request_too_large): Request exceeds maximum allowed size
- * - 429 (rate_limit_error): Rate limit exceeded
- * - 500 (api_error): Unexpected internal error
- * - 529 (overloaded_error): API temporarily overloaded
- *
- * Stream errors (appear in the response stream):
- * - overloaded_error: API is temporarily overloaded
- * - api_error: Unexpected internal error during streaming
- *
- * All errors are converted to user-friendly messages via the createUserFriendlyErrorMessage method.
  */
 class ChatAPIService {
     /// Callback for processing tool use requests from Claude
@@ -37,7 +19,7 @@ class ChatAPIService {
     var processToolUseCallback: ((String, String, [String: Any]) async -> String)?
     
     /// Store tool use results for feedback to Claude in the next message
-    private var pendingToolResults: [(toolId: String, content: String)] = []
+    private var pendingToolResults: [ToolUseResult] = []
     
     /// Variables to track tool use chunks during streaming
     private var currentToolName: String?
@@ -52,10 +34,8 @@ class ChatAPIService {
     /// The URL endpoint for Claude's streaming API
     private let streamingURL = URL(string: "https://api.anthropic.com/v1/messages")!
     
-    /// Cache performance tracking
-    private var cacheCreationTokens = 0
-    private var cacheReadTokens = 0
-    private var inputTokens = 0
+    /// Cache performance tracking metrics
+    private var cacheMetrics = CachePerformanceMetrics(cacheCreationTokens: 0, cacheReadTokens: 0, inputTokens: 0)
     
     /// System prompt that defines Claude's role
     private(set) var systemPrompt = """
@@ -106,6 +86,13 @@ class ChatAPIService {
     /// Store the complete conversation history including all tool uses and results
     private var completeConversationHistory: [[String: Any]] = []
     
+    // Store the context from the initial request to use in follow-up requests
+    private var lastMemoryContent: String = ""
+    private var lastCalendarContext: String = ""
+    private var lastRemindersContext: String = ""
+    private var lastLocationContext: String = ""
+    private var lastConversationHistory: String = ""
+    
     /**
      * Sends a message to Claude with all necessary context and handles the streaming response.
      *
@@ -143,43 +130,26 @@ class ChatAPIService {
             completeConversationHistory = []
         }
         
-        // Create a messages array with context first, then user message
-        let contextMessage: [String: Any] = ["role": "user", "content": [
-            ["type": "text", "text": """
-            Current time: \(formatCurrentDateTime())
-            
-            USER MEMORY:
-            \(lastMemoryContent)
-            
-            CALENDAR EVENTS:
-            \(lastCalendarContext)
-            
-            REMINDERS:
-            \(lastRemindersContext)
-            
-            \(lastLocationContext)
-            
-            CONVERSATION HISTORY:
-            \(lastConversationHistory)
-            """]
-        ]]
+        // Create message components using the APIRequestBuilder
+        let contextMessage = APIRequestBuilder.createContextMessage(
+            memoryContent: lastMemoryContent,
+            calendarContext: lastCalendarContext,
+            remindersContext: lastRemindersContext,
+            locationContext: lastLocationContext,
+            conversationHistory: lastConversationHistory
+        )
         
-        let assistantGreeting: [String: Any] = ["role": "assistant", "content": [
-            ["type": "text", "text": "I understand. How can I help you today?"]
-        ]]
-        
-        let userMessage: [String: Any] = ["role": "user", "content": [
-            ["type": "text", "text": userMessage]
-        ]]
+        let assistantGreeting = APIRequestBuilder.createAssistantGreeting()
+        let userMessageObj = APIRequestBuilder.createUserMessage(text: userMessage)
         
         // If this is a new conversation, initialize the complete conversation history
         if completeConversationHistory.isEmpty {
             completeConversationHistory.append(contextMessage)
             completeConversationHistory.append(assistantGreeting)
-            completeConversationHistory.append(userMessage)
+            completeConversationHistory.append(userMessageObj)
         } else {
             // If we're continuing a conversation, just add the new user message
-            completeConversationHistory.append(userMessage)
+            completeConversationHistory.append(userMessageObj)
         }
         
         // Use the complete conversation history for the messages array
@@ -189,17 +159,6 @@ class ChatAPIService {
         // This handles the case when a previous message resulted in a tool use
         if !pendingToolResults.isEmpty {
             print("Including \(pendingToolResults.count) tool results in the request")
-            
-            // Create a user message with tool_result content blocks for each pending result
-            var toolResultBlocks: [[String: Any]] = []
-            
-            for result in pendingToolResults {
-                toolResultBlocks.append([
-                    "type": "tool_result",
-                    "tool_use_id": result.toolId,
-                    "content": result.content
-                ])
-            }
             
             // Only include tool results if we have actual tool use in previous messages
             // This prevents the 400 error "tool_result block(s) provided when previous message does not contain any tool_use blocks"
@@ -223,10 +182,12 @@ class ChatAPIService {
                 }
             }
             
-            if !toolResultBlocks.isEmpty && hasToolUseInPreviousMessages {
-                messages.append(["role": "user", "content": toolResultBlocks])
+            if hasToolUseInPreviousMessages {
+                // Create a tool results message and add it to the conversation
+                let toolResultsMessage = APIRequestBuilder.createToolResultsMessage(toolResults: pendingToolResults)
+                messages.append(toolResultsMessage)
                 print("Added tool results to messages array")
-            } else if !toolResultBlocks.isEmpty {
+            } else {
                 print("Skipping tool results because there are no previous messages with tool use")
             }
             
@@ -235,7 +196,7 @@ class ChatAPIService {
         }
         
         // Create the request body with system as a top-level parameter and tools
-        let requestBody = buildRequestBodyWithCaching(
+        let requestBody = APIRequestBuilder.buildRequestBodyWithCaching(
             systemPrompt: systemPrompt,
             toolDefinitions: toolDefinitions,
             messages: messages
@@ -250,7 +211,7 @@ class ChatAPIService {
         
         // Create the request
         var request = URLRequest(url: streamingURL)
-        configureRequestHeaders(&request)
+        APIRequestBuilder.configureRequestHeaders(for: &request, apiKey: apiKey)
         
         do {
             let requestData = try JSONSerialization.data(withJSONObject: requestBody)
@@ -299,7 +260,7 @@ class ChatAPIService {
                 }
                 
                 // Create user-friendly error message based on status code
-                let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                let userFriendlyMessage = APIErrorMessageCreator.createUserFriendlyErrorMessage(
                     statusCode: statusCode,
                     errorType: errorType,
                     errorDetails: errorDetails
@@ -350,7 +311,7 @@ class ChatAPIService {
                             print("💡 STREAM ERROR MESSAGE: \(message)")
                         }
                         
-                        let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                        let userFriendlyMessage = APIErrorMessageCreator.createUserFriendlyErrorMessage(
                             statusCode: 0, // Use 0 to indicate it's a stream error, not an HTTP error
                             errorType: errorType,
                             errorDetails: "" // Don't append the original error, it's often redundant
@@ -368,38 +329,36 @@ class ChatAPIService {
                        let usage = message["usage"] as? [String: Any] {
                         
                         if let creationTokens = usage["cache_creation_input_tokens"] as? Int {
-                            cacheCreationTokens = creationTokens
-                            print("🧠 Cache creation tokens: \(cacheCreationTokens)")
+                            cacheMetrics.cacheCreationTokens = creationTokens
+                            print("🧠 Cache creation tokens: \(cacheMetrics.cacheCreationTokens)")
                         }
                         
                         if let readTokens = usage["cache_read_input_tokens"] as? Int {
-                            cacheReadTokens = readTokens
-                            print("🧠 Cache read tokens: \(cacheReadTokens)")
+                            cacheMetrics.cacheReadTokens = readTokens
+                            print("🧠 Cache read tokens: \(cacheMetrics.cacheReadTokens)")
                         }
                         
                         if let tokens = usage["input_tokens"] as? Int {
-                            inputTokens = tokens
-                            print("🧠 Input tokens: \(inputTokens)")
+                            cacheMetrics.inputTokens = tokens
+                            print("🧠 Input tokens: \(cacheMetrics.inputTokens)")
                         }
                         
                         // Log cache performance summary
-                        let totalTokens = cacheCreationTokens + cacheReadTokens + inputTokens
                         print("🧠 CACHE PERFORMANCE SUMMARY:")
-                        print("🧠 - Cache creation tokens: \(cacheCreationTokens)")
-                        print("🧠 - Cache read tokens: \(cacheReadTokens)")
-                        print("🧠 - Regular input tokens: \(inputTokens)")
-                        print("🧠 - Total tokens processed: \(totalTokens)")
+                        print("🧠 - Cache creation tokens: \(cacheMetrics.cacheCreationTokens)")
+                        print("🧠 - Cache read tokens: \(cacheMetrics.cacheReadTokens)")
+                        print("🧠 - Regular input tokens: \(cacheMetrics.inputTokens)")
+                        print("🧠 - Total tokens processed: \(cacheMetrics.totalTokens)")
                         
-                        if cacheReadTokens > 0 {
-                            let savingsPercent = Double(cacheReadTokens) / Double(totalTokens) * 100.0
-                            print("🧠 - Cache hit detected! Approximately \(String(format: "%.1f", savingsPercent))% of tokens were read from cache")
+                        if cacheMetrics.hasCacheHit {
+                            print("🧠 - Cache hit detected! Approximately \(String(format: "%.1f", cacheMetrics.cacheSavingsPercent))% of tokens were read from cache")
                         }
                         
                         // Record metrics in the performance tracker
                         CachePerformanceTracker.shared.recordRequest(
-                            cacheCreationTokens: cacheCreationTokens,
-                            cacheReadTokens: cacheReadTokens,
-                            inputTokens: inputTokens
+                            cacheCreationTokens: cacheMetrics.cacheCreationTokens,
+                            cacheReadTokens: cacheMetrics.cacheReadTokens,
+                            inputTokens: cacheMetrics.inputTokens
                         )
                     }
                     
@@ -461,43 +420,11 @@ class ChatAPIService {
                                 print("💡 Successfully parsed JSON input from Claude")
                             } else {
                                 print("💡 Failed to parse JSON, using fallback for \(self.currentToolName ?? "unknown tool")")
-                                createFallbackToolInput(toolName: self.currentToolName, toolInput: &toolInput)
+                                toolInput = ToolInputFallback.createInput(for: self.currentToolName)
                             }
                         } else {
                             print("💡 No input JSON accumulated, using fallback for \(self.currentToolName ?? "unknown tool")")
-                            createFallbackToolInput(toolName: self.currentToolName, toolInput: &toolInput)
-                        }
-                        
-                        // Helper function to create appropriate fallback input based on tool type
-                        func createFallbackToolInput(toolName: String?, toolInput: inout [String: Any]) {
-                            let now = Date()
-                            
-                            switch toolName {
-                            case "add_calendar_event":
-                                let oneHourLater = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now
-                                toolInput = [
-                                    "title": "Test Calendar Event",
-                                    "start": DateFormatter.claudeDateParser.string(from: now),
-                                    "end": DateFormatter.claudeDateParser.string(from: oneHourLater),
-                                    "notes": "Created by Claude when JSON parsing failed"
-                                ]
-                            case "add_reminder":
-                                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
-                                toolInput = [
-                                    "title": "Test Reminder",
-                                    "due": DateFormatter.claudeDateParser.string(from: tomorrow),
-                                    "notes": "Created by Claude when JSON parsing failed"
-                                ]
-                            case "add_memory":
-                                toolInput = [
-                                    "content": "User asked Claude to create a test memory",
-                                    "category": "Miscellaneous Notes",
-                                    "importance": 3
-                                ]
-                            default:
-                                // For other tools, provide a basic fallback
-                                toolInput = ["note": "Fallback tool input for \(toolName ?? "unknown tool")"]
-                            }
+                            toolInput = ToolInputFallback.createInput(for: self.currentToolName)
                         }
                         
                         // Store this tool use in the lastAssistantMessageWithToolUse
@@ -533,7 +460,7 @@ class ChatAPIService {
                             // Store this tool use in lastAssistantMessageWithToolUse for proper validation
                             if lastAssistantMessageWithToolUse == nil {
                                 lastAssistantMessageWithToolUse = [
-                                    "role": "assistant", 
+                                    "role": "assistant",
                                     "content": [[
                                         "type": "tool_use",
                                         "id": toolId,
@@ -551,7 +478,7 @@ class ChatAPIService {
                             print("💡 TOOL USE PROCESSED: \(toolName) with result: \(result)")
                             
                             // Store the tool result for the next API call
-                            pendingToolResults.append((toolId: toolId, content: result))
+                            pendingToolResults.append(ToolUseResult(toolId: toolId, content: result))
                             
                             // Process all collected tool uses first, then send a follow-up request
                             // This prevents multiple duplicate operations from occurring
@@ -560,9 +487,9 @@ class ChatAPIService {
                             // and will send them all at once in a single follow-up request
                             // at the end of streaming process.
                             
-                            // NOTE: We intentionally DO NOT immediately trigger 
+                            // NOTE: We intentionally DO NOT immediately trigger
                             // a follow-up request here. Instead, the streaming loop
-                            // will naturally end, and then we'll process all pending 
+                            // will naturally end, and then we'll process all pending
                             // tool results at once to avoid duplicates.
                         }
                     }
@@ -647,27 +574,6 @@ class ChatAPIService {
         }
     }
     
-    /**
-     * Formats the current date and time with timezone information.
-     *
-     * @return A formatted string representing the current date and time
-     */
-    private func formatCurrentDateTime() -> String {
-        return DateFormatter.formatCurrentDateTimeWithTimezone()
-    }
-    
-    /**
-     * Configures the HTTP request headers for Claude API communication.
-     *
-     * @param request The URLRequest to configure
-     */
-    private func configureRequestHeaders(_ request: inout URLRequest) {
-        request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        // For tool use, we should use the most recent version with tools support
-        request.addValue(apiKey, forHTTPHeaderField: "x-api-key")
-    }
     
     /**
      * Tests if the current API key is valid by making a simple request to Claude.
@@ -683,7 +589,7 @@ class ChatAPIService {
         // Create a simple request to test the API key
         let url = URL(string: "https://api.anthropic.com/v1/messages")!
         var request = URLRequest(url: url)
-        // Set up request headers directly instead of using configureRequestHeaders
+        // Set up request headers directly instead of using APIRequestBuilder
         // to avoid including any optional headers that might cause issues
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -693,7 +599,7 @@ class ChatAPIService {
         // Simple request body with correct format, stream: false for simple testing
         // Also include a basic tool definition to test if tools are supported
         let requestBody: [String: Any] = [
-            "model": "claude-3-7-sonnet-20250219",
+            "model": APIRequestBuilder.model,
             "max_tokens": 10,
             "stream": false,
             "tools": [
@@ -752,7 +658,7 @@ class ChatAPIService {
                     }
                     
                     // Create user-friendly error message based on status code
-                    let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                    let userFriendlyMessage = APIErrorMessageCreator.createUserFriendlyErrorMessage(
                         statusCode: httpResponse.statusCode,
                         errorType: errorType,
                         errorDetails: errorDetails
@@ -780,82 +686,7 @@ class ChatAPIService {
      * @param finalizeStreamingMessage Callback to finalize the message when streaming is complete
      * @param isProcessingCallback Callback to update the processing state
      */
-    // Store the context from the initial request to use in follow-up requests
-    private var lastMemoryContent: String = ""
-    private var lastCalendarContext: String = ""
-    private var lastRemindersContext: String = ""
-    private var lastLocationContext: String = ""
-    private var lastConversationHistory: String = ""
     
-    /**
-     * Builds a request body with prompt caching enabled.
-     *
-     * This method creates a request body with cache_control parameters
-     * to enable prompt caching for system prompt and tool definitions.
-     *
-     * @param systemPrompt The system prompt to include in the request
-     * @param toolDefinitions Array of tool definitions that Claude can use
-     * @param messages Array of messages to include in the request
-     * @return A dictionary containing the request body with caching enabled
-     */
-    /**
-     * Builds a request body with prompt caching enabled.
-     *
-     * This method creates a request body with cache_control parameters
-     * to enable prompt caching for system prompt and tool definitions.
-     * It follows Anthropic's documentation for proper cache_control placement.
-     *
-     * @param systemPrompt The system prompt to include in the request
-     * @param toolDefinitions Array of tool definitions that Claude can use
-     * @param messages Array of messages to include in the request
-     * @return A dictionary containing the request body with caching enabled
-     */
-    private func buildRequestBodyWithCaching(
-        systemPrompt: String,
-        toolDefinitions: [[String: Any]],
-        messages: [[String: Any]]
-    ) -> [String: Any] {
-        // Add cache control to tool definitions
-        var cachedToolDefinitions = toolDefinitions
-        if !cachedToolDefinitions.isEmpty {
-            // Add cache_control to the last tool definition
-            var lastTool = cachedToolDefinitions[cachedToolDefinitions.count - 1]
-            lastTool["cache_control"] = ["type": "ephemeral"]
-            cachedToolDefinitions[cachedToolDefinitions.count - 1] = lastTool
-        }
-        
-        // Add cache control to context message if it exists and is the first message
-        var cachedMessages = messages
-        if !cachedMessages.isEmpty {
-            // Check if the first message is a context message from the user
-            if var firstMessage = cachedMessages.first,
-               let role = firstMessage["role"] as? String, role == "user",
-               var content = firstMessage["content"] as? [[String: Any]],
-               !content.isEmpty {
-                
-                // Add cache_control to the last content block of the first message
-                if var lastContentBlock = content.last {
-                    lastContentBlock["cache_control"] = ["type": "ephemeral"]
-                    content[content.count - 1] = lastContentBlock
-                    firstMessage["content"] = content
-                    cachedMessages[0] = firstMessage
-                    
-                    print("🧠 Added cache_control to context message")
-                }
-            }
-        }
-        
-        // Create the request body with caching enabled
-        // Note: system should be a string, not an array of objects
-        return [
-            "model": "claude-3-7-sonnet-20250219",
-            "max_tokens": 4000,
-            "system": systemPrompt,
-            "tools": cachedToolDefinitions,
-            "stream": true,
-            "messages": cachedMessages
-        ]
-    }
     
     private func sendFollowUpRequestWithToolResults(
         toolDefinitions: [[String: Any]],
@@ -880,7 +711,7 @@ class ChatAPIService {
         // First, try to get the original tool uses with their full inputs from lastAssistantMessageWithToolUse
         if let content = lastAssistantMessageWithToolUse?["content"] as? [[String: Any]] {
             for block in content {
-                if let type = block["type"] as? String, 
+                if let type = block["type"] as? String,
                    type == "tool_use",
                    let toolId = block["id"] as? String,
                    let toolName = block["name"] as? String,
@@ -981,7 +812,7 @@ class ChatAPIService {
         let messages = completeConversationHistory
         
         // Create the request body with system as a top-level parameter and tools
-        let requestBody = buildRequestBodyWithCaching(
+        let requestBody = APIRequestBuilder.buildRequestBodyWithCaching(
             systemPrompt: systemPrompt,
             toolDefinitions: toolDefinitions,
             messages: messages
@@ -989,7 +820,7 @@ class ChatAPIService {
         
         // Create the request
         var request = URLRequest(url: streamingURL)
-        configureRequestHeaders(&request)
+        APIRequestBuilder.configureRequestHeaders(for: &request, apiKey: apiKey)
         
         do {
             let requestData = try JSONSerialization.data(withJSONObject: requestBody)
@@ -1038,7 +869,7 @@ class ChatAPIService {
                 }
                 
                 // Create user-friendly error message based on status code
-                let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                let userFriendlyMessage = APIErrorMessageCreator.createUserFriendlyErrorMessage(
                     statusCode: statusCode,
                     errorType: errorType,
                     errorDetails: errorDetails,
@@ -1090,7 +921,7 @@ class ChatAPIService {
                             print("💡 FOLLOW-UP STREAM ERROR MESSAGE: \(message)")
                         }
                         
-                        let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                        let userFriendlyMessage = APIErrorMessageCreator.createUserFriendlyErrorMessage(
                             statusCode: 0, // Use 0 to indicate it's a stream error, not an HTTP error
                             errorType: errorType,
                             errorDetails: "", // Don't append the original error, it's often redundant
@@ -1109,38 +940,36 @@ class ChatAPIService {
                        let usage = message["usage"] as? [String: Any] {
                         
                         if let creationTokens = usage["cache_creation_input_tokens"] as? Int {
-                            cacheCreationTokens = creationTokens
-                            print("🧠 FOLLOW-UP Cache creation tokens: \(cacheCreationTokens)")
+                            cacheMetrics.cacheCreationTokens = creationTokens
+                            print("🧠 FOLLOW-UP Cache creation tokens: \(cacheMetrics.cacheCreationTokens)")
                         }
                         
                         if let readTokens = usage["cache_read_input_tokens"] as? Int {
-                            cacheReadTokens = readTokens
-                            print("🧠 FOLLOW-UP Cache read tokens: \(cacheReadTokens)")
+                            cacheMetrics.cacheReadTokens = readTokens
+                            print("🧠 FOLLOW-UP Cache read tokens: \(cacheMetrics.cacheReadTokens)")
                         }
                         
                         if let tokens = usage["input_tokens"] as? Int {
-                            inputTokens = tokens
-                            print("🧠 FOLLOW-UP Input tokens: \(inputTokens)")
+                            cacheMetrics.inputTokens = tokens
+                            print("🧠 FOLLOW-UP Input tokens: \(cacheMetrics.inputTokens)")
                         }
                         
                         // Log cache performance summary
-                        let totalTokens = cacheCreationTokens + cacheReadTokens + inputTokens
                         print("🧠 FOLLOW-UP CACHE PERFORMANCE SUMMARY:")
-                        print("🧠 - Cache creation tokens: \(cacheCreationTokens)")
-                        print("🧠 - Cache read tokens: \(cacheReadTokens)")
-                        print("🧠 - Regular input tokens: \(inputTokens)")
-                        print("🧠 - Total tokens processed: \(totalTokens)")
+                        print("🧠 - Cache creation tokens: \(cacheMetrics.cacheCreationTokens)")
+                        print("🧠 - Cache read tokens: \(cacheMetrics.cacheReadTokens)")
+                        print("🧠 - Regular input tokens: \(cacheMetrics.inputTokens)")
+                        print("🧠 - Total tokens processed: \(cacheMetrics.totalTokens)")
                         
-                        if cacheReadTokens > 0 {
-                            let savingsPercent = Double(cacheReadTokens) / Double(totalTokens) * 100.0
-                            print("🧠 - Cache hit detected! Approximately \(String(format: "%.1f", savingsPercent))% of tokens were read from cache")
+                        if cacheMetrics.hasCacheHit {
+                            print("🧠 - Cache hit detected! Approximately \(String(format: "%.1f", cacheMetrics.cacheSavingsPercent))% of tokens were read from cache")
                         }
                         
                         // Record metrics in the performance tracker
                         CachePerformanceTracker.shared.recordRequest(
-                            cacheCreationTokens: cacheCreationTokens,
-                            cacheReadTokens: cacheReadTokens,
-                            inputTokens: inputTokens
+                            cacheCreationTokens: cacheMetrics.cacheCreationTokens,
+                            cacheReadTokens: cacheMetrics.cacheReadTokens,
+                            inputTokens: cacheMetrics.inputTokens
                         )
                     }
                     
@@ -1221,43 +1050,11 @@ class ChatAPIService {
                                 print("💡 Successfully parsed JSON input from Claude in follow-up")
                             } else {
                                 print("💡 Failed to parse JSON in follow-up, using fallback for \(self.currentToolName ?? "unknown tool")")
-                                createFallbackToolInput(toolName: self.currentToolName, toolInput: &toolInput)
+                                toolInput = ToolInputFallback.createInput(for: self.currentToolName)
                             }
                         } else {
                             print("💡 No input JSON accumulated in follow-up, using fallback for \(self.currentToolName ?? "unknown tool")")
-                            createFallbackToolInput(toolName: self.currentToolName, toolInput: &toolInput)
-                        }
-                        
-                        // Helper function to create appropriate fallback input based on tool type
-                        func createFallbackToolInput(toolName: String?, toolInput: inout [String: Any]) {
-                            let now = Date()
-                            
-                            switch toolName {
-                            case "add_calendar_event":
-                                let oneHourLater = Calendar.current.date(byAdding: .hour, value: 1, to: now) ?? now
-                                toolInput = [
-                                    "title": "Test Calendar Event",
-                                    "start": DateFormatter.claudeDateParser.string(from: now),
-                                    "end": DateFormatter.claudeDateParser.string(from: oneHourLater),
-                                    "notes": "Created by Claude when JSON parsing failed"
-                                ]
-                            case "add_reminder":
-                                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
-                                toolInput = [
-                                    "title": "Test Reminder",
-                                    "due": DateFormatter.claudeDateParser.string(from: tomorrow),
-                                    "notes": "Created by Claude when JSON parsing failed"
-                                ]
-                            case "add_memory":
-                                toolInput = [
-                                    "content": "User asked Claude to create a test memory",
-                                    "category": "Miscellaneous Notes",
-                                    "importance": 3
-                                ]
-                            default:
-                                // For other tools, provide a basic fallback
-                                toolInput = ["note": "Fallback tool input for \(toolName ?? "unknown tool")"]
-                            }
+                            toolInput = ToolInputFallback.createInput(for: self.currentToolName)
                         }
                         
                         // If we have a tool name and ID, process the tool use
@@ -1273,7 +1070,7 @@ class ChatAPIService {
                             print("💡 FOLLOW-UP TOOL USE PROCESSED: \(toolName) with result: \(result)")
                             
                             // Store the tool result for the next API call
-                            pendingToolResults.append((toolId: toolId, content: result))
+                            pendingToolResults.append(ToolUseResult(toolId: toolId, content: result))
                             
                             // Don't make recursive calls to sendFollowUpRequestWithToolResults
                             // Instead, collect all tool results and process them at the end
@@ -1321,8 +1118,8 @@ class ChatAPIService {
                 
                 // Make sure we have a tool_use message before adding tool_result
                 // Otherwise API returns error: "tool_result block(s) provided when previous message does not contain any tool_use blocks"
-                if let lastAssistantMessage = completeConversationHistory.last(where: { 
-                    ($0["role"] as? String) == "assistant" 
+                if let lastAssistantMessage = completeConversationHistory.last(where: {
+                    ($0["role"] as? String) == "assistant"
                 }), let content = lastAssistantMessage["content"] as? [[String: Any]] {
                     
                     let hasToolUse = content.contains(where: {
@@ -1382,7 +1179,7 @@ class ChatAPIService {
     
     /**
      * Sends a message to Claude using the current conversation state.
-     * 
+     *
      * This is a helper method used to continue a conversation after tool use
      * without creating duplicate tool calls.
      *
@@ -1398,7 +1195,7 @@ class ChatAPIService {
         isProcessingCallback: @escaping (Bool) -> Void
     ) async {
         // Create the request body with system as a top-level parameter and tools
-        let requestBody = buildRequestBodyWithCaching(
+        let requestBody = APIRequestBuilder.buildRequestBodyWithCaching(
             systemPrompt: systemPrompt,
             toolDefinitions: toolDefinitions,
             messages: completeConversationHistory
@@ -1406,7 +1203,7 @@ class ChatAPIService {
         
         // Create the request
         var request = URLRequest(url: streamingURL)
-        configureRequestHeaders(&request)
+        APIRequestBuilder.configureRequestHeaders(for: &request, apiKey: apiKey)
         
         do {
             let requestData = try JSONSerialization.data(withJSONObject: requestBody)
@@ -1453,7 +1250,7 @@ class ChatAPIService {
                 }
                 
                 // Create user-friendly error message based on status code
-                let userFriendlyMessage = self.createUserFriendlyErrorMessage(
+                let userFriendlyMessage = APIErrorMessageCreator.createUserFriendlyErrorMessage(
                     statusCode: statusCode,
                     errorType: errorType,
                     errorDetails: errorDetails,
@@ -1466,7 +1263,7 @@ class ChatAPIService {
                 return
             }
             
-            // Process the streaming response 
+            // Process the streaming response
             for try await line in asyncBytes.lines {
                 // Skip empty lines
                 guard !line.isEmpty else { continue }
@@ -1510,98 +1307,6 @@ class ChatAPIService {
         }
     }
 
-    /**
-     * Creates a user-friendly error message based on the HTTP status code and error type.
-     *
-     * @param statusCode The HTTP status code from the API response
-     * @param errorType The error type from the API response
-     * @param errorDetails Additional error details from the API response
-     * @param isFollowUp Whether this error occurred during a follow-up request
-     * @return A user-friendly error message
-     */
-    private func createUserFriendlyErrorMessage(
-        statusCode: Int,
-        errorType: String,
-        errorDetails: String,
-        isFollowUp: Bool = false
-    ) -> String {
-        let prefix = isFollowUp ? "\n\nUnable to continue: " : "Sorry, I encountered an issue: "
-        
-        // Special case for stream errors (statusCode == 0)
-        if statusCode == 0 {
-            // Handle stream-specific errors
-            switch errorType {
-            case "overloaded_error":
-                return "\(prefix)The assistant service is currently overloaded. Please try again in a few moments\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            case "api_error":
-                return "\(prefix)The assistant service is experiencing internal errors. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            default:
-                return "\(prefix)Error communicating with assistant service\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            }
-        }
-        
-        // Check for specific error types and status codes
-        switch statusCode {
-        case 400:
-            if errorType == "invalid_request_error" {
-                return "\(prefix)There was an issue with my request. Please try again or simplify your request\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            } else {
-                return "\(prefix)There was a problem with how I'm trying to talk to the assistant. Please try again\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            }
-            
-        case 401:
-            if errorType == "authentication_error" {
-                return "\(prefix)There's an issue with the API key. Please check your API key in settings\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            } else {
-                return "\(prefix)Not authorized to use this service. Please check your API key in settings\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            }
-            
-        case 403:
-            if errorType == "permission_error" {
-                return "\(prefix)The API key doesn't have permission to use this service. Please check your API subscription\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            } else {
-                return "\(prefix)Access denied. Please check your API subscription\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            }
-            
-        case 404:
-            if errorType == "not_found_error" {
-                return "\(prefix)The service endpoint couldn't be found. Please update the app or try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            } else {
-                return "\(prefix)The requested resource was not found. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            }
-            
-        case 413:
-            if errorType == "request_too_large" {
-                return "\(prefix)Your request was too large. Please try a shorter message or clear some conversation history\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            } else {
-                return "\(prefix)The message was too large to process. Please try a shorter message\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            }
-            
-        case 429:
-            if errorType == "rate_limit_error" {
-                return "\(prefix)Rate limit exceeded. Please wait a moment and try again\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            } else {
-                return "\(prefix)Too many requests. Please wait a moment and try again\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            }
-            
-        case 500:
-            if errorType == "api_error" {
-                return "\(prefix)The assistant service is experiencing internal errors. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            } else {
-                return "\(prefix)An unexpected error occurred. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            }
-            
-        case 529:
-            if errorType == "overloaded_error" {
-                return "\(prefix)The assistant service is currently overloaded. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            } else {
-                return "\(prefix)The service is temporarily unavailable. Please try again later\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-            }
-            
-        default:
-            return "\(prefix)Error communicating with assistant service. Status code: \(statusCode)\(errorDetails.isEmpty ? "" : ". \(errorDetails)")"
-        }
-    }
     
     /**
      * Tests if a provided API key is valid by making a simple request to Claude.
