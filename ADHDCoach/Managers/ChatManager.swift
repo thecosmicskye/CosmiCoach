@@ -1153,7 +1153,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     let message = addOperationStatusMessage(
                         forMessageId: messageId!,
                         operationType: .deleteCalendarEvent,
-                        status: .inProgress
+                        status: .inProgress,
+                        count: ids.count
                     )
                     return message.id
                 }
@@ -1212,7 +1213,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                         forMessageId: messageId!,
                         statusMessageId: statusMessageId,
                         status: .success,
-                        details: "Deleted \(successCount) of \(ids.count) events"
+                        details: "Deleted \(successCount) of \(ids.count) events",
+                        count: successCount
                     )
                 }
                 
@@ -1249,7 +1251,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 let message = addOperationStatusMessage(
                     forMessageId: messageId!,
                     operationType: .batchCalendarOperation,
-                    status: .inProgress
+                    status: .inProgress,
+                    count: ids.count
                 )
                 return message.id
             }
@@ -1289,7 +1292,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     forMessageId: messageId!,
                     statusMessageId: statusMessageId,
                     status: .success,
-                    details: "Deleted \(successCount) of \(ids.count) events"
+                    details: "Deleted \(successCount) of \(ids.count) events",
+                    count: successCount
                 )
             }
             
@@ -1686,7 +1690,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 let message = addOperationStatusMessage(
                     forMessageId: messageId!,
                     operationType: .batchReminderOperation,
-                    status: .inProgress
+                    status: .inProgress,
+                    count: ids.count
                 )
                 return message.id
             }
@@ -1726,7 +1731,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     forMessageId: messageId!,
                     statusMessageId: statusMessageId,
                     status: .success,
-                    details: "Deleted \(successCount) of \(ids.count) reminders"
+                    details: "Deleted \(successCount) of \(ids.count) reminders",
+                    count: successCount
                 )
             }
             
@@ -1952,7 +1958,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     forMessageId: messageId!,
                     statusMessageId: statusMessageId,
                     status: .success,
-                    details: "Removed \(successCount) of \(contents.count) memories"
+                    details: "Removed \(successCount) of \(contents.count) memories",
+                    count: successCount
                 )
             }
             
