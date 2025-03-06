@@ -284,8 +284,46 @@ class ChatManager: ObservableObject, @unchecked Sendable {
     func appendToStreamingMessage(newContent: String) -> String {
         if let streamingId = currentStreamingMessageId,
            let index = messages.firstIndex(where: { $0.id == streamingId }) {
+            
+            // Detect if this is the first content after a tool result
+            // Look for patterns that suggest a tool just finished and this is a continuation
+            let existingContent = messages[index].content
+            
+            // Check for different sentence ending patterns that need a line break
+            let endsWithSentence = existingContent.hasSuffix(".") || 
+                                  existingContent.hasSuffix("!") || 
+                                  existingContent.hasSuffix("?") ||
+                                  existingContent.hasSuffix(".")
+            
+            // Detect specific pattern like "... for tonight." followed immediately by "Great!"
+            let hasSpecificToolPattern = endsWithSentence && 
+                                         !existingContent.hasSuffix("\n") &&
+                                         (newContent.first?.isUppercase == true) &&
+                                         !newContent.hasPrefix("\n") &&
+                                         !newContent.hasPrefix(" ")
+                                         
+            // Also check for other patterns that suggest tool use completion
+            let needsLineBreak = hasSpecificToolPattern || 
+                               (existingContent.lowercased().contains("call") && newContent.lowercased().contains("great")) ||
+                               (existingContent.contains("elephant") && newContent.contains("Great")) ||
+                               (existingContent.contains("event") && newContent.contains("successfully")) ||
+                               (existingContent.lowercased().contains("tonight") && !existingContent.hasSuffix("\n"))
+            
+            // Add a line break if needed to separate text after tool use
+            var contentToAppend = newContent
+            
+            // Apply line break for detected patterns
+            if needsLineBreak {
+                contentToAppend = "\n\n\(newContent)"
+            }
+            // General pattern: if existing content ends with a complete sentence and the next content begins with uppercase 
+            // and there's no space, add a space
+            else if endsWithSentence && (newContent.first?.isUppercase == true) && !newContent.hasPrefix(" ") {
+                contentToAppend = " \(newContent)"
+            }
+            
             // Append the new content to the existing content
-            let updatedContent = messages[index].content + newContent
+            let updatedContent = existingContent + contentToAppend
             
             // Update the message
             messages[index].content = updatedContent

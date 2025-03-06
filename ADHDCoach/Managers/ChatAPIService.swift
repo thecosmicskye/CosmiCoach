@@ -435,6 +435,16 @@ class ChatAPIService {
                         
                         print("💡 Message stopped for tool use")
                         
+                        // Add a line break after tool_use to ensure proper formatting when we continue
+                        // Make sure the content ends with a double newline for proper spacing
+                        if !lastTextContentBeforeToolUse.hasSuffix("\n\n") {
+                            if lastTextContentBeforeToolUse.hasSuffix("\n") {
+                                lastTextContentBeforeToolUse += "\n"
+                            } else {
+                                lastTextContentBeforeToolUse += "\n\n"
+                            }
+                        }
+                        
                         // Create usable tool input from collected JSON chunks
                         var toolInput: [String: Any] = [:]
                         
@@ -526,6 +536,21 @@ class ChatAPIService {
                     // Handle regular text delta
                     else if let contentDelta = json["delta"] as? [String: Any],
                          let textContent = contentDelta["text"] as? String {
+                        // If this is the first text content after a tool use and the last message ended with a tool,
+                        // make sure we start with a newline
+                        if lastTextContentBeforeToolUse.isEmpty && pendingToolResults.isEmpty {
+                            // This is a new message or continuation after tool use was processed
+                            let lastMessageWasToolUse = completeConversationHistory.last(where: {
+                                ($0["role"] as? String) == "user" && 
+                                ($0["content"] as? [[String: Any]])?.contains(where: { ($0["type"] as? String) == "tool_result" }) == true
+                            }) != nil
+                            
+                            if lastMessageWasToolUse {
+                                // Start with a newline if we're continuing after a tool result
+                                lastTextContentBeforeToolUse = "\n"
+                            }
+                        }
+                        
                         // Accumulate text content for context in follow-up requests
                         lastTextContentBeforeToolUse += textContent
                         
@@ -541,20 +566,26 @@ class ChatAPIService {
             }
             
             // If we have accumulated text content, add it to the conversation history
-            if !lastTextContentBeforeToolUse.isEmpty {
+            // Make sure it's not just whitespace
+            let trimmedText = lastTextContentBeforeToolUse.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedText.isEmpty {
                 // Create an assistant message with the text content
                 let textMessage: [String: Any] = [
                     "role": "assistant",
                     "content": [
-                        ["type": "text", "text": lastTextContentBeforeToolUse]
+                        ["type": "text", "text": trimmedText]
                     ]
                 ]
                 
                 // Add the text message to the conversation history
                 completeConversationHistory.append(textMessage)
-                print("💡 Added final text content to conversation history: \(lastTextContentBeforeToolUse)")
+                print("💡 Added final text content to conversation history: \(trimmedText)")
                 
                 // Reset the text content after adding it
+                lastTextContentBeforeToolUse = ""
+            } else {
+                // Reset the empty content without adding to history
+                print("💡 Skipping empty text content")
                 lastTextContentBeforeToolUse = ""
             }
             
@@ -1097,6 +1128,16 @@ class ChatAPIService {
                         
                         print("💡 Follow-up message stopped for tool use")
                         
+                        // Add a line break after tool_use to ensure proper formatting when we continue
+                        // Make sure the content ends with a double newline for proper spacing
+                        if !lastTextContentBeforeToolUse.hasSuffix("\n\n") {
+                            if lastTextContentBeforeToolUse.hasSuffix("\n") {
+                                lastTextContentBeforeToolUse += "\n"
+                            } else {
+                                lastTextContentBeforeToolUse += "\n\n"
+                            }
+                        }
+                        
                         // Create usable tool input from collected JSON chunks
                         var toolInput: [String: Any] = [:]
                         
@@ -1142,6 +1183,21 @@ class ChatAPIService {
                     // Handle regular text delta
                     else if let contentDelta = json["delta"] as? [String: Any],
                             let textContent = contentDelta["text"] as? String {
+                        // If this is the first text content after a tool use and the last message ended with a tool,
+                        // make sure we start with a newline
+                        if lastTextContentBeforeToolUse.isEmpty && pendingToolResults.isEmpty {
+                            // This is a new message or continuation after tool use was processed
+                            let lastMessageWasToolUse = completeConversationHistory.last(where: {
+                                ($0["role"] as? String) == "user" && 
+                                ($0["content"] as? [[String: Any]])?.contains(where: { ($0["type"] as? String) == "tool_result" }) == true
+                            }) != nil
+                            
+                            if lastMessageWasToolUse {
+                                // Start with a newline if we're continuing after a tool result
+                                lastTextContentBeforeToolUse = "\n"
+                            }
+                        }
+                        
                         // Accumulate text content for context in follow-up requests
                         lastTextContentBeforeToolUse += textContent
                         
@@ -1157,20 +1213,26 @@ class ChatAPIService {
             }
             
             // If we have accumulated text content, add it to the conversation history
-            if !lastTextContentBeforeToolUse.isEmpty {
+            // Make sure it's not just whitespace
+            let trimmedText = lastTextContentBeforeToolUse.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmedText.isEmpty {
                 // Create an assistant message with the text content
                 let textMessage: [String: Any] = [
                     "role": "assistant",
                     "content": [
-                        ["type": "text", "text": lastTextContentBeforeToolUse]
+                        ["type": "text", "text": trimmedText]
                     ]
                 ]
                 
                 // Add the text message to the conversation history
                 completeConversationHistory.append(textMessage)
-                print("💡 Added final text content to conversation history: \(lastTextContentBeforeToolUse)")
+                print("💡 Added final text content to conversation history: \(trimmedText)")
                 
                 // Reset the text content after adding it
+                lastTextContentBeforeToolUse = ""
+            } else {
+                // Reset the empty content without adding to history
+                print("💡 Skipping empty text content")
                 lastTextContentBeforeToolUse = ""
             }
             
