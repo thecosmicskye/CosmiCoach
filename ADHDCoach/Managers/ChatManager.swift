@@ -387,14 +387,16 @@ class ChatManager: ObservableObject, @unchecked Sendable {
      * @param statusMessageId The UUID of the status message to update
      * @param status The new status of the operation
      * @param details Optional new details about the operation
+     * @param count Optional count of items affected (maintains original count if not provided)
      */
     @MainActor
-    func updateOperationStatusMessage(forMessageId messageId: UUID, statusMessageId: UUID, status: OperationStatus, details: String? = nil) {
+    func updateOperationStatusMessage(forMessageId messageId: UUID, statusMessageId: UUID, status: OperationStatus, details: String? = nil, count: Int? = nil) {
         statusManager.updateOperationStatusMessage(
             forMessageId: messageId,
             statusMessageId: statusMessageId,
             status: status,
-            details: details
+            details: details,
+            count: count
         )
         
         // Update the local copy
@@ -403,6 +405,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             statusMessages[index].status = status
             if let details = details {
                 statusMessages[index].details = details
+            }
+            if let count = count {
+                statusMessages[index].count = count
             }
             operationStatusMessages[messageId] = statusMessages
         }
@@ -1583,7 +1588,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     let message = addOperationStatusMessage(
                         forMessageId: messageId!,
                         operationType: .deleteReminder,
-                        status: .inProgress
+                        status: .inProgress,
+                        count: ids.count
                     )
                     return message.id
                 }
@@ -1642,7 +1648,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                         forMessageId: messageId!,
                         statusMessageId: statusMessageId,
                         status: .success,
-                        details: "Deleted \(successCount) of \(ids.count) reminders"
+                        details: "Deleted \(successCount) of \(ids.count) reminders",
+                        count: successCount
                     )
                 }
                 

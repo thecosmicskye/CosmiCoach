@@ -89,12 +89,14 @@ class ChatOperationStatusManager {
      * @param statusMessageId The UUID of the status message to update
      * @param status The new status of the operation
      * @param details Optional new details about the operation
+     * @param count Optional count of items affected (maintains original count if not provided)
      */
     func updateOperationStatusMessage(
         forMessageId messageId: UUID,
         statusMessageId: UUID,
         status: OperationStatus,
-        details: String? = nil
+        details: String? = nil,
+        count: Int? = nil
     ) {
         // Find the status message
         if var statusMessages = operationStatusMessages[messageId],
@@ -105,6 +107,11 @@ class ChatOperationStatusManager {
             // Update details if provided
             if let details = details {
                 statusMessages[index].details = details
+            }
+            
+            // Update count if provided, otherwise maintain the existing count
+            if let count = count {
+                statusMessages[index].count = count
             }
             
             // Save the updated array
