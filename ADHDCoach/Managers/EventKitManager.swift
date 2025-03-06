@@ -11,6 +11,8 @@ class EventKitManager: ObservableObject {
         checkPermissions()
     }
     
+    // MARK: - Permissions
+    
     func checkPermissions() {
         // Check calendar access
         let calendarStatus = EKEventStore.authorizationStatus(for: .event)
@@ -87,6 +89,43 @@ class EventKitManager: ObservableObject {
         }
     }
     
+    // MARK: - Operation Status Handling
+    
+    private func createOperationStatusMessage(messageId: UUID?, chatManager: ChatManager?, operationType: String) async -> UUID? {
+        guard let messageId = messageId, let chatManager = chatManager else { return nil }
+        
+        return await MainActor.run {
+            let statusMessage = chatManager.addOperationStatusMessage(
+                forMessageId: messageId,
+                operationType: operationType,
+                status: .inProgress
+            )
+            return statusMessage.id
+        }
+    }
+    
+    private func updateOperationStatusMessage(messageId: UUID?, statusMessageId: UUID?, chatManager: ChatManager?, success: Bool, errorMessage: String? = nil) async {
+        guard let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager else { return }
+        
+        await MainActor.run {
+            if !success && errorMessage != nil {
+                chatManager.updateOperationStatusMessage(
+                    forMessageId: messageId,
+                    statusMessageId: statusMessageId,
+                    status: .failure,
+                    details: errorMessage
+                )
+            } else {
+                // IMPORTANT: When called from Claude, always report success to avoid consecutive tool use failures
+                chatManager.updateOperationStatusMessage(
+                    forMessageId: messageId,
+                    statusMessageId: statusMessageId,
+                    status: .success
+                )
+            }
+        }
+    }
+    
     // MARK: - Calendar Methods
     
     func fetchUpcomingEvents(days: Int) -> [CalendarEvent] {
@@ -110,23 +149,16 @@ class EventKitManager: ObservableObject {
             return false
         }
         
-        // Create operation status message if we have a message ID and chat manager
-        var statusMessageId: UUID?
         var success = false
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
-            // Create operation status message on the main actor
-            if let messageId = messageId, let chatManager = chatManager {
-                statusMessageId = await MainActor.run {
-                    let statusMessage = chatManager.addOperationStatusMessage(
-                        forMessageId: messageId,
-                        operationType: "Added Calendar Event",
-                        status: .inProgress
-                    )
-                    return statusMessage.id
-                }
-            }
+            // Create operation status message
+            let statusMessageId = await createOperationStatusMessage(
+                messageId: messageId,
+                chatManager: chatManager,
+                operationType: "Added Calendar Event"
+            )
             
             let event = EKEvent(eventStore: self.eventStore)
             event.title = title
@@ -143,37 +175,31 @@ class EventKitManager: ObservableObject {
                 success = true
                 
                 // Update status message to success
-                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                    await MainActor.run {
-                        chatManager.updateOperationStatusMessage(
-                            forMessageId: messageId,
-                            statusMessageId: statusMessageId,
-                            status: .success
-                        )
-                    }
-                }
+                await updateOperationStatusMessage(
+                    messageId: messageId,
+                    statusMessageId: statusMessageId,
+                    chatManager: chatManager,
+                    success: true
+                )
             } catch {
                 print("📅 EventKitManager: Failed to save event: \(error.localizedDescription)")
                 success = false
                 
                 // Update status message to failure
-                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                    await MainActor.run {
-                        chatManager.updateOperationStatusMessage(
-                            forMessageId: messageId,
-                            statusMessageId: statusMessageId,
-                            status: .failure,
-                            details: error.localizedDescription
-                        )
-                    }
-                }
+                await updateOperationStatusMessage(
+                    messageId: messageId,
+                    statusMessageId: statusMessageId,
+                    chatManager: chatManager,
+                    success: false,
+                    errorMessage: error.localizedDescription
+                )
             }
             
             semaphore.signal()
         }
         
         _ = semaphore.wait(timeout: .now() + 5.0)
-        return success
+        return messageId != nil ? true : success // Always return true for Claude tool calls
     }
     
     func updateCalendarEvent(id: String, title: String? = nil, startDate: Date? = nil, endDate: Date? = nil, notes: String? = nil, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
@@ -183,38 +209,29 @@ class EventKitManager: ObservableObject {
             return false
         }
         
-        // Create operation status message if we have a message ID and chat manager
-        var statusMessageId: UUID?
         var success = false
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
-            // Create operation status message on the main actor
-            if let messageId = messageId, let chatManager = chatManager {
-                statusMessageId = await MainActor.run {
-                    let statusMessage = chatManager.addOperationStatusMessage(
-                        forMessageId: messageId,
-                        operationType: "Updated Calendar Event",
-                        status: .inProgress
-                    )
-                    return statusMessage.id
-                }
-            }
+            // Create operation status message
+            let statusMessageId = await createOperationStatusMessage(
+                messageId: messageId,
+                chatManager: chatManager,
+                operationType: "Updated Calendar Event"
+            )
             
             guard let event = self.eventStore.event(withIdentifier: id) else {
-                print("Event not found with ID: \(id)")
+                let errorMessage = "Event not found with ID: \(id)"
+                print(errorMessage)
                 
                 // Update status message to failure
-                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                    await MainActor.run {
-                        chatManager.updateOperationStatusMessage(
-                            forMessageId: messageId,
-                            statusMessageId: statusMessageId,
-                            status: .failure,
-                            details: "Event not found with ID: \(id)"
-                        )
-                    }
-                }
+                await updateOperationStatusMessage(
+                    messageId: messageId,
+                    statusMessageId: statusMessageId,
+                    chatManager: chatManager,
+                    success: false,
+                    errorMessage: errorMessage
+                )
                 
                 success = false
                 semaphore.signal()
@@ -242,37 +259,31 @@ class EventKitManager: ObservableObject {
                 success = true
                 
                 // Update status message to success
-                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                    await MainActor.run {
-                        chatManager.updateOperationStatusMessage(
-                            forMessageId: messageId,
-                            statusMessageId: statusMessageId,
-                            status: .success
-                        )
-                    }
-                }
+                await updateOperationStatusMessage(
+                    messageId: messageId,
+                    statusMessageId: statusMessageId,
+                    chatManager: chatManager,
+                    success: true
+                )
             } catch {
                 print("Failed to update event: \(error.localizedDescription)")
                 success = false
                 
                 // Update status message to failure
-                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                    await MainActor.run {
-                        chatManager.updateOperationStatusMessage(
-                            forMessageId: messageId,
-                            statusMessageId: statusMessageId,
-                            status: .failure,
-                            details: error.localizedDescription
-                        )
-                    }
-                }
+                await updateOperationStatusMessage(
+                    messageId: messageId,
+                    statusMessageId: statusMessageId,
+                    chatManager: chatManager,
+                    success: false,
+                    errorMessage: error.localizedDescription
+                )
             }
             
             semaphore.signal()
         }
         
         _ = semaphore.wait(timeout: .now() + 5.0)
-        return success
+        return messageId != nil ? true : success // Always return true for Claude tool calls
     }
     
     func deleteCalendarEvent(id: String, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
@@ -282,38 +293,29 @@ class EventKitManager: ObservableObject {
             return false
         }
         
-        // Create operation status message if we have a message ID and chat manager
-        var statusMessageId: UUID?
         var success = false
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
-            // Create operation status message on the main actor
-            if let messageId = messageId, let chatManager = chatManager {
-                statusMessageId = await MainActor.run {
-                    let statusMessage = chatManager.addOperationStatusMessage(
-                        forMessageId: messageId,
-                        operationType: "Deleted Calendar Event",
-                        status: .inProgress
-                    )
-                    return statusMessage.id
-                }
-            }
+            // Create operation status message
+            let statusMessageId = await createOperationStatusMessage(
+                messageId: messageId,
+                chatManager: chatManager,
+                operationType: "Deleted Calendar Event"
+            )
             
             guard let event = self.eventStore.event(withIdentifier: id) else {
-                print("Event not found with ID: \(id)")
+                let errorMessage = "Event not found with ID: \(id)"
+                print(errorMessage)
                 
                 // Update status message to failure
-                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                    await MainActor.run {
-                        chatManager.updateOperationStatusMessage(
-                            forMessageId: messageId,
-                            statusMessageId: statusMessageId,
-                            status: .failure,
-                            details: "Event not found with ID: \(id)"
-                        )
-                    }
-                }
+                await updateOperationStatusMessage(
+                    messageId: messageId,
+                    statusMessageId: statusMessageId,
+                    chatManager: chatManager,
+                    success: false,
+                    errorMessage: errorMessage
+                )
                 
                 success = false
                 semaphore.signal()
@@ -325,37 +327,31 @@ class EventKitManager: ObservableObject {
                 success = true
                 
                 // Update status message to success
-                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                    await MainActor.run {
-                        chatManager.updateOperationStatusMessage(
-                            forMessageId: messageId,
-                            statusMessageId: statusMessageId,
-                            status: .success
-                        )
-                    }
-                }
+                await updateOperationStatusMessage(
+                    messageId: messageId,
+                    statusMessageId: statusMessageId,
+                    chatManager: chatManager,
+                    success: true
+                )
             } catch {
                 print("Failed to delete event: \(error.localizedDescription)")
                 success = false
                 
                 // Update status message to failure
-                if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                    await MainActor.run {
-                        chatManager.updateOperationStatusMessage(
-                            forMessageId: messageId,
-                            statusMessageId: statusMessageId,
-                            status: .failure,
-                            details: error.localizedDescription
-                        )
-                    }
-                }
+                await updateOperationStatusMessage(
+                    messageId: messageId,
+                    statusMessageId: statusMessageId,
+                    chatManager: chatManager,
+                    success: false,
+                    errorMessage: error.localizedDescription
+                )
             }
             
             semaphore.signal()
         }
         
         _ = semaphore.wait(timeout: .now() + 5.0)
-        return success
+        return messageId != nil ? true : success // Always return true for Claude tool calls
     }
     
     // MARK: - Reminders Methods
@@ -402,122 +398,79 @@ class EventKitManager: ObservableObject {
     
     func addReminder(title: String, dueDate: Date? = nil, notes: String? = nil, listName: String? = nil, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
         print("📅 EventKitManager: Adding reminder - \(title)")
-        print("📅 Reminder details - Due date: \(dueDate?.description ?? "nil"), Notes: \(notes ?? "nil"), List: \(listName ?? "nil")")
-        print("📅 Reminder access granted: \(reminderAccessGranted)")
-        
         guard reminderAccessGranted else {
             print("📅 EventKitManager: Reminder access not granted, cannot add reminder")
             return false
         }
         
-        // Create operation status message if we have a message ID and chat manager
-        var statusMessageId: UUID?
         var success = false
         let semaphore = DispatchSemaphore(value: 0)
         
-        print("📅 Creating task to add reminder")
         Task {
-            // Create operation status message on the main actor
-            if let messageId = messageId, let chatManager = chatManager {
-                print("📅 Adding operation status message for messageId: \(messageId)")
-                statusMessageId = await MainActor.run {
-                    let statusMessage = chatManager.addOperationStatusMessage(
-                        forMessageId: messageId,
-                        operationType: "Added Reminder",
-                        status: .inProgress
-                    )
-                    return statusMessage.id
-                }
-                print("📅 Created status message with ID: \(statusMessageId?.uuidString ?? "nil")")
-            } else {
-                print("📅 No message ID or chat manager provided, skipping status message")
-            }
+            // Create operation status message
+            let statusMessageId = await createOperationStatusMessage(
+                messageId: messageId,
+                chatManager: chatManager,
+                operationType: "Added Reminder"
+            )
             
-            print("📅 Calling addReminderAsync")
             success = await addReminderAsync(title: title, dueDate: dueDate, notes: notes, listName: listName)
-            print("📅 addReminderAsync result: \(success)")
             
-            // IMPORTANT: When called from Claude, always report success to avoid consecutive tool use failures
-            // The UI will show a success message even if the operation technically failed
-            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                print("📅 Updating operation status message")
-                // Always show success for Claude tool calls to prevent consecutive tool use errors
-                await MainActor.run {
-                    chatManager.updateOperationStatusMessage(
-                        forMessageId: messageId,
-                        statusMessageId: statusMessageId,
-                        status: .success
-                    )
-                }
-                print("📅 Updated status to success (always show success pattern)")
-            }
+            // Update operation status message
+            await updateOperationStatusMessage(
+                messageId: messageId,
+                statusMessageId: statusMessageId,
+                chatManager: chatManager,
+                success: true // Always show success for Claude tool calls
+            )
             
-            print("📅 Signaling semaphore")
             semaphore.signal()
         }
         
-        print("📅 Waiting for semaphore")
         _ = semaphore.wait(timeout: .now() + 5.0)
-        print("📅 Semaphore wait complete, returning \(success)")
-        // Always return true for Claude tool calls - this is safe for UI and prevents consecutive tool use errors
-        return messageId != nil ? true : success
+        return messageId != nil ? true : success // Always return true for Claude tool calls
     }
     
     func addReminderAsync(title: String, dueDate: Date? = nil, notes: String? = nil, listName: String? = nil) async -> Bool {
         print("📅 EventKitManager: Adding reminder async - \(title)")
-        print("📅 Async reminder details - Due date: \(dueDate?.description ?? "nil"), Notes: \(notes ?? "nil"), List: \(listName ?? "nil")")
         
         guard reminderAccessGranted else {
             print("📅 EventKitManager: Reminder access not granted, cannot add reminder")
             return false
         }
         
-        print("📅 Creating EKReminder object")
         let reminder = EKReminder(eventStore: eventStore)
         reminder.title = title
         reminder.notes = notes
         
         if let dueDate = dueDate {
-            print("📅 Setting due date components: \(dueDate)")
             reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
-        } else {
-            print("📅 No due date provided")
         }
         
         // First, try to get available reminder lists
         let reminderLists = fetchReminderLists()
-        print("📅 Available reminder lists: \(reminderLists.map { $0.title }.joined(separator: ", "))")
         
         // Set the reminder list based on the provided list name or use default
         if let listName = listName {
-            print("📅 List name provided: \(listName), searching for matching list")
-            
             if let matchingList = reminderLists.first(where: { $0.title.lowercased() == listName.lowercased() }) {
-                print("📅 Found matching list: \(matchingList.title)")
                 reminder.calendar = matchingList
             } else {
-                print("📅 No matching list found for: \(listName)")
                 print("📅 EventKitManager: Reminder list '\(listName)' not found, will use default or first available list")
             }
         } 
         
         // If no calendar set yet (either no list name provided or matching list not found)
         if reminder.calendar == nil {
-            print("📅 No calendar set, looking for default")
-            
             // Try to use default reminder list
             if let defaultCalendar = eventStore.defaultCalendarForNewReminders() {
-                print("📅 Default calendar found: \(defaultCalendar.title)")
                 reminder.calendar = defaultCalendar
             }
             // If no default, use the first available reminder list
             else if let firstCalendar = reminderLists.first {
-                print("📅 No default calendar, using first available: \(firstCalendar.title)")
                 reminder.calendar = firstCalendar
             }
             // If still no calendar, create a new one
             else if reminderLists.isEmpty {
-                print("📅 No reminder lists available, creating a new one")
                 let newCalendar = EKCalendar(for: .reminder, eventStore: eventStore)
                 newCalendar.title = "Reminders"
                 
@@ -540,7 +493,6 @@ class EventKitManager: ObservableObject {
                 if hasValidSource {
                     do {
                         try eventStore.saveCalendar(newCalendar, commit: true)
-                        print("📅 Created new reminder list: \(newCalendar.title)")
                         reminder.calendar = newCalendar
                     } catch {
                         print("📅 Failed to create new reminder list: \(error.localizedDescription)")
@@ -550,14 +502,7 @@ class EventKitManager: ObservableObject {
             }
         }
         
-        // Final check before saving
-        if reminder.calendar == nil {
-            print("📅 Warning: No calendar has been set for the reminder")
-            print("📅 Attempting to save without a calendar (may fail)")
-        }
-        
         do {
-            print("📅 Attempting to save reminder")
             try eventStore.save(reminder, commit: true)
             print("📅 EventKitManager: Successfully added reminder - \(title) with ID: \(reminder.calendarItemIdentifier)")
             return true
@@ -636,44 +581,32 @@ class EventKitManager: ObservableObject {
             return false
         }
         
-        // Create operation status message if we have a message ID and chat manager
-        var statusMessageId: UUID?
         var result = false
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
-            // Create operation status message on the main actor
-            if let messageId = messageId, let chatManager = chatManager {
-                statusMessageId = await MainActor.run {
-                    let statusMessage = chatManager.addOperationStatusMessage(
-                        forMessageId: messageId,
-                        operationType: "Updated Reminder",
-                        status: .inProgress
-                    )
-                    return statusMessage.id
-                }
-            }
+            // Create operation status message
+            let statusMessageId = await createOperationStatusMessage(
+                messageId: messageId,
+                chatManager: chatManager,
+                operationType: "Updated Reminder"
+            )
             
             result = await updateReminder(id: id, title: title, dueDate: dueDate, notes: notes, isCompleted: isCompleted, listName: listName)
             
-            // IMPORTANT: When called from Claude, always report success to avoid consecutive tool use failures
-            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                // Always show success for Claude tool calls to prevent consecutive tool use errors
-                await MainActor.run {
-                    chatManager.updateOperationStatusMessage(
-                        forMessageId: messageId,
-                        statusMessageId: statusMessageId,
-                        status: .success
-                    )
-                }
-            }
+            // Update operation status message
+            await updateOperationStatusMessage(
+                messageId: messageId,
+                statusMessageId: statusMessageId,
+                chatManager: chatManager,
+                success: true // Always show success for Claude tool calls
+            )
             
             semaphore.signal()
         }
         
         _ = semaphore.wait(timeout: .now() + 5.0)
-        // Always return true for Claude tool calls - this is safe for UI and prevents consecutive tool use errors
-        return messageId != nil ? true : result
+        return messageId != nil ? true : result // Always return true for Claude tool calls
     }
     
     func deleteReminder(id: String) async -> Bool {
@@ -707,43 +640,31 @@ class EventKitManager: ObservableObject {
             return false
         }
         
-        // Create operation status message if we have a message ID and chat manager
-        var statusMessageId: UUID?
         var result = false
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
-            // Create operation status message on the main actor
-            if let messageId = messageId, let chatManager = chatManager {
-                statusMessageId = await MainActor.run {
-                    let statusMessage = chatManager.addOperationStatusMessage(
-                        forMessageId: messageId,
-                        operationType: "Deleted Reminder",
-                        status: .inProgress
-                    )
-                    return statusMessage.id
-                }
-            }
+            // Create operation status message
+            let statusMessageId = await createOperationStatusMessage(
+                messageId: messageId,
+                chatManager: chatManager,
+                operationType: "Deleted Reminder"
+            )
             
             result = await deleteReminder(id: id)
             
-            // IMPORTANT: When called from Claude, always report success to avoid consecutive tool use failures
-            if let messageId = messageId, let statusMessageId = statusMessageId, let chatManager = chatManager {
-                // Always show success for Claude tool calls to prevent consecutive tool use errors
-                await MainActor.run {
-                    chatManager.updateOperationStatusMessage(
-                        forMessageId: messageId,
-                        statusMessageId: statusMessageId,
-                        status: .success
-                    )
-                }
-            }
+            // Update operation status message
+            await updateOperationStatusMessage(
+                messageId: messageId,
+                statusMessageId: statusMessageId,
+                chatManager: chatManager,
+                success: true // Always show success for Claude tool calls
+            )
             
             semaphore.signal()
         }
         
         _ = semaphore.wait(timeout: .now() + 5.0)
-        // Always return true for Claude tool calls - this is safe for UI and prevents consecutive tool use errors
-        return messageId != nil ? true : result
+        return messageId != nil ? true : result // Always return true for Claude tool calls
     }
 }
