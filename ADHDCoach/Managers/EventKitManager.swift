@@ -561,9 +561,25 @@ class EventKitManager: ObservableObject {
     }
     
     func fetchReminderById(id: String) async -> EKReminder? {
+        print("📅 BATCH DEBUG: Fetching reminder with ID: \(id)")
         return await withCheckedContinuation { continuation in
             eventStore.fetchReminders(matching: eventStore.predicateForReminders(in: nil)) { reminders in
                 let reminder = reminders?.first(where: { $0.calendarItemIdentifier == id })
+                if reminder != nil {
+                    print("📅 BATCH DEBUG: Successfully found reminder with ID: \(id), title: \(reminder!.title)")
+                } else {
+                    print("📅 BATCH DEBUG: No reminder found with ID: \(id)")
+                    // Log all available reminders to help debug
+                    if let availableReminders = reminders {
+                        print("📅 BATCH DEBUG: Available reminder IDs:")
+                        for r in availableReminders.prefix(10) { // Only log first 10 to avoid flooding console
+                            print("📅 BATCH DEBUG: - \(r.calendarItemIdentifier) (title: \(r.title))")
+                        }
+                        if availableReminders.count > 10 {
+                            print("📅 BATCH DEBUG: ... and \(availableReminders.count - 10) more")
+                        }
+                    }
+                }
                 continuation.resume(returning: reminder)
             }
         }
@@ -571,34 +587,46 @@ class EventKitManager: ObservableObject {
     
     func updateReminder(id: String, title: String? = nil, dueDate: Date? = nil, notes: String? = nil, isCompleted: Bool? = nil, listName: String? = nil) async -> Bool {
         print("📅 EventKitManager: Updating reminder async with ID - \(id)")
+        print("📅 BATCH DEBUG: Updating reminder with ID \(id), title: \(String(describing: title))")
+        
         guard reminderAccessGranted else {
             print("📅 EventKitManager: Reminder access not granted, cannot update reminder")
+            print("📅 BATCH DEBUG: Reminder access not granted")
             return false
         }
         
         // Fetch the reminder by ID
-        guard let reminder = await fetchReminderById(id: id) else {
+        let reminder = await fetchReminderById(id: id)
+        guard let reminder = reminder else {
             print("📅 EventKitManager: Reminder not found with ID: \(id)")
+            print("📅 BATCH DEBUG: FAILURE - Reminder not found with ID \(id)")
             return false
         }
         
+        print("📅 BATCH DEBUG: Found reminder with ID \(id), current title: \(reminder.title)")
+        
         if let title = title {
             reminder.title = title
+            print("📅 BATCH DEBUG: Updated reminder title to: \(title)")
         }
         
         if let dueDate = dueDate {
             reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
+            print("📅 BATCH DEBUG: Updated due date to: \(dueDate)")
         } else if dueDate == nil && title != nil {
             // If dueDate is explicitly set to nil (not just omitted), clear the due date
             reminder.dueDateComponents = nil
+            print("📅 BATCH DEBUG: Cleared due date")
         }
         
         if let notes = notes {
             reminder.notes = notes
+            print("📅 BATCH DEBUG: Updated notes")
         }
         
         if let isCompleted = isCompleted {
             reminder.isCompleted = isCompleted
+            print("📅 BATCH DEBUG: Updated completion status to: \(isCompleted)")
         }
         
         // Change the reminder list if specified
@@ -606,17 +634,21 @@ class EventKitManager: ObservableObject {
             let reminderLists = fetchReminderLists()
             if let matchingList = reminderLists.first(where: { $0.title.lowercased() == listName.lowercased() }) {
                 reminder.calendar = matchingList
+                print("📅 BATCH DEBUG: Updated list to: \(listName)")
             } else {
                 print("📅 EventKitManager: Reminder list '\(listName)' not found, keeping the current list")
+                print("📅 BATCH DEBUG: List '\(listName)' not found, keeping current list")
             }
         }
         
         do {
             try eventStore.save(reminder, commit: true)
             print("📅 EventKitManager: Successfully updated reminder with ID - \(id)")
+            print("📅 BATCH DEBUG: SUCCESS - Updated reminder with ID \(id)")
             return true
-        } catch {
+        } catch let error {
             print("📅 EventKitManager: Failed to update reminder: \(error.localizedDescription)")
+            print("📅 BATCH DEBUG: FAILURE - Error saving reminder: \(error.localizedDescription)")
             return false
         }
     }

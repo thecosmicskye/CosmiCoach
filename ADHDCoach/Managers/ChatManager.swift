@@ -1121,17 +1121,19 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 let localEndDate = endDate
                 
                 // Modify calendar event
-                let success = await MainActor.run {
-                    return eventKitManager.updateCalendarEvent(
-                        id: id,
-                        title: title,
-                        startDate: localStartDate,
-                        endDate: localEndDate,
-                        notes: notes,
-                        messageId: nil, // Use nil to avoid creating individual status messages
-                        chatManager: nil
-                    )
-                }
+                print("⚙️ BATCH EDIT CALENDAR: Processing event with ID \(id), new title: \(String(describing: title))")
+                
+                let success = await eventKitManager.updateCalendarEvent(
+                    id: id,
+                    title: title,
+                    startDate: localStartDate,
+                    endDate: localEndDate,
+                    notes: notes,
+                    messageId: nil, // Use nil to avoid creating individual status messages
+                    chatManager: nil
+                )
+                
+                print("⚙️ BATCH EDIT CALENDAR: Event update result for ID \(id): \(success ? "SUCCESS" : "FAILURE")")
                 
                 if success {
                     successCount += 1
@@ -1141,6 +1143,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             }
             
             // Update the batch operation status message
+            print("⚙️ BATCH EDIT CALENDAR SUMMARY: Processed \(eventsArray.count) events: \(successCount) succeeded, \(failureCount) failed")
+            
             await MainActor.run {
                 updateOperationStatusMessage(
                     forMessageId: messageId!,
@@ -1149,6 +1153,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     details: "Updated \(successCount) of \(eventsArray.count) calendar events",
                     count: successCount
                 )
+                print("⚙️ BATCH EDIT CALENDAR: Updated status message with count: \(successCount)")
             }
             
             // Refresh context with the updated calendar events
@@ -1653,17 +1658,19 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 let localDueDate = dueDate
                 
                 // Modify reminder
-                let success = await MainActor.run {
-                    return eventKitManager.updateReminder(
-                        id: id,
-                        title: title,
-                        dueDate: localDueDate,
-                        notes: notes,
-                        listName: list,
-                        messageId: nil, // Use nil to avoid creating individual status messages
-                        chatManager: nil
-                    )
-                }
+                print("⚙️ BATCH EDIT: Processing reminder with ID \(id), new title: \(String(describing: title))")
+                
+                // Use the direct async method to update without the wrapper that causes issues
+                let success = await eventKitManager.updateReminder(
+                    id: id,
+                    title: title,
+                    dueDate: localDueDate,
+                    notes: notes,
+                    isCompleted: nil,
+                    listName: list
+                )
+                
+                print("⚙️ BATCH EDIT: Reminder update result for ID \(id): \(success ? "SUCCESS" : "FAILURE")")
                 
                 if success {
                     successCount += 1
@@ -1673,6 +1680,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             }
             
             // Update the batch operation status message
+            print("⚙️ BATCH EDIT SUMMARY: Processed \(remindersArray.count) reminders: \(successCount) succeeded, \(failureCount) failed")
+            
             await MainActor.run {
                 updateOperationStatusMessage(
                     forMessageId: messageId!,
@@ -1681,6 +1690,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     details: "Updated \(successCount) of \(remindersArray.count) reminders",
                     count: successCount
                 )
+                print("⚙️ BATCH EDIT: Updated status message with count: \(successCount)")
             }
             
             // Refresh context with the updated reminders
