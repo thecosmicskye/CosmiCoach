@@ -3,7 +3,8 @@ import EventKit
 import Combine
 
 class EventKitManager: ObservableObject {
-    private let eventStore = EKEventStore()
+    // Made eventStore internal instead of private so it can be accessed in batch operations
+    let eventStore = EKEventStore()
     @Published var calendarAccessGranted = false
     @Published var reminderAccessGranted = false
     
@@ -215,7 +216,7 @@ class EventKitManager: ObservableObject {
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
-            // Create operation status message
+            // Create operation status message only if messageId and chatManager are provided
             let statusMessageId = await createOperationStatusMessage(
                 messageId: messageId,
                 chatManager: chatManager,
@@ -226,14 +227,16 @@ class EventKitManager: ObservableObject {
                 let errorMessage = "Event not found with ID: \(id)"
                 print(errorMessage)
                 
-                // Update status message to failure
-                await updateOperationStatusMessage(
-                    messageId: messageId,
-                    statusMessageId: statusMessageId,
-                    chatManager: chatManager,
-                    success: false,
-                    errorMessage: errorMessage
-                )
+                // Update status message to failure only if messageId and chatManager are provided
+                if messageId != nil && chatManager != nil && statusMessageId != nil {
+                    await updateOperationStatusMessage(
+                        messageId: messageId,
+                        statusMessageId: statusMessageId,
+                        chatManager: chatManager,
+                        success: false,
+                        errorMessage: errorMessage
+                    )
+                }
                 
                 success = false
                 semaphore.signal()
@@ -260,32 +263,36 @@ class EventKitManager: ObservableObject {
                 try self.eventStore.save(event, span: .thisEvent)
                 success = true
                 
-                // Update status message to success
-                await updateOperationStatusMessage(
-                    messageId: messageId,
-                    statusMessageId: statusMessageId,
-                    chatManager: chatManager,
-                    success: true
-                )
+                // Update status message to success only if messageId and chatManager are provided
+                if messageId != nil && chatManager != nil && statusMessageId != nil {
+                    await updateOperationStatusMessage(
+                        messageId: messageId,
+                        statusMessageId: statusMessageId,
+                        chatManager: chatManager,
+                        success: true
+                    )
+                }
             } catch {
                 print("Failed to update event: \(error.localizedDescription)")
                 success = false
                 
-                // Update status message to failure
-                await updateOperationStatusMessage(
-                    messageId: messageId,
-                    statusMessageId: statusMessageId,
-                    chatManager: chatManager,
-                    success: false,
-                    errorMessage: error.localizedDescription
-                )
+                // Update status message to failure only if messageId and chatManager are provided
+                if messageId != nil && chatManager != nil && statusMessageId != nil {
+                    await updateOperationStatusMessage(
+                        messageId: messageId,
+                        statusMessageId: statusMessageId,
+                        chatManager: chatManager,
+                        success: false,
+                        errorMessage: error.localizedDescription
+                    )
+                }
             }
             
             semaphore.signal()
         }
         
         _ = semaphore.wait(timeout: .now() + 5.0)
-        return messageId != nil ? true : success // Always return true for Claude tool calls
+        return messageId != nil ? true : success // Always return true for Claude tool calls, return actual result for batch operations
     }
     
     func deleteCalendarEvent(id: String, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
@@ -626,28 +633,32 @@ class EventKitManager: ObservableObject {
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
-            // Create operation status message
+            // Create operation status message only if messageId and chatManager are provided
             let statusMessageId = await createOperationStatusMessage(
                 messageId: messageId,
                 chatManager: chatManager,
                 operationType: .updateReminder
             )
             
+            // Important fix: Always use the direct async method to ensure updates work properly
+            // Instead of checking messageId/chatManager, which causes issues in batch operations
             result = await updateReminder(id: id, title: title, dueDate: dueDate, notes: notes, isCompleted: isCompleted, listName: listName)
             
-            // Update operation status message
-            await updateOperationStatusMessage(
-                messageId: messageId,
-                statusMessageId: statusMessageId,
-                chatManager: chatManager,
-                success: true // Always show success for Claude tool calls
-            )
+            // Update operation status message only if messageId and chatManager are provided
+            if messageId != nil && chatManager != nil && statusMessageId != nil {
+                await updateOperationStatusMessage(
+                    messageId: messageId,
+                    statusMessageId: statusMessageId,
+                    chatManager: chatManager,
+                    success: result
+                )
+            }
             
             semaphore.signal()
         }
         
         _ = semaphore.wait(timeout: .now() + 5.0)
-        return messageId != nil ? true : result // Always return true for Claude tool calls
+        return messageId != nil ? true : result // Always return true for Claude tool calls but return actual result for batch operations
     }
     
     func deleteReminder(id: String) async -> Bool {
