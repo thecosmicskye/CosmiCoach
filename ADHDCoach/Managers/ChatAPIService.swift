@@ -1097,6 +1097,37 @@ class ChatAPIService {
                                    let toolId = contentBlock["id"] as? String {
                                     print("💡 FOLLOW-UP DETECTED TOOL USE START: \(toolName) with ID: \(toolId)")
                                     
+                                    // CRITICAL DEBUGGING: For batch operations, log full tool information
+                                    if toolName.contains("_batch") {
+                                        print("‼️ BATCH OPERATION DETECTED: \(toolName) ‼️")
+                                        print("‼️ FULL CONTENT BLOCK: \(contentBlock)")
+                                        
+                                        if let input = contentBlock["input"] as? [String: Any] {
+                                            print("‼️ BATCH INPUT STRUCTURE: \(input)")
+                                            
+                                            // For reminder batches, inspect the full structure
+                                            if toolName == "modify_reminders_batch" {
+                                                if let batchItems = input["reminders"] {
+                                                    print("‼️ BATCH REMINDERS RAW: \(batchItems)")
+                                                    print("‼️ BATCH REMINDERS TYPE: \(type(of: batchItems))")
+                                                    
+                                                    // Try to cast to array and check count
+                                                    if let remindersArray = batchItems as? [[String: Any]] {
+                                                        print("‼️ REMINDERS ARRAY COUNT: \(remindersArray.count)")
+                                                        for (index, reminder) in remindersArray.enumerated() {
+                                                            print("‼️ REMINDER \(index+1): \(reminder)")
+                                                        }
+                                                    } else if let singleReminder = batchItems as? [String: Any] {
+                                                        print("‼️ RECEIVED AS SINGLE REMINDER OBJECT INSTEAD OF ARRAY!")
+                                                        print("‼️ SINGLE REMINDER DATA: \(singleReminder)")
+                                                    }
+                                                } else {
+                                                    print("‼️ NO 'reminders' KEY FOUND IN BATCH INPUT!")
+                                                }
+                                            }
+                                        }
+                                    }
+                                    
                                     // Save the tool name and id for later
                                     self.currentToolName = toolName
                                     self.currentToolId = toolId
@@ -1159,6 +1190,26 @@ class ChatAPIService {
                                let parsedInput = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
                                 toolInput = parsedInput
                                 print("💡 Successfully parsed JSON input from Claude in follow-up")
+                                
+                                // CRITICAL: Special debugging for batch operations to fix format issues
+                                if let toolName = self.currentToolName, toolName == "modify_reminders_batch" {
+                                    print("‼️ MODIFY_REMINDERS_BATCH DETECTED - INSPECTING INPUT")
+                                    print("‼️ FULL PARSED TOOL INPUT: \(toolInput)")
+                                    
+                                    // Check if reminders key exists and what format it's in
+                                    if let reminders = toolInput["reminders"] {
+                                        print("‼️ REMINDERS KEY FOUND: \(reminders)")
+                                        print("‼️ REMINDERS TYPE: \(type(of: reminders))")
+                                        
+                                        // If it's an object instead of array, fix it by wrapping in array
+                                        if let singleReminder = reminders as? [String: Any] {
+                                            print("‼️ FOUND SINGLE REMINDER OBJECT INSTEAD OF ARRAY - FIXING FORMAT")
+                                            // Create array with the single reminder
+                                            toolInput["reminders"] = [singleReminder]
+                                            print("‼️ FIXED INPUT: \(toolInput)")
+                                        }
+                                    }
+                                }
                             } else {
                                 print("💡 Failed to parse JSON in follow-up, using fallback for \(self.currentToolName ?? "unknown tool")")
                                 toolInput = ToolInputFallback.createInput(for: self.currentToolName)

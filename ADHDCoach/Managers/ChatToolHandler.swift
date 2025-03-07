@@ -32,12 +32,12 @@ class ChatToolHandler {
             // Calendar Tools - Single item operations
             [
                 "name": "add_calendar_event",
-                "description": "Add a new calendar event to the user's calendar. You MUST use this tool when the user wants to add a single event to their calendar.",
+                "description": "⚠️ ONLY FOR SINGLE EVENTS ⚠️ Use ONLY when adding exactly ONE calendar event. If adding multiple events (2+), you MUST use add_calendar_events_batch instead with an array of events.",
                 "input_schema": CalendarAddCommand.schema
             ],
             [
                 "name": "modify_calendar_event",
-                "description": "Modify an existing calendar event in the user's calendar. Use this tool when the user wants to change a single existing event.",
+                "description": "⚠️ ONLY FOR SINGLE EVENTS ⚠️ Use ONLY when modifying exactly ONE calendar event. If modifying multiple events (2+), you MUST use modify_calendar_events_batch instead with an array of events.",
                 "input_schema": CalendarModifyCommand.schema
             ],
             [
@@ -55,24 +55,24 @@ class ChatToolHandler {
             // Calendar Tools - Batch operations
             [
                 "name": "add_calendar_events_batch",
-                "description": "Add multiple calendar events to the user's calendar at once. Use this tool when the user wants to add multiple events in a single operation.",
+                "description": "⚠️ REQUIRED FOR MULTIPLE EVENTS ⚠️ You MUST use this tool whenever adding 2+ calendar events at once. NEVER use add_calendar_event multiple times - always use this batch function with an array of events in the 'events' field. Format: {'events': [{'title': 'event1', 'start': 'date1', 'end': 'date2'}, {'title': 'event2', 'start': 'date3', 'end': 'date4'}]}",
                 "input_schema": CalendarAddBatchCommand.schema
             ],
             [
                 "name": "modify_calendar_events_batch",
-                "description": "Modify multiple existing calendar events in the user's calendar at once. Use this tool when the user wants to change multiple existing events in a single operation.",
+                "description": "⚠️ REQUIRED FOR MULTIPLE EVENTS ⚠️ You MUST use this tool whenever modifying 2+ calendar events at once. NEVER use modify_calendar_event multiple times - always use this batch function with an array of events in the 'events' field. Format: {'events': [{'id': 'id1', 'title': 'title1'}, {'id': 'id2', 'title': 'title2'}]}",
                 "input_schema": CalendarModifyBatchCommand.schema
             ],
             
             // Reminder Tools - Single item operations
             [
                 "name": "add_reminder",
-                "description": "Add a new reminder to the user's reminders list. You MUST use this tool when the user wants to add a single reminder.",
+                "description": "⚠️ ONLY FOR SINGLE REMINDERS ⚠️ Use ONLY when adding exactly ONE reminder. If adding multiple reminders (2+), you MUST use add_reminders_batch instead with an array of reminders.",
                 "input_schema": ReminderAddCommand.schema
             ],
             [
                 "name": "modify_reminder",
-                "description": "Modify an existing reminder in the user's reminders. Use this tool when the user wants to change a single existing reminder.",
+                "description": "⚠️ ONLY FOR SINGLE REMINDERS ⚠️ Use ONLY when modifying exactly ONE reminder. If modifying multiple reminders (2+), you MUST use modify_reminders_batch instead with an array of reminders.",
                 "input_schema": ReminderModifyCommand.schema
             ],
             [
@@ -90,12 +90,12 @@ class ChatToolHandler {
             // Reminder Tools - Batch operations
             [
                 "name": "add_reminders_batch",
-                "description": "Add multiple reminders to the user's reminders list at once. Use this tool when the user wants to add multiple reminders in a single operation.",
+                "description": "⚠️ REQUIRED FOR MULTIPLE REMINDERS ⚠️ You MUST use this tool whenever adding 2+ reminders at once. NEVER use add_reminder multiple times - always use this batch function with an array of reminders in the 'reminders' field. Format: {'reminders': [{'title': 'title1', 'due': 'date1'}, {'title': 'title2', 'due': 'date2'}]}",
                 "input_schema": ReminderAddBatchCommand.schema
             ],
             [
                 "name": "modify_reminders_batch",
-                "description": "Modify multiple existing reminders in the user's reminders at once. Use this tool when the user wants to change multiple existing reminders in a single operation.",
+                "description": "⚠️ REQUIRED FOR MULTIPLE REMINDERS ⚠️ You MUST use this tool whenever modifying 2+ reminders at once. NEVER use modify_reminder multiple times - always use this batch function with an array of reminders in the 'reminders' field. Format: {'reminders': [{'id': 'id1', 'title': 'title1'}, {'id': 'id2', 'title': 'title2'}]}",
                 "input_schema": ReminderModifyBatchCommand.schema
             ],
             

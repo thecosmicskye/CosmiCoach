@@ -1547,6 +1547,10 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             return "Processed \(remindersArray.count) reminders: \(successCount) added successfully, \(failureCount) failed"
             
         case "modify_reminder":
+            // CRITICAL DEBUG FOR SINGLE REMINDER UPDATES
+            print("‼️‼️‼️ SINGLE REMINDER MODIFY FUNCTION CALLED INSTEAD OF BATCH ‼️‼️‼️")
+            print("‼️‼️‼️ SINGLE REMINDER INPUT: \(toolInput)")
+            
             // Extract parameters
             guard let id = toolInput["id"] as? String else {
                 return "Error: Missing required parameter 'id' for modify_reminder"
@@ -1600,11 +1604,26 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             return success ? "Successfully updated reminder" : "Failed to update reminder"
             
         case "modify_reminders_batch":
+            // CRITICAL DEBUG INDICATOR - To verify this function is actually being called
+            print("‼️‼️‼️ MODIFY_REMINDERS_BATCH FUNCTION CALLED - THIS SHOULD BE VISIBLE IN LOGS ‼️‼️‼️")
+            print("‼️‼️‼️ FULL TOOL INPUT: \(toolInput)")
+            
             // Extract parameters
-            guard let remindersArray = toolInput["reminders"] as? [[String: Any]] else {
-                print("⚙️ Missing required parameter 'reminders' for modify_reminders_batch")
+            // Extract and debug the reminders array structure
+            guard let remindersData = toolInput["reminders"] else {
+                print("⚙️ ERROR: Missing required parameter 'reminders' for modify_reminders_batch")
                 return "Error: Missing required parameter 'reminders' for modify_reminders_batch"
             }
+            
+            print("⚙️ BATCH DEBUG RAW: reminders parameter type: \(type(of: remindersData))")
+            
+            // Try to convert to array of dictionaries
+            guard let remindersArray = remindersData as? [[String: Any]] else {
+                print("⚙️ ERROR: 'reminders' parameter is not an array of dictionaries: \(remindersData)")
+                return "Error: The 'reminders' parameter must be an array of reminder objects"
+            }
+            
+            print("⚙️ BATCH DEBUG: Successfully extracted reminders array with \(remindersArray.count) items")
             
             // Get access to EventKitManager
             guard let eventKitManager = await getEventKitManager() else {
@@ -1625,10 +1644,18 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             var successCount = 0
             var failureCount = 0
             
+            // Debug the full reminders array before processing
+            print("⚙️ BATCH EDIT START: Processing batch with \(remindersArray.count) reminders")
+            for (index, reminder) in remindersArray.enumerated() {
+                print("⚙️ BATCH EDIT PREP: Reminder \(index+1): \(reminder)")
+            }
+            
             // Process each reminder in the batch
-            for reminderData in remindersArray {
+            for (index, reminderData) in remindersArray.enumerated() {
+                print("⚙️ BATCH EDIT: Processing reminder \(index+1) of \(remindersArray.count)")
+                
                 guard let id = reminderData["id"] as? String else {
-                    print("⚙️ Missing required parameter 'id' for reminder in batch")
+                    print("⚙️ Missing required parameter 'id' for reminder \(index+1) in batch")
                     failureCount += 1
                     continue
                 }
@@ -1660,18 +1687,27 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                     dueDate = nil
                     print("⚙️ BATCH DEBUG: FORCING due date clear - no other parameters provided except ID")
                 } else {
-                    // Some parameters provided but not due date - keep existing due date
+                    // Some parameters provided but not due date - IMPORTANT: we must pass a special value
+                    // that will be interpreted by EventKitManager as "don't change the existing due date"
                     print("⚙️ BATCH DEBUG: Keeping existing due date - updating other fields only")
+                    // By not setting dueDate at all (or setting it to nil explicitly), the EventKitManager 
+                    // will know to keep the existing due date
                     dueDate = nil
                 }
                 
                 // Create local copy to avoid capturing mutable variable in concurrent code
                 let localDueDate = dueDate
                 
-                // Modify reminder
+                // Modify reminder - Add a visible separator between reminders for easier debugging
+                print("\n⚙️ ========== PROCESSING REMINDER \(index+1) OF \(remindersArray.count) ==========")
                 print("⚙️ BATCH EDIT: Processing reminder with ID \(id), new title: \(String(describing: title))")
                 
                 // Use the direct async method to update without the wrapper that causes issues
+                // Added extensive debugging for batch operations
+                print("⚙️ BATCH EDIT DETAILED: Updating reminder ID: \(id)")
+                print("⚙️ BATCH EDIT DETAILED: Parameters - title: \(String(describing: title)), notes: \(String(describing: notes)), list: \(String(describing: list))")
+                print("⚙️ BATCH EDIT DETAILED: Due date parameter: \(String(describing: localDueDate))")
+                
                 let success = await eventKitManager.updateReminder(
                     id: id,
                     title: title,

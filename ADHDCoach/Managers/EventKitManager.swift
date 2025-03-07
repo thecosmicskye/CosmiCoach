@@ -605,37 +605,51 @@ class EventKitManager: ObservableObject {
         
         print("📅 BATCH DEBUG: Found reminder with ID \(id), current title: \(reminder.title)")
         
+        // Track if we're updating anything
+        var updatingTitle = false
+        var updatingDueDate = false
+        var updatingNotes = false
+        var updatingCompletionStatus = false
+        var updatingList = false
+        
         if let title = title {
+            updatingTitle = true
             reminder.title = title
             print("📅 BATCH DEBUG: Updated reminder title to: \(title)")
         }
         
+        // Special case for due date
         if let dueDate = dueDate {
+            // An actual date was provided
+            updatingDueDate = true
             reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
             print("📅 BATCH DEBUG: Updated due date to: \(dueDate)")
-        } else if dueDate == nil && title != nil {
-            // If explicitly setting title, but dueDate is not provided
-            // Don't change the due date, let it keep its current value
-            print("📅 BATCH DEBUG: Keeping existing due date - only updating title")
-        } else if dueDate == nil {
-            // If dueDate is explicitly set to nil (either directly or due to
-            // no other parameters being updated), clear the due date
+        } else if dueDate == nil && (!updatingTitle && !updatingNotes && !updatingCompletionStatus && !updatingList) {
+            // If dueDate is explicitly set to nil AND no other fields are being updated,
+            // this is a "clear due date" operation
+            updatingDueDate = true
             reminder.dueDateComponents = nil
-            print("📅 BATCH DEBUG: Cleared due date")
+            print("📅 BATCH DEBUG: Cleared due date - no other fields being updated")
+        } else if dueDate == nil {
+            // If dueDate is nil but we're updating other fields, don't change the due date
+            print("📅 BATCH DEBUG: Keeping existing due date - only updating other fields")
         }
         
         if let notes = notes {
+            updatingNotes = true
             reminder.notes = notes
             print("📅 BATCH DEBUG: Updated notes")
         }
         
         if let isCompleted = isCompleted {
+            updatingCompletionStatus = true
             reminder.isCompleted = isCompleted
             print("📅 BATCH DEBUG: Updated completion status to: \(isCompleted)")
         }
         
         // Change the reminder list if specified
         if let listName = listName {
+            updatingList = true
             let reminderLists = fetchReminderLists()
             if let matchingList = reminderLists.first(where: { $0.title.lowercased() == listName.lowercased() }) {
                 reminder.calendar = matchingList
