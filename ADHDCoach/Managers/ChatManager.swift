@@ -1642,8 +1642,10 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 var dueDate: Date? = nil
                 
                 if let dueString = dueString {
+                    // If dueString is explicitly set to null or no due date
                     if dueString.lowercased() == "null" || dueString.lowercased() == "no due date" {
                         dueDate = nil // Explicitly setting to nil to clear the due date
+                        print("⚙️ BATCH DEBUG: Clearing due date based on explicit null value")
                     } else {
                         dueDate = parseDate(dueString)
                         if dueDate == nil {
@@ -1651,7 +1653,16 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                             failureCount += 1
                             continue
                         }
+                        print("⚙️ BATCH DEBUG: Setting new due date to: \(dueDate!)")
                     }
+                } else if title == nil && notes == nil && list == nil {
+                    // If no parameters provided except ID, this is a batch clear due date operation
+                    dueDate = nil
+                    print("⚙️ BATCH DEBUG: FORCING due date clear - no other parameters provided except ID")
+                } else {
+                    // Some parameters provided but not due date - keep existing due date
+                    print("⚙️ BATCH DEBUG: Keeping existing due date - updating other fields only")
+                    dueDate = nil
                 }
                 
                 // Create local copy to avoid capturing mutable variable in concurrent code
