@@ -98,6 +98,7 @@ class APIRequestBuilder {
     
     /**
      * Creates a context message with all user information.
+     * Always includes the current date and time, regardless of when the context was created.
      *
      * @param memoryContent The user's memory content
      * @param calendarContext The user's calendar events formatted as a string
@@ -120,9 +121,13 @@ class APIRequestBuilder {
         print("🧠 - Reminders context length: \(remindersContext.count) chars")
         print("🧠 - Location context length: \(locationContext.count) chars")
         print("🧠 - Conversation history length: \(conversationHistory.count) chars")
+        print("🧠 - Using current time: \(formatCurrentDateTime())")
+        
+        // Always use fresh timestamp
+        let currentTimeString = formatCurrentDateTime()
         
         let contextText = """
-        Current time: \(formatCurrentDateTime())
+        Current time: \(currentTimeString)
         
         USER MEMORY:
         \(memoryContent)

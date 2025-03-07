@@ -132,6 +132,7 @@ class ChatAPIService {
         }
         
         // Create message components using the APIRequestBuilder
+        // Always generate a fresh context message with current time
         let contextMessage = APIRequestBuilder.createContextMessage(
             memoryContent: lastMemoryContent,
             calendarContext: lastCalendarContext,
@@ -143,13 +144,22 @@ class ChatAPIService {
         let assistantGreeting = APIRequestBuilder.createAssistantGreeting()
         let userMessageObj = APIRequestBuilder.createUserMessage(text: userMessage)
         
-        // If this is a new conversation, initialize the complete conversation history
+        // Always use a fresh context message with the current time
         if completeConversationHistory.isEmpty {
+            // First conversation: add context + greeting + user message
             completeConversationHistory.append(contextMessage)
             completeConversationHistory.append(assistantGreeting)
             completeConversationHistory.append(userMessageObj)
         } else {
-            // If we're continuing a conversation, just add the new user message
+            // For continued conversations, replace the first context message with fresh context
+            if completeConversationHistory.count > 0 && 
+               (completeConversationHistory[0]["role"] as? String) == "user" {
+                // Replace the first message (which should be the context)
+                completeConversationHistory[0] = contextMessage
+            } else {
+                // If for some reason we don't have a context message first, insert one
+                completeConversationHistory.insert(contextMessage, at: 0)
+            }
             completeConversationHistory.append(userMessageObj)
         }
         
@@ -764,6 +774,30 @@ class ChatAPIService {
      */
     
     
+    /**
+     * Refreshes all context data from the source before a request.
+     * 
+     * This method should be called by the ChatManager to update the API service
+     * with the latest data before making a request.
+     *
+     * @param memoryContent The updated memory content
+     * @param calendarContext The updated calendar events
+     * @param remindersContext The updated reminders
+     * @param locationContext The updated location information
+     */
+    func refreshAllContextData(
+        memoryContent: String,
+        calendarContext: String,
+        remindersContext: String,
+        locationContext: String
+    ) async {
+        await updateMemoryContext(memoryContent)
+        await updateCalendarContext(calendarContext)
+        await updateRemindersContext(remindersContext)
+        await updateLocationContext(locationContext)
+        print("💡 All context data refreshed with latest information")
+    }
+    
     private func sendFollowUpRequestWithToolResults(
         toolDefinitions: [[String: Any]],
         updateStreamingMessage: @escaping (String) -> String,
@@ -779,9 +813,8 @@ class ChatAPIService {
         }
         
         // Always ensure the context is up to date before any follow-up request
-        // This fixes the issue where Claude has outdated memory state in follow-ups
         if !completeConversationHistory.isEmpty {
-            // Get the updated context message
+            // Get a fresh updated context message with current time
             let updatedContextMessage = APIRequestBuilder.createContextMessage(
                 memoryContent: lastMemoryContent,
                 calendarContext: lastCalendarContext,
@@ -790,10 +823,13 @@ class ChatAPIService {
                 conversationHistory: lastConversationHistory
             )
             
-            // Replace the first message (context) with updated content
+            // Always replace the first message with a fresh context
             if completeConversationHistory[0]["role"] as? String == "user" {
+                // Replace the first message (which should be the context)
                 completeConversationHistory[0] = updatedContextMessage
-                print("💡 Updated context message with latest memory/data state in follow-up")
+            } else {
+                // If for some reason we don't have a context message first, insert one
+                completeConversationHistory.insert(updatedContextMessage, at: 0)
             }
         }
         
@@ -1402,10 +1438,9 @@ class ChatAPIService {
         // Always fetch the latest context data before creating the context message
         print("💡 Getting latest context data for continuation message")
         
-        // Recreate the context message with the latest data
+        // Recreate the context message with the latest data and fresh time
         if !completeConversationHistory.isEmpty {
-            // Ensure we have the most up-to-date context
-            // This fixes issues where Claude might not see the latest state changes
+            // Always get a fresh context with current time
             let updatedContextMessage = APIRequestBuilder.createContextMessage(
                 memoryContent: lastMemoryContent,
                 calendarContext: lastCalendarContext,
@@ -1414,10 +1449,12 @@ class ChatAPIService {
                 conversationHistory: lastConversationHistory
             )
             
-            // Replace the first message (context) with updated content
+            // Replace the first message with fresh context
             if completeConversationHistory[0]["role"] as? String == "user" {
                 completeConversationHistory[0] = updatedContextMessage
-                print("💡 Updated context message with latest state in continuation message")
+            } else {
+                // If for some reason we don't have a context message first, insert one
+                completeConversationHistory.insert(updatedContextMessage, at: 0)
             }
         }
         

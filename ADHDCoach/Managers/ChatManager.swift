@@ -478,6 +478,11 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             isProcessing = true
         }
         
+        // First, ensure we have the latest data from external sources
+        // This fixes the issue where external changes aren't reflected in Claude's context
+        await refreshContextData()
+        print("🕒 Pre-loaded fresh context data before sending message to Claude")
+        
         // Prepare context for Claude
         var memoryContent = "No memory available."
         if let manager = memoryManager {
@@ -681,6 +686,11 @@ class ChatManager: ObservableObject, @unchecked Sendable {
     // MARK: - Second API method
     private func sendAutomaticMessage(isAfterHistoryDeletion: Bool = false) async {
         print("⏱️ SENDING AUTOMATIC MESSAGE - \(isAfterHistoryDeletion ? "After history deletion" : "After app open")")
+        
+        // First, ensure we have the latest data from external sources
+        // This fixes the issue where external changes aren't reflected in Claude's context
+        await refreshContextData()
+        print("🕒 Pre-loaded fresh context data before sending automatic message")
         
         // Get context data
         let calendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
@@ -2433,11 +2443,21 @@ class ChatManager: ObservableObject, @unchecked Sendable {
      * This should be called after any calendar events, reminders, or memories change
      * to ensure the API has access to the latest context information
      */
+    /**
+     * Updates the API service with the latest context data
+     * This should be called after any calendar events, reminders, or memories change
+     * to ensure the API has access to the latest context information
+     * 
+     * IMPORTANT: This method is now called before each API request to ensure
+     * the date/time and all context data is always up-to-date.
+     */
     func refreshContextData() async {
-        print("🔄 Refreshing context data after changes")
+        print("🔄 Refreshing context data for up-to-date information")
+        print("🕒 Current time: \(DateFormatter.formatCurrentDateTimeWithTimezone())")
         
         // Refresh memory content
         if let manager = memoryManager {
+            // Force a fresh read from the memory manager
             let memoryContent = await manager.readMemory()
             
             // Print some sample memories for debugging
@@ -2451,23 +2471,24 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 print("🔄 No memories available")
             }
             
+            // Update memory context in API service
             await apiService.updateMemoryContext(memoryContent)
             print("🔄 Memory context refreshed with \(memories.count) total items")
         }
         
-        // Refresh calendar events
+        // Force a fresh fetch of calendar events
         let calendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
         let calendarContext = formatCalendarEvents(calendarEvents)
         await apiService.updateCalendarContext(calendarContext)
         print("🔄 Calendar context refreshed with \(calendarEvents.count) events")
         
-        // Refresh reminders
+        // Force a fresh fetch of reminders
         let reminders = await eventKitManager?.fetchReminders() ?? []
         let remindersContext = formatReminders(reminders)
         await apiService.updateRemindersContext(remindersContext)
         print("🔄 Reminders context refreshed with \(reminders.count) reminders")
         
-        // Refresh location if needed
+        // Get fresh location data if needed
         let locationContext = await getLocationContext()
         await apiService.updateLocationContext(locationContext)
         print("🔄 Location context refreshed")

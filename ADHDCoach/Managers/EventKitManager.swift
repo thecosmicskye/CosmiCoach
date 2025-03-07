@@ -131,14 +131,26 @@ class EventKitManager: ObservableObject {
     
     // MARK: - Calendar Methods
     
+    /**
+     * Fetches all upcoming calendar events within the specified number of days.
+     *
+     * @param days Number of days to look ahead for events
+     * @return Array of calendar events
+     */
     func fetchUpcomingEvents(days: Int) -> [CalendarEvent] {
         guard calendarAccessGranted else { return [] }
         
+        // Reset the event store cache to ensure we get fresh data
+        eventStore.reset()
+        
+        // Get fresh calendars
         let calendars = eventStore.calendars(for: .event)
         
+        // Always use a fresh Date() for current time
         let startDate = Date()
         let endDate = Calendar.current.date(byAdding: .day, value: days, to: startDate)!
         
+        // Create a predicate and fetch events
         let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
         let events = eventStore.events(matching: predicate)
         
@@ -409,15 +421,25 @@ class EventKitManager: ObservableObject {
         return eventStore.calendars(for: .reminder)
     }
     
+    /**
+     * Fetches all reminders asynchronously.
+     *
+     * @return Array of reminder items
+     */
     func fetchReminders() async -> [ReminderItem] {
         guard reminderAccessGranted else { return [] }
         
+        // Reset the event store cache to ensure we get fresh data
+        eventStore.reset()
+        
+        // Get fresh calendars after reset
         let calendars = eventStore.calendars(for: .reminder)
         
         // Create a predicate for reminders (both completed and incomplete)
         let predicate = eventStore.predicateForReminders(in: calendars)
         
         return await withCheckedContinuation { continuation in
+            // Fetch reminders with the fresh predicate
             eventStore.fetchReminders(matching: predicate) { ekReminders in
                 if let ekReminders = ekReminders {
                     let reminders = ekReminders.map { ReminderItem(from: $0) }
@@ -429,7 +451,11 @@ class EventKitManager: ObservableObject {
         }
     }
     
-    // For backward compatibility with synchronous code
+    /**
+     * Synchronous version of fetchReminders.
+     *
+     * @return Array of reminder items
+     */
     func fetchReminders() -> [ReminderItem] {
         var result: [ReminderItem] = []
         let semaphore = DispatchSemaphore(value: 0)
