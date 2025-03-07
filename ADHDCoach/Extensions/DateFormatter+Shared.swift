@@ -52,10 +52,14 @@ extension DateFormatter {
     
     /**
      * Formats the current date and time with timezone information.
+     * Always creates a new Date() instance to ensure the time is current.
      *
      * @return A formatted string representing the current date and time with timezone
      */
     static func formatCurrentDateTimeWithTimezone() -> String {
-        return "\(fullDateTime.string(from: Date())) (\(TimeZone.current.identifier))"
+        let currentDate = Date()
+        let formattedDate = fullDateTime.string(from: currentDate)
+        let timezone = TimeZone.current.identifier
+        return "\(formattedDate) (\(timezone))"
     }
 }
