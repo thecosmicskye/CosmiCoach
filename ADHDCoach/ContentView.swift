@@ -131,12 +131,18 @@ struct ContentView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingSettings) {
+            .sheet(isPresented: $showingSettings, onDismiss: {
+                // No action needed on dismiss
+            }) {
                 SettingsView()
                     .environmentObject(themeManager)
                     .environmentObject(memoryManager)
                     .environmentObject(locationManager)
                     .environmentObject(chatManager)
+                    .onAppear {
+                        // Force end editing for any active text field
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
             }
             .applyThemeColor()
             .onAppear {
