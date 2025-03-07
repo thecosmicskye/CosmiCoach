@@ -613,7 +613,7 @@ class EventKitManager: ObservableObject {
         if let dueDate = dueDate {
             reminder.dueDateComponents = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: dueDate)
             print("📅 BATCH DEBUG: Updated due date to: \(dueDate)")
-        } else if dueDate == nil && title != nil {
+        } else if dueDate == nil {
             // If dueDate is explicitly set to nil (not just omitted), clear the due date
             reminder.dueDateComponents = nil
             print("📅 BATCH DEBUG: Cleared due date")
