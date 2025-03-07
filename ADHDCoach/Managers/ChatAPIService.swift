@@ -34,8 +34,31 @@ class ChatAPIService {
     /// The URL endpoint for Claude's streaming API
     private let streamingURL = URL(string: "https://api.anthropic.com/v1/messages")!
     
-    /// Cache performance tracking metrics
-    private var cacheMetrics = CachePerformanceMetrics(cacheCreationTokens: 0, cacheReadTokens: 0, inputTokens: 0)
+    /// Structure to track cache performance metrics for each API request
+    private struct CachePerformanceMetrics {
+        var cacheCreationTokens: Int = 0
+        var cacheReadTokens: Int = 0
+        var inputTokens: Int = 0
+        
+        /// Total tokens processed (input + creation + read)
+        var totalTokens: Int {
+            return inputTokens + cacheCreationTokens + cacheReadTokens
+        }
+        
+        /// Whether there was a cache hit in this request
+        var hasCacheHit: Bool {
+            return cacheReadTokens > 0
+        }
+        
+        /// Percentage of tokens that were read from cache
+        var cacheSavingsPercent: Double {
+            guard totalTokens > 0 else { return 0.0 }
+            return Double(cacheReadTokens) / Double(totalTokens) * 100.0
+        }
+    }
+    
+    /// Cache performance tracking metrics for the current request
+    private var cacheMetrics = CachePerformanceMetrics()
     
     /// System prompt that defines Claude's role
     private(set) var systemPrompt = """
@@ -380,15 +403,36 @@ class ChatAPIService {
                             print("🧠 Input tokens: \(cacheMetrics.inputTokens)")
                         }
                         
+                        // Calculate potential tokens without caching
+                        let potentialTokensWithoutCache = cacheMetrics.inputTokens + cacheMetrics.cacheReadTokens
+                        
+                        // Calculate cache effectiveness (percentage of potential input tokens that were cached)
+                        let cacheEffectiveness = potentialTokensWithoutCache > 0 ? 
+                            Double(cacheMetrics.cacheReadTokens) / Double(potentialTokensWithoutCache) * 100.0 : 0.0
+                        
+                        // Calculate additional metrics
+                        let costWithoutCaching = Double(potentialTokensWithoutCache) * 0.003 / 1000.0 // $3/MTok
+                        let costWithCaching = (Double(cacheMetrics.inputTokens) * 0.003 / 1000.0) + 
+                                              (Double(cacheMetrics.cacheCreationTokens) * 0.00375 / 1000.0) + 
+                                              (Double(cacheMetrics.cacheReadTokens) * 0.0003 / 1000.0)
+                        let savings = costWithoutCaching - costWithCaching
+                        let percentSavings = costWithoutCaching > 0 ? 
+                            (costWithoutCaching - costWithCaching) / costWithoutCaching * 100.0 : 0.0
+                        
                         // Log cache performance summary
                         print("🧠 CACHE PERFORMANCE SUMMARY:")
                         print("🧠 - Cache creation tokens: \(cacheMetrics.cacheCreationTokens)")
                         print("🧠 - Cache read tokens: \(cacheMetrics.cacheReadTokens)")
                         print("🧠 - Regular input tokens: \(cacheMetrics.inputTokens)")
                         print("🧠 - Total tokens processed: \(cacheMetrics.totalTokens)")
+                        print("🧠 - Potential tokens without cache: \(potentialTokensWithoutCache)")
                         
                         if cacheMetrics.hasCacheHit {
-                            print("🧠 - Cache hit detected! Approximately \(String(format: "%.1f", cacheMetrics.cacheSavingsPercent))% of tokens were read from cache")
+                            print("🧠 - ✅ Cache hit detected!")
+                            print("🧠 - Cache effectiveness: \(String(format: "%.1f", cacheEffectiveness))%")
+                            print("🧠 - Cost savings: $\(String(format: "%.4f", savings)) (\(String(format: "%.1f", percentSavings))%)")
+                        } else {
+                            print("🧠 - ❌ No cache hits in this request")
                         }
                         
                         // Record metrics in the performance tracker
@@ -1100,15 +1144,36 @@ class ChatAPIService {
                             print("🧠 FOLLOW-UP Input tokens: \(cacheMetrics.inputTokens)")
                         }
                         
+                        // Calculate potential tokens without caching
+                        let potentialTokensWithoutCache = cacheMetrics.inputTokens + cacheMetrics.cacheReadTokens
+                        
+                        // Calculate cache effectiveness (percentage of potential input tokens that were cached)
+                        let cacheEffectiveness = potentialTokensWithoutCache > 0 ? 
+                            Double(cacheMetrics.cacheReadTokens) / Double(potentialTokensWithoutCache) * 100.0 : 0.0
+                        
+                        // Calculate additional metrics
+                        let costWithoutCaching = Double(potentialTokensWithoutCache) * 0.003 / 1000.0 // $3/MTok
+                        let costWithCaching = (Double(cacheMetrics.inputTokens) * 0.003 / 1000.0) + 
+                                              (Double(cacheMetrics.cacheCreationTokens) * 0.00375 / 1000.0) + 
+                                              (Double(cacheMetrics.cacheReadTokens) * 0.0003 / 1000.0)
+                        let savings = costWithoutCaching - costWithCaching
+                        let percentSavings = costWithoutCaching > 0 ? 
+                            (costWithoutCaching - costWithCaching) / costWithoutCaching * 100.0 : 0.0
+                        
                         // Log cache performance summary
                         print("🧠 FOLLOW-UP CACHE PERFORMANCE SUMMARY:")
                         print("🧠 - Cache creation tokens: \(cacheMetrics.cacheCreationTokens)")
                         print("🧠 - Cache read tokens: \(cacheMetrics.cacheReadTokens)")
                         print("🧠 - Regular input tokens: \(cacheMetrics.inputTokens)")
                         print("🧠 - Total tokens processed: \(cacheMetrics.totalTokens)")
+                        print("🧠 - Potential tokens without cache: \(potentialTokensWithoutCache)")
                         
                         if cacheMetrics.hasCacheHit {
-                            print("🧠 - Cache hit detected! Approximately \(String(format: "%.1f", cacheMetrics.cacheSavingsPercent))% of tokens were read from cache")
+                            print("🧠 - ✅ Cache hit detected!")
+                            print("🧠 - Cache effectiveness: \(String(format: "%.1f", cacheEffectiveness))%")
+                            print("🧠 - Cost savings: $\(String(format: "%.4f", savings)) (\(String(format: "%.1f", percentSavings))%)")
+                        } else {
+                            print("🧠 - ❌ No cache hits in this follow-up request")
                         }
                         
                         // Record metrics in the performance tracker

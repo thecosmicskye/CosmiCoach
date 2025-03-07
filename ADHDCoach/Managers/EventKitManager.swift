@@ -8,8 +8,36 @@ class EventKitManager: ObservableObject {
     @Published var calendarAccessGranted = false
     @Published var reminderAccessGranted = false
     
+    // Variables to track when data actually changes using hash-based detection
+    private var lastCalendarEventsHash: Int = 0
+    private var lastRemindersHash: Int = 0
+    
+    // Notification center observer for EKEntityChange notifications
+    private var notificationObserver: NSObjectProtocol?
+    
     init() {
         checkPermissions()
+        setupNotificationObservers()
+    }
+    
+    deinit {
+        // Remove notification observer
+        if let observer = notificationObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+    
+    private func setupNotificationObservers() {
+        // Listen for EventKit change notifications
+        notificationObserver = NotificationCenter.default.addObserver(
+            forName: NSNotification.Name.EKEventStoreChanged,
+            object: nil,
+            queue: .main) { [weak self] _ in
+                print("📅 EventKitManager: Received EKEventStore change notification")
+                // Force reset of the store on next fetch to get latest data
+                // Hash comparison will automatically detect changes
+                self?.eventStore.reset()
+        }
     }
     
     // MARK: - Permissions
@@ -133,6 +161,7 @@ class EventKitManager: ObservableObject {
     
     /**
      * Fetches all upcoming calendar events within the specified number of days.
+     * Uses a hash-based approach to detect changes and avoid unnecessary resets.
      *
      * @param days Number of days to look ahead for events
      * @return Array of calendar events
@@ -140,10 +169,10 @@ class EventKitManager: ObservableObject {
     func fetchUpcomingEvents(days: Int) -> [CalendarEvent] {
         guard calendarAccessGranted else { return [] }
         
-        // Reset the event store cache to ensure we get fresh data
-        eventStore.reset()
+        // No need to reset the store here - it's reset by the notification observer when changes occur
+        // We'll compare hashes to detect changes in the fetched data
         
-        // Get fresh calendars
+        // Get calendars
         let calendars = eventStore.calendars(for: .event)
         
         // Always use a fresh Date() for current time
@@ -154,7 +183,37 @@ class EventKitManager: ObservableObject {
         let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
         let events = eventStore.events(matching: predicate)
         
-        return events.map { CalendarEvent(from: $0) }
+        // Calculate a hash from the events to detect changes
+        let calendarEvents = events.map { CalendarEvent(from: $0) }
+        let newHash = calculateEventsHash(calendarEvents)
+        
+        // If hash is different, data has changed
+        if lastCalendarEventsHash != newHash {
+            print("📅 EventKitManager: Calendar events have changed (hash: \(lastCalendarEventsHash) -> \(newHash))")
+            lastCalendarEventsHash = newHash
+        } else {
+            print("📅 EventKitManager: Calendar events unchanged since last fetch")
+        }
+        
+        return calendarEvents
+    }
+    
+    /**
+     * Calculates a hash value for an array of calendar events
+     * This is used to detect when the data has actually changed.
+     */
+    private func calculateEventsHash<T: Identifiable>(_ events: [T]) -> Int {
+        var hasher = Hasher()
+        
+        // Include count in hash to detect additions/removals
+        hasher.combine(events.count)
+        
+        // Hash each event ID to detect changes in specific events
+        for event in events {
+            hasher.combine(event.id)
+        }
+        
+        return hasher.finalize()
     }
     
     func addCalendarEvent(title: String, startDate: Date, endDate: Date, notes: String? = nil, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
@@ -188,6 +247,8 @@ class EventKitManager: ObservableObject {
                 try self.eventStore.save(event, span: .thisEvent)
                 print("📅 EventKitManager: Successfully added calendar event - \(title)")
                 success = true
+                
+                // Hash will be recalculated on next fetch and changes detected automatically
                 
                 // Update status message to success
                 await updateOperationStatusMessage(
@@ -274,6 +335,8 @@ class EventKitManager: ObservableObject {
             do {
                 try self.eventStore.save(event, span: .thisEvent)
                 success = true
+                
+                // Hash will be recalculated on next fetch and changes detected automatically
                 
                 // Update status message to success only if messageId and chatManager are provided
                 if messageId != nil && chatManager != nil && statusMessageId != nil {
@@ -386,6 +449,8 @@ class EventKitManager: ObservableObject {
                 try self.eventStore.remove(event!, span: .thisEvent)
                 success = true
                 
+                // Hash will be recalculated on next fetch and changes detected automatically
+                
                 // Update status message to success
                 await updateOperationStatusMessage(
                     messageId: messageId,
@@ -423,23 +488,24 @@ class EventKitManager: ObservableObject {
     
     /**
      * Fetches all reminders asynchronously.
+     * Uses a hash-based approach to detect changes and avoid unnecessary resets.
      *
      * @return Array of reminder items
      */
     func fetchReminders() async -> [ReminderItem] {
         guard reminderAccessGranted else { return [] }
         
-        // Reset the event store cache to ensure we get fresh data
-        eventStore.reset()
+        // No need to reset the store here - it's reset by the notification observer when changes occur
+        // We'll compare hashes to detect changes in the fetched data
         
-        // Get fresh calendars after reset
+        // Get calendars
         let calendars = eventStore.calendars(for: .reminder)
         
         // Create a predicate for reminders (both completed and incomplete)
         let predicate = eventStore.predicateForReminders(in: calendars)
         
-        return await withCheckedContinuation { continuation in
-            // Fetch reminders with the fresh predicate
+        let reminders = await withCheckedContinuation { continuation in
+            // Fetch reminders with the predicate
             eventStore.fetchReminders(matching: predicate) { ekReminders in
                 if let ekReminders = ekReminders {
                     let reminders = ekReminders.map { ReminderItem(from: $0) }
@@ -449,10 +515,49 @@ class EventKitManager: ObservableObject {
                 }
             }
         }
+        
+        // Calculate a hash from the reminders to detect changes
+        let newHash = calculateRemindersHash(reminders)
+        
+        // If hash is different, data has changed
+        if lastRemindersHash != newHash {
+            print("📅 EventKitManager: Reminders have changed (hash: \(lastRemindersHash) -> \(newHash))")
+            lastRemindersHash = newHash
+        } else {
+            print("📅 EventKitManager: Reminders unchanged since last fetch")
+        }
+        
+        return reminders
+    }
+    
+    /**
+     * Calculates a hash value for an array of reminders.
+     * This is specifically tailored for ReminderItem objects.
+     */
+    private func calculateRemindersHash(_ reminders: [ReminderItem]) -> Int {
+        var hasher = Hasher()
+        
+        // Include count in hash to detect additions/removals
+        hasher.combine(reminders.count)
+        
+        // Hash each reminder's core properties to detect changes
+        for reminder in reminders {
+            hasher.combine(reminder.id)
+            hasher.combine(reminder.isCompleted)
+            if let dueDate = reminder.dueDate {
+                // Round to nearest minute to avoid insignificant timestamp differences
+                let timeInterval = dueDate.timeIntervalSince1970
+                let roundedInterval = round(timeInterval / 60) * 60
+                hasher.combine(roundedInterval)
+            }
+        }
+        
+        return hasher.finalize()
     }
     
     /**
      * Synchronous version of fetchReminders.
+     * Delegates to the async version to use the same hash-based change detection.
      *
      * @return Array of reminder items
      */
@@ -461,6 +566,7 @@ class EventKitManager: ObservableObject {
         let semaphore = DispatchSemaphore(value: 0)
         
         Task {
+            // Use the async version that includes hash-based change detection
             let reminders = await fetchReminders()
             result = reminders
             semaphore.signal()
@@ -579,6 +685,9 @@ class EventKitManager: ObservableObject {
         do {
             try eventStore.save(reminder, commit: true)
             print("📅 EventKitManager: Successfully added reminder - \(title) with ID: \(reminder.calendarItemIdentifier)")
+            
+            // Hash will be recalculated on next fetch and changes detected automatically
+            
             return true
         } catch {
             print("📅 EventKitManager: Failed to save reminder: \(error.localizedDescription)")
@@ -690,6 +799,9 @@ class EventKitManager: ObservableObject {
             try eventStore.save(reminder, commit: true)
             print("📅 EventKitManager: Successfully updated reminder with ID - \(id)")
             print("📅 BATCH DEBUG: SUCCESS - Updated reminder with ID \(id)")
+            
+            // Hash will be recalculated on next fetch and changes detected automatically
+            
             return true
         } catch let error {
             print("📅 EventKitManager: Failed to update reminder: \(error.localizedDescription)")
@@ -754,6 +866,9 @@ class EventKitManager: ObservableObject {
         do {
             try eventStore.remove(reminder, commit: true)
             print("📅 EventKitManager: Successfully deleted reminder with ID - \(id)")
+            
+            // Hash will be recalculated on next fetch and changes detected automatically
+            
             return true
         } catch {
             print("📅 EventKitManager: Failed to delete reminder: \(error.localizedDescription)")

@@ -12,14 +12,23 @@ class APIRequestBuilder {
     static let model = "claude-3-7-sonnet-20250219"
     static let maxTokens = 4000
     
+    // MARK: - Cache Tracking
+    
+    // Track content hashes to determine when content has changed
+    private static var lastMemoryHash: Int = 0
+    private static var lastCalRemHash: Int = 0
+    private static var lastHistoryHash: Int = 0
+    
     // MARK: - Request Building
     
     /**
-     * Builds a request body with prompt caching enabled.
+     * Builds a request body with smart prompt caching enabled.
      *
-     * This method creates a request body with cache_control parameters
-     * to enable prompt caching for system prompt and tool definitions.
-     * It follows Anthropic's documentation for proper cache_control placement.
+     * This method creates a request body with cache_control parameters using
+     * a hybrid approach that:
+     * 1. Caches static content (system prompt, tool definitions)
+     * 2. Uses a multi-part message approach for context to allow caching of stable data
+     * 3. Uses content-aware hashing to determine when to invalidate cache
      *
      * @param systemPrompt The system prompt to include in the request
      * @param toolDefinitions Array of tool definitions that Claude can use
@@ -31,38 +40,156 @@ class APIRequestBuilder {
         toolDefinitions: [[String: Any]],
         messages: [[String: Any]]
     ) -> [String: Any] {
-        // Add cache control to tool definitions
+        // Add cache control to tool definitions - these rarely change
         var cachedToolDefinitions = toolDefinitions
         if !cachedToolDefinitions.isEmpty {
             // Add cache_control to the last tool definition
             var lastTool = cachedToolDefinitions[cachedToolDefinitions.count - 1]
             lastTool["cache_control"] = ["type": "ephemeral"]
             cachedToolDefinitions[cachedToolDefinitions.count - 1] = lastTool
+            print("🧠 Added ephemeral cache to tool definitions")
         }
         
-        // Add cache control to context message if it exists and is the first message
+        // Smart caching for context message
         var cachedMessages = messages
         if !cachedMessages.isEmpty {
             // Check if the first message is a context message from the user
             if var firstMessage = cachedMessages.first,
                let role = firstMessage["role"] as? String, role == "user",
                var content = firstMessage["content"] as? [[String: Any]],
-               !content.isEmpty {
+               !content.isEmpty,
+               let text = content[0]["text"] as? String {
                 
-                // Add cache_control to the last content block of the first message
-                if var lastContentBlock = content.last {
-                    lastContentBlock["cache_control"] = ["type": "ephemeral"]
-                    content[content.count - 1] = lastContentBlock
-                    firstMessage["content"] = content
-                    cachedMessages[0] = firstMessage
+                // Split the message into multiple parts to enable partial caching
+                let lines = text.components(separatedBy: "\n\n")
+                var newContent: [[String: Any]] = []
+                
+                // Extract the different context sections
+                var currentTimeSection = ""
+                var userMemorySection = ""
+                var calendarSection = ""
+                var remindersSection = ""
+                var locationSection = ""
+                var historySection = ""
+                
+                var currentSection = ""
+                for line in lines {
+                    if line.starts(with: "Current time:") {
+                        currentTimeSection = line
+                    } else if line.starts(with: "USER MEMORY:") {
+                        currentSection = "memory"
+                        userMemorySection = line
+                    } else if line.starts(with: "CALENDAR EVENTS:") {
+                        currentSection = "calendar"
+                        calendarSection = line
+                    } else if line.starts(with: "REMINDERS:") {
+                        currentSection = "reminders"
+                        remindersSection = line
+                    } else if line.contains("LOCATION:") || line.contains("Current location:") {
+                        currentSection = "location"
+                        locationSection = line
+                    } else if line.starts(with: "CONVERSATION HISTORY:") {
+                        currentSection = "history"
+                        historySection = line
+                    } else if !line.isEmpty {
+                        // Append to the current section
+                        switch currentSection {
+                        case "memory":
+                            userMemorySection += "\n" + line
+                        case "calendar":
+                            calendarSection += "\n" + line
+                        case "reminders":
+                            remindersSection += "\n" + line
+                        case "location":
+                            locationSection += "\n" + line
+                        case "history":
+                            historySection += "\n" + line
+                        default:
+                            break
+                        }
+                    }
+                }
+                
+                // 1. Add the time (never cached, always fresh)
+                newContent.append(["type": "text", "text": currentTimeSection])
+                
+                // We can use up to 4 cache_control blocks total (including tool definitions)
+                // Since we already use 1 for tools, we have 3 left for context
+                // Priority: Memory, Calendar+Reminders combined, History
+                
+                // We need to compare with the current hashes
+                
+                // 2. Add user memory (rarely changes, can be cached)
+                if !userMemorySection.isEmpty {
+                    // Generate a hash from the content to detect changes
+                    let currentMemoryHash = userMemorySection.hashValue
                     
-                    print("🧠 Added cache_control to context message")
+                    var memoryBlock: [String: Any] = ["type": "text", "text": userMemorySection]
+                    
+                    // Check if memory content is the same as last time
+                    if currentMemoryHash == APIRequestBuilder.lastMemoryHash {
+                        memoryBlock["cache_control"] = ["type": "ephemeral"]
+                        print("🧠 Added cache_control to memory section (unchanged)")
+                    } else {
+                        // Update the hash for next time
+                        APIRequestBuilder.lastMemoryHash = currentMemoryHash
+                        print("🧠 Memory content changed, not using cache this time")
+                    }
+                    
+                    newContent.append(memoryBlock)
+                }
+                
+                // 3. Add calendar events and reminders (combine to save cache blocks)
+                let combinedDataSection = """
+                \(calendarSection)
+                
+                \(remindersSection)
+                """
+                
+                if !combinedDataSection.isEmpty {
+                    // Generate a hash from the content to detect changes
+                    let currentDataHash = combinedDataSection.hashValue
+                    
+                    var dataBlock: [String: Any] = ["type": "text", "text": combinedDataSection]
+                    
+                    // Check if calendar+reminders content is the same as last time
+                    if currentDataHash == APIRequestBuilder.lastCalRemHash {
+                        dataBlock["cache_control"] = ["type": "ephemeral"]
+                        print("🧠 Added cache_control to calendar/reminders section (unchanged)")
+                    } else {
+                        // Update the hash for next time
+                        APIRequestBuilder.lastCalRemHash = currentDataHash
+                        print("🧠 Calendar/reminders content changed, not using cache this time")
+                    }
+                    
+                    newContent.append(dataBlock)
+                }
+                
+                // 4. Add location (changes frequently, don't cache)
+                if !locationSection.isEmpty {
+                    newContent.append(["type": "text", "text": locationSection])
+                }
+                
+                // 5. Add conversation history (grows with each message, consider partial caching)
+                if !historySection.isEmpty {
+                    // For conversation history, don't try to cache the whole thing since
+                    // it will almost always change. Instead, we'll just add it as-is.
+                    newContent.append(["type": "text", "text": historySection])
+                    print("🧠 Skipping cache for conversation history (changes frequently)")
+                }
+                
+                // Replace the original content with the multi-part content
+                if !newContent.isEmpty {
+                    firstMessage["content"] = newContent
+                    cachedMessages[0] = firstMessage
+                    print("🧠 Split context message into \(newContent.count) parts with smart caching")
                 }
             }
         }
         
-        // Create the request body with caching enabled
-        // Note: system should be a string, not an array of objects
+        // Create the request body with enhanced caching
+        // Note: In Claude's API, the system field is a string, not an array of objects
+        // We can't apply cache_control directly to the system prompt with this format
         return [
             "model": model,
             "max_tokens": maxTokens,
@@ -99,13 +226,15 @@ class APIRequestBuilder {
     /**
      * Creates a context message with all user information.
      * Always includes the current date and time, regardless of when the context was created.
+     * Maintains backward compatibility with the original single-block approach,
+     * as the caching optimization handles the splitting internally.
      *
      * @param memoryContent The user's memory content
      * @param calendarContext The user's calendar events formatted as a string
      * @param remindersContext The user's reminders formatted as a string
      * @param locationContext The user's location information (if available)
      * @param conversationHistory Recent conversation history formatted as a string
-     * @return A dictionary representing the context message
+     * @return A dictionary representing the context message with all information
      */
     static func createContextMessage(
         memoryContent: String,
@@ -126,6 +255,9 @@ class APIRequestBuilder {
         // Always use fresh timestamp
         let currentTimeString = formatCurrentDateTime()
         
+        // Format the context as a single block of text with clear section separators
+        // This keeps the same format while allowing the buildRequestBodyWithCaching method
+        // to split it into multiple content blocks for efficient caching
         let contextText = """
         Current time: \(currentTimeString)
         
@@ -154,6 +286,8 @@ class APIRequestBuilder {
         
         print("🧠 Total context text length: \(contextText.count) chars")
         
+        // Return as a single content block; the buildRequestBodyWithCaching method
+        // will split it into multiple blocks with appropriate cache_control settings
         return ["role": "user", "content": [
             ["type": "text", "text": contextText]
         ]]
