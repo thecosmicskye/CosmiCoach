@@ -805,7 +805,7 @@ class KeyboardAccessoryController: UIViewController {
     private var lastAppliedHeight: CGFloat = 90.0
     
     // Debug mode for transitions
-    private let debugStateTransitions = true
+    private let debugStateTransitions = false
     
     override func viewDidLoad() {
         super.viewDidLoad()
