@@ -9,7 +9,6 @@ struct ContentView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var locationManager: LocationManager
     @Environment(\.colorScheme) private var colorScheme
-    @FocusState private var isInputFocused: Bool
     @State private var showingSettings = false
     @State private var scrollToBottom = false
     @AppStorage("hasAppearedBefore") private var hasAppearedBefore = false
@@ -78,24 +77,21 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         // Dismiss keyboard when tapping on the scroll view area
-                        if isInputFocused {
-                            isInputFocused = false
-                        }
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                     }
                 
                                     // Using our keyboard-attached input
                     KeyboardInputAccessory(
                         text: .constant(""),
                         onSend: sendMessage,
-                        textFieldFocused: $isInputFocused,
                         colorScheme: colorScheme,
                         themeColor: themeManager.accentColor(for: colorScheme),
                         isDisabled: chatManager.isProcessing
                     )
                     .frame(height: 0) // No visible height - it's part of the keyboard now
                     .onTapGesture {
-                        // Ensure the text field gets activated when we tap the SwiftUI component
-                        isInputFocused = true
+                        // Activate the text field
+                        KeyboardAccessoryController.sharedInstance?.activateTextField()
                     }
                 }
             }
@@ -222,7 +218,7 @@ struct ContentView: View {
               !text.isEmpty else { return }
         
         // Dismiss keyboard after sending - height update will be handled by keyboard notifications
-        isInputFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         
         // Add user message to chat
         chatManager.addUserMessage(content: text)
@@ -598,7 +594,6 @@ struct ScrollDetector: UIViewRepresentable {
 struct KeyboardInputAccessory: UIViewControllerRepresentable {
     @Binding var text: String
     var onSend: () -> Void
-    var textFieldFocused: FocusState<Bool>.Binding
     var colorScheme: ColorScheme
     var themeColor: Color
     var isDisabled: Bool
@@ -610,13 +605,6 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         controller.isDarkMode = colorScheme == .dark
         controller.isDisabled = isDisabled
         controller.textFieldText = text
-        
-        // Set initial keyboard state
-        if textFieldFocused.wrappedValue {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                controller.activateTextField()
-            }
-        }
         
         return controller
     }
@@ -633,23 +621,14 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         uiViewController.isDarkMode = colorScheme == .dark
         uiViewController.isDisabled = isDisabled
         
-        // Update container based on focus state if needed
-        let shouldBeFocused = textFieldFocused.wrappedValue
-        if shouldBeFocused != uiViewController.textField.isFirstResponder {
-            // Only update container if there's an actual change in state
-            uiViewController.updateContainerHeight(forKeyboardHidden: !shouldBeFocused)
-        }
+        // Update container height based on keyboard state
+        uiViewController.updateContainerHeight(forKeyboardHidden: !uiViewController.textField.isFirstResponder)
         
         // Update appearance when theme, color scheme, or keyboard state changes
         if context.coordinator.parent.themeColor != themeColor || 
            context.coordinator.parent.colorScheme != colorScheme ||
            context.coordinator.parent.isDisabled != isDisabled {
             uiViewController.updateAppearance()
-        }
-        
-        // Focus the text field if needed
-        if textFieldFocused.wrappedValue && !uiViewController.textField.isFirstResponder {
-            uiViewController.activateTextField()
         }
         
         context.coordinator.parent = self
@@ -671,8 +650,6 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         }
         
         func textFieldDidBeginEditing(_ textField: UITextField) {
-            parent.textFieldFocused.wrappedValue = true
-            
             // Update container height in controller
             if let controller = textField.getKeyboardAccessoryController() {
                 controller.updateContainerHeight(forKeyboardHidden: false)
@@ -680,9 +657,6 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         }
         
         func textFieldDidEndEditing(_ textField: UITextField) {
-            // Set focus state to false in the SwiftUI binding
-            parent.textFieldFocused.wrappedValue = false
-            
             // Update container height in controller
             if let controller = textField.getKeyboardAccessoryController() {
                 // Ensure this happens immediately for proper safe area padding
