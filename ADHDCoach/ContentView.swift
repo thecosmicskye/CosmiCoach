@@ -29,12 +29,6 @@ struct ContentView: View {
     // State management for keyboard accessory view
     @State private var keyboardState = KeyboardState.hidden
     
-    // Add observer for chat history deletion
-    init() {
-        // This is needed because @EnvironmentObject isn't available in init
-        print("⏱️ ContentView initializing")
-    }
-    
     // Setup keyboard appearance notification
     private func setupKeyboardObserver() {
         // When keyboard will show
