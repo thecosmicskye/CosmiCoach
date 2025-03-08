@@ -1,4 +1,4 @@
-# Cosmic Coach - an ADHD Coaching iOS App
+# CosmiCoach - an ADHD Coaching iOS App
 
 An iOS mobile app that uses Claude 3.7 to help manage Apple Reminders and Calendar, providing empathic coaching for people with ADHD.
 
