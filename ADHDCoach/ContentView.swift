@@ -15,9 +15,6 @@ struct ContentView: View {
     @AppStorage("hasAppearedBefore") private var hasAppearedBefore = false
     @Environment(\.scenePhase) private var scenePhase
     
-    // Track keyboard visibility
-    @State private var isKeyboardVisible = false
-    
     // Add observer for chat history deletion
     init() {
         // This is needed because @EnvironmentObject isn't available in init
@@ -32,9 +29,6 @@ struct ContentView: View {
             object: nil,
             queue: .main
         ) { [self] _ in
-            // Set keyboard visibility
-            isKeyboardVisible = true
-            
             // Check if auto-scroll is enabled or if we're at the bottom
             let isAtBottom = UserDefaults.standard.bool(forKey: "ChatIsAtBottom")
             
@@ -46,16 +40,6 @@ struct ContentView: View {
                     scrollToBottom = true
                 }
             }
-        }
-        
-        // Add observer for keyboard hiding
-        NotificationCenter.default.addObserver(
-            forName: UIResponder.keyboardWillHideNotification,
-            object: nil,
-            queue: .main
-        ) { [self] _ in
-            // Reset keyboard visibility
-            isKeyboardVisible = false
         }
     }
     
@@ -106,8 +90,7 @@ struct ContentView: View {
                         textFieldFocused: $isInputFocused,
                         colorScheme: colorScheme,
                         themeColor: themeManager.accentColor(for: colorScheme),
-                        isDisabled: chatManager.isProcessing,
-                        isKeyboardVisible: isKeyboardVisible // Pass keyboard visibility state
+                        isDisabled: chatManager.isProcessing
                     )
                     .frame(height: 0) // No visible height - it's part of the keyboard now
                     .onTapGesture {
@@ -619,7 +602,6 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
     var colorScheme: ColorScheme
     var themeColor: Color
     var isDisabled: Bool
-    var isKeyboardVisible: Bool // Add keyboard visibility state
     
     func makeUIViewController(context: Context) -> KeyboardAccessoryController {
         let controller = KeyboardAccessoryController()
@@ -628,10 +610,8 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         controller.isDarkMode = colorScheme == .dark
         controller.isDisabled = isDisabled
         controller.textFieldText = text
-        controller.isKeyboardVisible = isKeyboardVisible
         
         // Set initial keyboard state
-        
         if textFieldFocused.wrappedValue {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 controller.activateTextField()
@@ -653,12 +633,6 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         uiViewController.isDarkMode = colorScheme == .dark
         uiViewController.isDisabled = isDisabled
         
-        // Update keyboard visibility state
-        if uiViewController.isKeyboardVisible != isKeyboardVisible {
-            uiViewController.isKeyboardVisible = isKeyboardVisible
-            uiViewController.updateTextFieldAppearance()
-        }
-        
         // Update container based on focus state if needed
         let shouldBeFocused = textFieldFocused.wrappedValue
         if shouldBeFocused != uiViewController.textField.isFirstResponder {
@@ -669,8 +643,7 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         // Update appearance when theme, color scheme, or keyboard state changes
         if context.coordinator.parent.themeColor != themeColor || 
            context.coordinator.parent.colorScheme != colorScheme ||
-           context.coordinator.parent.isDisabled != isDisabled ||
-           context.coordinator.parent.isKeyboardVisible != isKeyboardVisible {
+           context.coordinator.parent.isDisabled != isDisabled {
             uiViewController.updateAppearance()
         }
         
@@ -700,9 +673,6 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         func textFieldDidBeginEditing(_ textField: UITextField) {
             parent.textFieldFocused.wrappedValue = true
             
-            // Update keyboard visibility state
-            parent.isKeyboardVisible = true
-            
             // Update container height in controller
             if let controller = textField.getKeyboardAccessoryController() {
                 controller.updateContainerHeight(forKeyboardHidden: false)
@@ -712,9 +682,6 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         func textFieldDidEndEditing(_ textField: UITextField) {
             // Set focus state to false in the SwiftUI binding
             parent.textFieldFocused.wrappedValue = false
-            
-            // Update keyboard visibility state
-            parent.isKeyboardVisible = false
             
             // Update container height in controller
             if let controller = textField.getKeyboardAccessoryController() {
@@ -756,8 +723,10 @@ class KeyboardAccessoryController: UIViewController {
         return view
     }()
     
-    // Track keyboard state
-    var isKeyboardVisible: Bool = false
+    // Track keyboard state - determined directly from responder status
+    private var isKeyboardVisible: Bool {
+        return textField.isFirstResponder
+    }
     
     // Keep track of last applied height to prevent unnecessary updates
     private var lastAppliedHeight: CGFloat = 90.0
@@ -818,13 +787,11 @@ class KeyboardAccessoryController: UIViewController {
     }
     
     @objc private func keyboardWillShow(_ notification: Notification) {
-        isKeyboardVisible = true
         updateTextFieldAppearance()
         updateContainerHeight(forKeyboardHidden: false)
     }
     
     @objc private func keyboardWillHide(_ notification: Notification) {
-        isKeyboardVisible = false
         updateTextFieldAppearance()
         
         // Get animation parameters if available
@@ -902,7 +869,6 @@ class KeyboardAccessoryController: UIViewController {
     
     func updateTextFieldAppearance() {
         // Set background color based on mode, without the blue highlight
-        let isKeyboardActive = textField.isFirstResponder
         let backgroundColor = isDarkMode ? UIColor.secondarySystemBackground : UIColor.secondarySystemBackground
         let textColor = isDarkMode ? UIColor.white : UIColor.black
         
@@ -917,12 +883,8 @@ class KeyboardAccessoryController: UIViewController {
             attributes: [NSAttributedString.Key.foregroundColor: UIColor.placeholderText]
         )
         
-        // Update the keyboard visibility state
-        if isKeyboardVisible != isKeyboardActive {
-            isKeyboardVisible = isKeyboardActive
-            // Update container height based on keyboard state
-            updateContainerHeight(forKeyboardHidden: !isKeyboardActive)
-        }
+        // Update container height based on keyboard state
+        updateContainerHeight(forKeyboardHidden: !textField.isFirstResponder)
     }
     
     // Method to maintain compatibility with older code
