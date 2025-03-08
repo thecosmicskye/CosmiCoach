@@ -168,6 +168,16 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
+                        // Dismiss keyboard first to prevent accessory view overlay issues
+                        if let controller = KeyboardAccessoryController.sharedInstance {
+                            controller.deactivateTextField()
+                            keyboardState = .dismissing
+                        } else {
+                            // Fallback to standard method
+                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                        }
+                        
+                        // Then show settings
                         showingSettings = true
                     }) {
                         Image(systemName: "gear")
@@ -182,6 +192,13 @@ struct ContentView: View {
                     .environmentObject(memoryManager)
                     .environmentObject(locationManager)
                     .environmentObject(chatManager)
+                    .onAppear {
+                        // Force keyboard dismiss when settings appear
+                        if let controller = KeyboardAccessoryController.sharedInstance {
+                            controller.deactivateTextField()
+                        }
+                        keyboardState = .hidden
+                    }
             }
             .applyThemeColor()
             .onAppear {
@@ -843,6 +860,14 @@ class KeyboardAccessoryController: UIViewController {
             name: UIApplication.didBecomeActiveNotification,
             object: nil
         )
+        
+        // Add a special observer for explicit keyboard dismissal requests
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleForcedDismissal),
+            name: NSNotification.Name("DismissKeyboardNotification"),
+            object: nil
+        )
     }
     
     @objc private func keyboardWillShow(_ notification: Notification) {
@@ -935,7 +960,9 @@ class KeyboardAccessoryController: UIViewController {
     
     // Forward the legacy method to our new implementation
     func updateContainerConstraints() {
-        updateContainerHeight(forKeyboardHidden: !textField.isFirstResponder)
+        // Just check text field responder state for now 
+        let keyboardShouldBeHidden = !textField.isFirstResponder
+        updateContainerHeight(forKeyboardHidden: keyboardShouldBeHidden)
     }
     
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -951,6 +978,21 @@ class KeyboardAccessoryController: UIViewController {
     
     @objc private func themeDidChange() {
         updateAppearance()
+    }
+    
+    @objc private func handleForcedDismissal() {
+        // Force deactivation of the text field and update container height
+        if textField.isFirstResponder {
+            textField.resignFirstResponder()
+        }
+        
+        // Update the container height to hidden state
+        updateContainerHeight(forKeyboardHidden: true)
+        
+        // Also force another update after a slight delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            self.updateContainerHeight(forKeyboardHidden: true)
+        }
     }
     
     func updateAppearance() {
@@ -1188,3 +1230,4 @@ extension UITextField {
         return KeyboardAccessoryController.sharedInstance
     }
 }
+

@@ -354,10 +354,10 @@ struct SettingsView: View {
                 }
                 
                 Section(header: Text("Appearance")) {
-                    NavigationLink(destination: 
+                    NavigationLink {
                         ThemeSelectionView()
                             .environmentObject(themeManager)
-                    ) {
+                    } label: {
                         HStack {
                             Text("Theme")
                             
