@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ThemeSelectionView: View {
     @Environment(\.dismiss) private var dismiss
@@ -11,14 +12,35 @@ struct ThemeSelectionView: View {
         _selectedThemeId = State(initialValue: UserDefaults.standard.string(forKey: "selected_theme_id") ?? "pink")
     }
     
+    // Method to force keyboard and accessory dismissal
+    private func forceKeyboardDismissal() {
+        // Dismiss any active keyboard
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        
+        // Ensure keyboard accessory controller is deactivated
+        if let controller = KeyboardAccessoryController.sharedInstance {
+            controller.deactivateTextField()
+        }
+        
+        // Notify the keyboard controller to dismiss
+        NotificationCenter.default.post(name: NSNotification.Name("DismissKeyboardNotification"), object: nil)
+    }
+    
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     ForEach(Theme.allThemes) { theme in
                         Button(action: {
+                            // Force keyboard dismissal before changing theme
+                            forceKeyboardDismissal()
+                            
+                            // Apply theme
                             selectedThemeId = theme.id
                             themeManager.setTheme(theme)
+                            
+                            // Post notification that theme changed
+                            NotificationCenter.default.post(name: NSNotification.Name("ThemeDidChangeNotification"), object: nil)
                             
                             // Generate new ID to force SwiftUI view refresh
                             refreshID = UUID()
@@ -43,12 +65,18 @@ struct ThemeSelectionView: View {
                     }
                 }
             }
+            .onAppear {
+                // Force keyboard dismissal when view appears
+                forceKeyboardDismissal()
+            }
             .navigationTitle("Select Theme")
             .navigationBarTitleDisplayMode(.inline)
             .tint(themeManager.accentColor(for: colorScheme))
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
+                        // Force keyboard dismissal before returning
+                        forceKeyboardDismissal()
                         dismiss()
                     }
                 }
@@ -58,6 +86,10 @@ struct ThemeSelectionView: View {
         .id(refreshID)
         // Apply accent color at the root level
         .accentColor(themeManager.accentColor(for: colorScheme))
+        // Dismiss keyboard when view disappears
+        .onDisappear {
+            forceKeyboardDismissal()
+        }
     }
 }
 
