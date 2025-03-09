@@ -167,26 +167,34 @@ class CachePerformanceTracker {
         let percentSavings = costWithoutCaching > 0 ? 
             (costWithoutCaching - costWithCaching) / costWithoutCaching * 100.0 : 0.0
         
+        // Format numbers with thousands separators
+        let numberFormatter = NumberFormatter()
+        numberFormatter.numberStyle = .decimal
+        
+        let formatNumber = { (number: Int) -> String in
+            return numberFormatter.string(from: NSNumber(value: number)) ?? "\(number)"
+        }
+        
         return """
-        Cache Performance Report:
-        - Total Requests: \(totalRequests)
-        - Cache Hits: \(cacheHits) (\(String(format: "%.1f", hitRate))%)
-        - Cache Misses: \(cacheMisses)
+        📊 Usage Statistics
+        Requests: \(formatNumber(totalRequests))
+        Cache hits: \(formatNumber(cacheHits)) (\(String(format: "%.1f", hitRate))%)
+        Cache misses: \(formatNumber(cacheMisses))
         
-        Token Statistics:
-        - Total Input Tokens: \(totalInputTokens)
-        - Total Cache Creation Tokens: \(totalCacheCreationTokens)
-        - Total Cache Read Tokens: \(totalCacheReadTokens)
-        - Total Tokens Processed: \(totalTokensProcessed)
+        💾 Token Usage
+        Input tokens: \(formatNumber(totalInputTokens))
+        Cache creation: \(formatNumber(totalCacheCreationTokens))
+        Cache read: \(formatNumber(totalCacheReadTokens))
+        Total processed: \(formatNumber(totalTokensProcessed))
         
-        Effectiveness:
-        - Cache Effectiveness: \(String(format: "%.1f", overallCacheEffectiveness))%
-        - Potential Tokens Without Cache: \(potentialTokensWithoutCache)
+        ⚡️ Effectiveness
+        Cache effectiveness: \(String(format: "%.1f", overallCacheEffectiveness))%
+        Tokens saved: \(formatNumber(totalCacheReadTokens))
         
-        Cost:
-        - Cost Without Caching: $\(String(format: "%.4f", costWithoutCaching))
-        - Cost With Caching: $\(String(format: "%.4f", costWithCaching))
-        - Estimated Cost Savings: $\(String(format: "%.4f", estimatedSavings)) (\(String(format: "%.1f", percentSavings))%)
+        💰 Cost Analysis
+        Without caching: $\(String(format: "%.4f", costWithoutCaching))
+        With caching: $\(String(format: "%.4f", costWithCaching))
+        Savings: $\(String(format: "%.4f", estimatedSavings)) (\(String(format: "%.1f", percentSavings))%)
         """
     }
     
