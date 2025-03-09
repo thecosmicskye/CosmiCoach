@@ -20,6 +20,8 @@
 		1A1A1A221A1A1A221A1A1A22 /* EventKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A322A2A2A322A2A2A32 /* EventKitManager.swift */; };
 		1A1A1A231A1A1A231A1A1A23 /* MemoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A332A2A2A332A2A2A33 /* MemoryManager.swift */; };
 		2A06F4922D711B770030A1AE /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A06F4912D711B770030A1AE /* LocationManager.swift */; };
+		2A2A2FD52D7E339F0059A323 /* MemoryContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2FD42D7E339F0059A323 /* MemoryContentView.swift */; };
+		2A2A2FD72D7E37A00059A323 /* PromptCachingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2FD62D7E379F0059A323 /* PromptCachingView.swift */; };
 		2A712F0E2D79404100D148EC /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A712F0C2D79404100D148EC /* APIModels.swift */; };
 		2A712F0F2D79404100D148EC /* APIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */; };
 		2A771BA92D725173000B70E6 /* CommandModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A771BA82D725173000B70E6 /* CommandModels.swift */; };
@@ -75,6 +77,8 @@
 		2A2A2A362A2A2A362A2A2A38 /* Color+Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Theme.swift"; sourceTree = "<group>"; };
 		2A2A2A372A2A2A372A2A2A39 /* ThemeColorModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeColorModifier.swift; sourceTree = "<group>"; };
 		2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSelectionView.swift; sourceTree = "<group>"; };
+		2A2A2FD42D7E339F0059A323 /* MemoryContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryContentView.swift; sourceTree = "<group>"; };
+		2A2A2FD62D7E379F0059A323 /* PromptCachingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptCachingView.swift; sourceTree = "<group>"; };
 		2A712F0C2D79404100D148EC /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
 		2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequestBuilder.swift; sourceTree = "<group>"; };
 		2A771BA82D725173000B70E6 /* CommandModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandModels.swift; sourceTree = "<group>"; };
@@ -138,6 +142,8 @@
 		6A6A6A6A6A6A6A6A6A6A6A6A /* ADHDCoach */ = {
 			isa = PBXGroup;
 			children = (
+				2A2A2FD62D7E379F0059A323 /* PromptCachingView.swift */,
+				2A2A2FD42D7E339F0059A323 /* MemoryContentView.swift */,
 				2A2A2A2A2A2A2A2A2A2A2A2A /* ADHDCoachApp.swift */,
 				2A2A2A2B2A2A2A2B2A2A2A2B /* ContentView.swift */,
 				2A2A2A2C2A2A2A2C2A2A2A2C /* MessageBubbleView.swift */,
@@ -322,6 +328,7 @@
 				E4C961F72D73F9600012035F /* Theme.swift in Sources */,
 				E4C961F82D73F9600012035F /* ThemeManager.swift in Sources */,
 				E4C962052D741EFA0012035F /* DateFormatter+Shared.swift in Sources */,
+				2A2A2FD72D7E37A00059A323 /* PromptCachingView.swift in Sources */,
 				E4C961F92D73F9600012035F /* Color+Theme.swift in Sources */,
 				E4C961F42D73F9500012035F /* ThemeColorModifier.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1A /* ADHDCoachApp.swift in Sources */,
@@ -331,6 +338,7 @@
 				E4C962002D741EDF0012035F /* ChatAPIService.swift in Sources */,
 				E4C962012D741EDF0012035F /* ChatOperationStatusManager.swift in Sources */,
 				E4C962022D741EDF0012035F /* ChatPersistenceManager.swift in Sources */,
+				2A2A2FD52D7E339F0059A323 /* MemoryContentView.swift in Sources */,
 				E4C962032D741EDF0012035F /* ChatToolHandler.swift in Sources */,
 				2A771BA92D725173000B70E6 /* CommandModels.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1B /* OperationStatusMessage.swift in Sources */,
@@ -526,7 +534,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = J63492PZ7Q;
+				DEVELOPMENT_TEAM = 5ZHCJ283JS;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ADHDCoach/Info.plist;
@@ -560,7 +568,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = J63492PZ7Q;
+				DEVELOPMENT_TEAM = 5ZHCJ283JS;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ADHDCoach/Info.plist;
