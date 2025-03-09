@@ -127,10 +127,19 @@ struct OnboardingView: View {
                 }
                 
                 if let result = testResult {
-                    Text(result)
-                        .foregroundColor(result.contains("Success") ? .green : .red)
-                        .font(.caption)
-                        .padding(.top, 4)
+                    HStack {
+                        if result.contains("Success") {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.red)
+                        }
+                        Text(result)
+                            .foregroundColor(result.contains("Success") ? .green : .red)
+                            .font(.caption)
+                    }
+                    .padding(.top, 4)
                 }
                 
                 Link("Get a Claude API key", destination: URL(string: "https://console.anthropic.com/")!)
@@ -150,13 +159,28 @@ struct OnboardingView: View {
                         showAlert = true
                     }
                 } label: {
-                    Text(isTestingKey ? "Testing..." : "Continue")
-                        .font(.headline)
-                        .foregroundColor(.white)
+                    if isTestingKey {
+                        HStack {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle())
+                                .tint(.white)
+                            Text("Connecting...")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                        }
                         .frame(maxWidth: .infinity)
                         .padding()
                         .background(themeManager.accentColor(for: colorScheme))
                         .cornerRadius(14)
+                    } else {
+                        Text("Continue")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(themeManager.accentColor(for: colorScheme))
+                            .cornerRadius(14)
+                    }
                 }
                 .disabled(isTestingKey)
                 .alert(isPresented: $showAlert) {
@@ -191,17 +215,17 @@ struct OnboardingView: View {
             let result = await chatManager.testAPIKey(trimmedKey)
             
             await MainActor.run {
-                testResult = result ? "Success! API key is valid." : "Error: Could not connect with this API key."
                 isTestingKey = false
                 
                 if result {
                     // Save the API key to UserDefaults
                     UserDefaults.standard.set(trimmedKey, forKey: "claude_api_key")
                     
-                    // Complete onboarding after a short delay to show success message
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                        completeOnboarding()
-                    }
+                    // Complete onboarding immediately on success
+                    completeOnboarding()
+                } else {
+                    // Only show error message if API key is invalid
+                    testResult = "Error: Could not connect with this API key."
                 }
             }
         }
