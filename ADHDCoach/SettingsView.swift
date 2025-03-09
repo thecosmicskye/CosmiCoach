@@ -124,24 +124,40 @@ struct SettingsView: View {
                     Button(action: {
                         Task {
                             await testApiKey()
+                            
+                            // Clear result after 2 seconds
+                            if testResult != nil {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    testResult = nil
+                                }
+                            }
                         }
                     }) {
                         if isTestingKey {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle())
-                            Text("Testing API Key...")
+                            HStack {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle())
+                                Text("Connecting...")
+                                    .foregroundColor(.secondary)
+                            }
+                        } else if let result = testResult {
+                            HStack {
+                                if result.hasPrefix("✅") {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundColor(.green)
+                                } else {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.red)
+                                }
+                                Text(result.replacingOccurrences(of: "✅ ", with: "").replacingOccurrences(of: "❌ ", with: ""))
+                                    .foregroundColor(result.hasPrefix("✅") ? .green : .red)
+                            }
                         } else {
                             Text("Test API Key")
                                 .foregroundColor(themeManager.accentColor(for: colorScheme))
                         }
                     }
-                    .disabled(apiKey.isEmpty || isTestingKey)
-                    
-                    if let result = testResult {
-                        Text(result)
-                            .font(.caption)
-                            .foregroundColor(result.hasPrefix("✅") ? .green : .red)
-                    }
+                    .disabled(apiKey.isEmpty || isTestingKey || testResult != nil)
                     
                     Link("Get a Claude API Key", destination: URL(string: "https://console.anthropic.com/")!)
                         .font(.caption)
