@@ -153,23 +153,14 @@ struct ContentView: View {
                     
                     // Ensure memory is properly loaded
                     Task {
-                        print("⏱️ ContentView.onAppear - Task started for memory loading and automatic message")
+                        print("⏱️ ContentView.onAppear - Task started for memory loading")
                         let _ = await memoryManager.readMemory()
                         if let fileURL = memoryManager.getMemoryFileURL() {
                             print("⏱️ ContentView.onAppear - Memory file exists: \(FileManager.default.fileExists(atPath: fileURL.path))")
                             print("⏱️ ContentView.onAppear - Memory content length: \(memoryManager.memoryContent.count)")
                         }
                         
-                        // Log automatic message check
-                        print("⏱️ ContentView.onAppear - About to check for automatic message")
-                        
-                        // Prepare to send automatic message
-                        print("⏱️ ContentView.onAppear - Preparing automatic message check")
-                        
-                        // Check and potentially send an automatic message
-                        print("⏱️ ContentView.onAppear - About to call checkAndSendAutomaticMessage() at \(Date())")
-                        await chatManager.checkAndSendAutomaticMessage()
-                        print("⏱️ ContentView.onAppear - Returned from checkAndSendAutomaticMessage() at \(Date())")
+                        // Memory loaded - automatic messages handled by ADHDCoachApp
                     }
                 } else {
                     print("⏱️ ContentView.onAppear - This is the FIRST appearance (hasAppearedBefore=false), setting to true")
@@ -198,24 +189,20 @@ struct ContentView: View {
                 if newPhase == .active {
                     print("⏱️ ContentView.onChange - App becoming active")
                     
-                    // Only run the automatic message check if we've seen the app before
+                    // Only run necessary updates if we've seen the app before
                     if hasAppearedBefore {
-                        // Check for last session time
+                        // Log last session time for debugging
                         if let lastSessionTime = UserDefaults.standard.object(forKey: "last_app_session_time") as? TimeInterval {
                             let lastTime = Date(timeIntervalSince1970: lastSessionTime)
                             let timeSinceLastSession = Date().timeIntervalSince(lastTime)
                             print("⏱️ ContentView.onChange - Last session time: \(lastTime)")
                             print("⏱️ ContentView.onChange - Time since last session: \(timeSinceLastSession) seconds")
                             
-                            // Launch a task to check for automatic messages
-                            // This is critical because the normal onAppear doesn't seem to be firing consistently
+                            // Load memory - automatic messages handled by ADHDCoachApp
                             Task {
-                                print("⏱️ ContentView.onChange - Starting task for automatic message check at \(Date())")
+                                print("⏱️ ContentView.onChange - Ensuring memory is loaded")
                                 let _ = await memoryManager.readMemory()
-                                
-                                // Check and potentially send an automatic message
-                                await chatManager.checkAndSendAutomaticMessage()
-                                print("⏱️ ContentView.onChange - Completed automatic message check at \(Date())")
+                                print("⏱️ ContentView.onChange - Memory loaded")
                             }
                         }
                     } else {
