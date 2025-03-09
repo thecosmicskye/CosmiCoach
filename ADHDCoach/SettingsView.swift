@@ -375,7 +375,7 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
                 
-                Section(header: Text("Appearance")) {
+                Section {
                     NavigationLink {
                         ThemeSelectionView()
                             .environmentObject(themeManager)
@@ -396,13 +396,15 @@ struct SettingsView: View {
                     }
                 }
                 
-                Section(header: Text("Experimental Features")) {
+                Section {
                     Toggle("Automatic Messages", isOn: $enableAutomaticResponses)
                     
                     Text("Cosmic Coach will automatically send you a message when you open the app (only if you've been away for at least 5 minutes).")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
+                }
+                
+                Section {
                     Toggle("Location Awareness", isOn: $enableLocationAwareness)
                         .onChange(of: enableLocationAwareness) { oldValue, newValue in
                             if newValue {
