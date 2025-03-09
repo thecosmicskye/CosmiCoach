@@ -97,84 +97,36 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(header: Text("API Configuration")) {
-                    SecureField("Claude API Key", text: $apiKey)
-                        .autocapitalization(.none)
-                        .autocorrectionDisabled()
-                        .onChange(of: apiKey) { oldValue, newValue in
-                            // Trim whitespace before saving
-                            let trimmedKey = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                            UserDefaults.standard.set(trimmedKey, forKey: "claude_api_key")
-                            print("API key saved to UserDefaults. Length: \(trimmedKey.count)")
+                Section {
+                    NavigationLink {
+                        APIConfigurationView()
+                            .environmentObject(themeManager)
+                            .environmentObject(chatManager)
+                    } label: {
+                        HStack {
+                            Text("API Configuration")
                             
-                            // Reset test result when key changes
-                            testResult = nil
-                        }
-                    
-                    Text("Enter your Claude API key (starts with 'sk-ant-')")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    if !apiKey.isEmpty && !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("sk-ant") {
-                        Text("Warning: This doesn't look like a Claude API key. Claude API keys start with 'sk-ant-'.")
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    }
-                    
-                    Button(action: {
-                        Task {
-                            await testApiKey()
+                            Spacer()
                             
-                            // Clear result after 2 seconds
-                            if testResult != nil {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    testResult = nil
-                                }
-                            }
-                        }
-                    }) {
-                        if isTestingKey {
                             HStack {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle())
-                                Text("Connecting...")
-                                    .foregroundColor(.secondary)
-                            }
-                        } else if let result = testResult {
-                            HStack {
-                                if result.hasPrefix("✅") {
+                                if !apiKey.isEmpty && apiKey.hasPrefix("sk-ant") {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundColor(.green)
+                                    Text("Connected")
+                                        .foregroundColor(.secondary)
                                 } else {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.red)
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.orange)
+                                    Text("Not configured")
+                                        .foregroundColor(.secondary)
                                 }
-                                Text(result.replacingOccurrences(of: "✅ ", with: "").replacingOccurrences(of: "❌ ", with: ""))
-                                    .foregroundColor(result.hasPrefix("✅") ? .green : .red)
                             }
-                        } else {
-                            Text("Test API Key")
-                                .foregroundColor(themeManager.accentColor(for: colorScheme))
                         }
                     }
-                    .disabled(apiKey.isEmpty || isTestingKey || testResult != nil)
-                    
-                    Link(destination: URL(string: "https://console.anthropic.com/")!) {
-                        HStack {
-                            Text("Get a Claude API Key")
-                            Image(systemName: "arrow.up.forward.square")
-                                .font(.caption)
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundColor(themeManager.accentColor(for: colorScheme))
                 }
                 
                 Section(header: Text("Coaching Preferences")) {
                     Toggle("Daily Basics Check", isOn: $checkBasicsDaily)
-                    
-                    Stepper("Token Limit: \(tokenLimit)", value: $tokenLimit, in: 10000...100000, step: 5000)
-                        .help("Controls how much conversation history is sent to Claude")
                 }
                 
                 Section {
