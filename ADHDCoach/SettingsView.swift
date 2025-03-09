@@ -285,32 +285,16 @@ struct SettingsView: View {
                     }
                 }
                 
-                Section(header: Text("Prompt Caching")) {
-                    Text(chatManager.getCachePerformanceReport())
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .textSelection(.enabled)
-                    
-                    Button("Reset Cache Metrics") {
-                        chatManager.resetCachePerformanceMetrics()
-                        // Show a brief confirmation
-                        let generator = UINotificationFeedbackGenerator()
-                        generator.notificationOccurred(.success)
-                        
-                        testResult = "✅ Cache metrics reset!"
-                        
-                        // Clear the success message after a delay
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            if testResult == "✅ Cache metrics reset!" {
-                                testResult = nil
-                            }
+                Section {
+                    NavigationLink {
+                        PromptCachingView(
+                            chatManager: chatManager
+                        )
+                    } label: {
+                        HStack {
+                            Text("Prompt Caching")
                         }
                     }
-                    .foregroundColor(themeManager.accentColor(for: colorScheme))
-                    
-                    Text("Prompt caching reduces token usage by reusing parts of previous prompts.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
                 
                 Section {
