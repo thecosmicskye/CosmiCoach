@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -14,9 +15,8 @@ struct SettingsView: View {
     @AppStorage("enable_location_awareness") private var enableLocationAwareness = false
     @State private var isTestingKey = false
     @State private var testResult: String? = nil
-    @State private var showingMemoryViewer = false
-    @State private var showingResetConfirmation = false
     @State private var showingDeleteChatConfirmation = false
+    @State private var showingResetConfirmation = false
     
     init() {
         _apiKey = State(initialValue: UserDefaults.standard.string(forKey: "claude_api_key") ?? "")
@@ -177,68 +177,45 @@ struct SettingsView: View {
                         .help("Controls how much conversation history is sent to Claude")
                 }
                 
-                Section(header: Text("Memory Management")) {
-                    Button("View Memory File") {
-                        Task {
-                            // Ensure we're getting the latest memory content from disk
-                            let _ = await memoryManager.readMemory()
-                            
-                            // Make sure the API service also has the latest memory content
-                            await chatManager.refreshContextData()
-                            print("📝 View Memory: Refreshed context data in API service")
-                            
-                            await MainActor.run {
-                                showingMemoryViewer = true
-                            }
-                        }
-                    }
-                    .foregroundColor(themeManager.accentColor(for: colorScheme))
-                    .sheet(isPresented: $showingMemoryViewer) {
-                        NavigationStack {
-                            ScrollView {
-                                // Use a separate State variable for memory content in the viewer
-                                VStack {
-                                    Text(memoryManager.memoryContent)
-                                        .padding()
-                                        .textSelection(.enabled)
-                                    
-                                    Text("Last updated: \(Date().formatted(date: .abbreviated, time: .standard))")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                        .padding(.bottom)
-                                }
-                            }
-                            .navigationTitle("Memory File")
-                            .applyThemeColor()
-                            .toolbar {
-                                ToolbarItem(placement: .navigationBarTrailing) {
-                                    Button("Refresh") {
-                                        Task {
-                                            // Force a reload of memory content from disk
-                                            let _ = await memoryManager.readMemory()
-                                            
-                                            // Make sure the API service also has the latest memory content
-                                            await chatManager.refreshContextData()
-                                            print("📝 Memory Refreshed: Updated context data in API service")
-                                        }
-                                    }
-                                    .foregroundColor(themeManager.accentColor(for: colorScheme))
-                                }
+                Section {
+                    NavigationLink {
+                        ScrollView {
+                            VStack {
+                                Text(memoryManager.memoryContent)
+                                    .padding()
+                                    .textSelection(.enabled)
                                 
-                                ToolbarItem(placement: .navigationBarTrailing) {
-                                    Button("Done") {
-                                        showingMemoryViewer = false
-                                    }
-                                    .foregroundColor(themeManager.accentColor(for: colorScheme))
-                                }
+                                Text("Last updated: \(Date().formatted(date: .abbreviated, time: .standard))")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .padding(.bottom)
                             }
                         }
+                        .onAppear {
+                            Task {
+                                // Ensure we're getting the latest memory content from disk
+                                let _ = await memoryManager.readMemory()
+                                
+                                // Make sure the API service also has the latest memory content
+                                await chatManager.refreshContextData()
+                                print("📝 View Memory: Refreshed context data in API service")
+                            }
+                        }
+                        .navigationTitle("Memory")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Reset", role: .destructive) {
+                                    showingResetConfirmation = true
+                                }
+                                .foregroundColor(.red)
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            Text("Memory")
+                        }
                     }
-                    
-                    Button("Reset Memory") {
-                        showingResetConfirmation = true
-                    }
-                    .foregroundColor(.red)
                     .confirmationDialog(
                         "Reset Memory",
                         isPresented: $showingResetConfirmation,
@@ -261,8 +238,8 @@ struct SettingsView: View {
                                 
                                 // Show confirmation to user
                                 await MainActor.run {
-                                    let generator = UINotificationFeedbackGenerator()
-                                    generator.notificationOccurred(.success)
+                                    // Provide haptic feedback
+                                    UINotificationFeedbackGenerator().notificationOccurred(.success)
                                     
                                     testResult = "✅ Memory reset successfully!"
                                     
@@ -273,13 +250,7 @@ struct SettingsView: View {
                                         }
                                     }
                                     
-                                    // Force reload of memory viewer if it's open
-                                    if showingMemoryViewer {
-                                        showingMemoryViewer = false
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                            showingMemoryViewer = true
-                                        }
-                                    }
+                                    // No need for forced reload with NavigationLink
                                 }
                             }
                         }
@@ -289,7 +260,7 @@ struct SettingsView: View {
                     }
                 }
                 
-                Section(header: Text("Chat Management")) {
+                Section {
                     Button("Delete Chat History") {
                         showingDeleteChatConfirmation = true
                     }
@@ -331,13 +302,7 @@ struct SettingsView: View {
                                         }
                                     }
                                     
-                                    // Force reload of memory viewer if it's open
-                                    if showingMemoryViewer {
-                                        showingMemoryViewer = false
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                            showingMemoryViewer = true
-                                        }
-                                    }
+                                    // We already used haptic feedback above, no need to repeat
                                 }
                             }
                         }
