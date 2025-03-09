@@ -179,38 +179,11 @@ struct SettingsView: View {
                 
                 Section {
                     NavigationLink {
-                        ScrollView {
-                            VStack {
-                                Text(memoryManager.memoryContent)
-                                    .padding()
-                                    .textSelection(.enabled)
-                                
-                                Text("Last updated: \(Date().formatted(date: .abbreviated, time: .standard))")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                    .padding(.bottom)
-                            }
-                        }
-                        .onAppear {
-                            Task {
-                                // Ensure we're getting the latest memory content from disk
-                                let _ = await memoryManager.readMemory()
-                                
-                                // Make sure the API service also has the latest memory content
-                                await chatManager.refreshContextData()
-                                print("📝 View Memory: Refreshed context data in API service")
-                            }
-                        }
-                        .navigationTitle("Memory")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .navigationBarTrailing) {
-                                Button("Reset", role: .destructive) {
-                                    showingResetConfirmation = true
-                                }
-                                .foregroundColor(.red)
-                            }
-                        }
+                        MemoryContentView(
+                            memoryManager: memoryManager,
+                            chatManager: chatManager,
+                            showingResetConfirmation: $showingResetConfirmation
+                        )
                     } label: {
                         HStack {
                             Text("Memory")
