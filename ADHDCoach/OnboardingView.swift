@@ -142,10 +142,16 @@ struct OnboardingView: View {
                     .padding(.top, 4)
                 }
                 
-                Link("Get a Claude API key", destination: URL(string: "https://console.anthropic.com/")!)
-                    .font(.caption)
-                    .padding(.top, 4)
-                    .foregroundColor(themeManager.accentColor(for: colorScheme))
+                Link(destination: URL(string: "https://console.anthropic.com/")!) {
+                    HStack {
+                        Text("Get a Claude API key")
+                        Image(systemName: "arrow.up.forward.square")
+                            .font(.caption)
+                    }
+                }
+                .font(.caption)
+                .padding(.top, 4)
+                .foregroundColor(themeManager.accentColor(for: colorScheme))
             }
             .padding()
             

@@ -159,9 +159,15 @@ struct SettingsView: View {
                     }
                     .disabled(apiKey.isEmpty || isTestingKey || testResult != nil)
                     
-                    Link("Get a Claude API Key", destination: URL(string: "https://console.anthropic.com/")!)
-                        .font(.caption)
-                        .foregroundColor(themeManager.accentColor(for: colorScheme))
+                    Link(destination: URL(string: "https://console.anthropic.com/")!) {
+                        HStack {
+                            Text("Get a Claude API Key")
+                            Image(systemName: "arrow.up.forward.square")
+                                .font(.caption)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundColor(themeManager.accentColor(for: colorScheme))
                 }
                 
                 Section(header: Text("Coaching Preferences")) {
