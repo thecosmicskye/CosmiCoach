@@ -31,10 +31,6 @@ struct ADHDCoachApp: App {
             UserDefaults.standard.set("pink", forKey: "selected_theme_id")
             UserDefaults.standard.synchronize()
         }
-        
-        // Configure UIKit appearance for UINavigationBar
-        // This is needed because SwiftUI's NavigationView/NavigationStack uses UIKit underneath
-        configureUIKitAppearance()
     }
     
     private func configureUIKitAppearance() {
@@ -51,6 +47,9 @@ struct ADHDCoachApp: App {
                     .environmentObject(locationManager)
                     .environmentObject(themeManager)
                     .onAppear {
+                        // Configure UIKit appearance - now safe to use StateObjects
+                        configureUIKitAppearance()
+                        
                         // Request permissions when app launches
                         eventKitManager.requestAccess()
                         
@@ -82,6 +81,10 @@ struct ADHDCoachApp: App {
                     .environmentObject(chatManager)
                     .environmentObject(locationManager)
                     .environmentObject(themeManager)
+                    .onAppear {
+                        // Configure UIKit appearance - now safe to use StateObjects
+                        configureUIKitAppearance()
+                    }
                     .onChange(of: colorScheme) { _, _ in
                         themeManager.setTheme(themeManager.currentTheme)
                     }
