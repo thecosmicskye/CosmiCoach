@@ -2,18 +2,6 @@ import SwiftUI
 import Combine
 import UIKit
 
-// Keyboard state management enum
-enum KeyboardState: Equatable {
-    case hidden
-    case showing
-    case visible
-    case dismissing
-    
-    var isVisible: Bool {
-        self == .visible || self == .showing
-    }
-}
-
 struct ContentView: View {
     @EnvironmentObject private var chatManager: ChatManager
     @EnvironmentObject private var eventKitManager: EventKitManager
@@ -26,9 +14,6 @@ struct ContentView: View {
     @AppStorage("hasAppearedBefore") private var hasAppearedBefore = false
     @Environment(\.scenePhase) private var scenePhase
     
-    // State management for keyboard accessory view
-    @State private var keyboardState = KeyboardState.hidden
-    
     // Setup keyboard appearance notification
     private func setupKeyboardObserver() {
         // When keyboard will show
@@ -37,9 +22,6 @@ struct ContentView: View {
             object: nil,
             queue: .main
         ) { [self] notification in
-            // Update state to showing
-            keyboardState = .showing
-            
             // Check if auto-scroll is enabled or if we're at the bottom
             let isAtBottom = UserDefaults.standard.bool(forKey: "ChatIsAtBottom")
             
@@ -50,48 +32,6 @@ struct ContentView: View {
                     scrollToBottom = true
                 }
             }
-            
-            // Log keyboard state transition
-            print("⌨️ Keyboard state: \(KeyboardState.hidden) -> \(KeyboardState.showing)")
-        }
-        
-        // When keyboard did show
-        NotificationCenter.default.addObserver(
-            forName: UIResponder.keyboardDidShowNotification,
-            object: nil,
-            queue: .main
-        ) { [self] _ in
-            // Update state to fully visible
-            keyboardState = .visible
-            
-            // Log keyboard state transition
-            print("⌨️ Keyboard state: \(KeyboardState.showing) -> \(KeyboardState.visible)")
-        }
-        
-        // When keyboard will hide
-        NotificationCenter.default.addObserver(
-            forName: UIResponder.keyboardWillHideNotification,
-            object: nil,
-            queue: .main
-        ) { [self] _ in
-            // Update state to dismissing
-            keyboardState = .dismissing
-            
-            // Log keyboard state transition
-            print("⌨️ Keyboard state: \(KeyboardState.visible) -> \(KeyboardState.dismissing)")
-        }
-        
-        // When keyboard did hide
-        NotificationCenter.default.addObserver(
-            forName: UIResponder.keyboardDidHideNotification,
-            object: nil,
-            queue: .main
-        ) { [self] _ in
-            // Update state to hidden
-            keyboardState = .hidden
-            
-            // Log keyboard state transition
-            print("⌨️ Keyboard state: \(KeyboardState.dismissing) -> \(KeyboardState.hidden)")
         }
     }
     
@@ -129,10 +69,9 @@ struct ContentView: View {
                     )
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        // Dismiss keyboard with state management when tapping on scroll view area
+                        // Dismiss keyboard when tapping on scroll view area
                         if let controller = KeyboardAccessoryController.sharedInstance {
                             controller.deactivateTextField()
-                            keyboardState = .dismissing
                         } else {
                             // Fallback to standard method
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -145,8 +84,7 @@ struct ContentView: View {
                         onSend: sendMessage,
                         colorScheme: colorScheme,
                         themeColor: themeManager.accentColor(for: colorScheme),
-                        isDisabled: chatManager.isProcessing,
-                        keyboardState: keyboardState
+                        isDisabled: chatManager.isProcessing
                     )
                     .frame(height: 0) // No visible height - it's part of the keyboard now
                     .onTapGesture {
@@ -165,7 +103,6 @@ struct ContentView: View {
                         // Dismiss keyboard first to prevent accessory view overlay issues
                         if let controller = KeyboardAccessoryController.sharedInstance {
                             controller.deactivateTextField()
-                            keyboardState = .dismissing
                         } else {
                             // Fallback to standard method
                             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -191,7 +128,6 @@ struct ContentView: View {
                         if let controller = KeyboardAccessoryController.sharedInstance {
                             controller.deactivateTextField()
                         }
-                        keyboardState = .hidden
                     }
             }
             .applyThemeColor()
@@ -294,17 +230,13 @@ struct ContentView: View {
         guard let text = KeyboardAccessoryController.currentText?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return }
         
-        // Dismiss keyboard using our accessory controller for better state management
+        // Dismiss keyboard using our accessory controller
         if let controller = KeyboardAccessoryController.sharedInstance {
-            // Use our state-aware method instead of generic resignFirstResponder
             controller.deactivateTextField()
         } else {
             // Fallback to standard method if controller isn't available
             UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         }
-        
-        // Update keyboard state
-        keyboardState = .dismissing
         
         // Add user message to chat
         chatManager.addUserMessage(content: text)
@@ -683,7 +615,6 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
     var colorScheme: ColorScheme
     var themeColor: Color
     var isDisabled: Bool
-    var keyboardState: KeyboardState
     
     func makeUIViewController(context: Context) -> KeyboardAccessoryController {
         let controller = KeyboardAccessoryController()
@@ -709,14 +640,13 @@ struct KeyboardInputAccessory: UIViewControllerRepresentable {
         uiViewController.isDisabled = isDisabled
         
         // Update container height based on keyboard state
-        let isKeyboardHidden = !keyboardState.isVisible
+        let isKeyboardHidden = !uiViewController.textField.isFirstResponder
         uiViewController.updateContainerHeight(forKeyboardHidden: isKeyboardHidden)
         
-        // Update appearance when theme, color scheme, keyboard state, or disabled state changes
+        // Update appearance when theme, color scheme, or disabled state changes
         if context.coordinator.parent.themeColor != themeColor || 
            context.coordinator.parent.colorScheme != colorScheme ||
-           context.coordinator.parent.isDisabled != isDisabled ||
-           context.coordinator.parent.keyboardState != keyboardState {
+           context.coordinator.parent.isDisabled != isDisabled {
             uiViewController.updateAppearance()
         }
         
