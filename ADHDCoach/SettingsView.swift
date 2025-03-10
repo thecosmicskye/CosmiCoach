@@ -135,6 +135,13 @@ struct SettingsView: View {
                     } label: {
                         HStack {
                             Text("Memory")
+                            
+                            Spacer()
+                            
+                            HStack {
+                                Text("\(memoryManager.memories.count)")
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     }
                     .confirmationDialog(
