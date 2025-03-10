@@ -149,6 +149,22 @@ class APIRequestBuilder {
                 if !combinedDataSection.isEmpty {
                     // Generate a hash from the content to detect changes
                     let currentDataHash = combinedDataSection.hashValue
+                    let calendarSectionHash = calendarSection.hashValue
+                    
+                    // Log detailed hash information
+                    print("🧠 HASH DETAIL: Calculating calendar context hash")
+                    print("🧠 HASH DETAIL: Combined section hash = \(currentDataHash)")
+                    print("🧠 HASH DETAIL: Calendar section only hash = \(calendarSectionHash)")
+                    print("🧠 HASH DETAIL: Previous combined hash = \(APIRequestBuilder.lastCalRemHash)")
+                    
+                    // Get word counts for additional detail
+                    let calWords = calendarSection.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+                    let remWords = remindersSection.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+                    let comboWords = combinedDataSection.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.count
+                    
+                    print("🧠 HASH DETAIL: Calendar section: \(calendarSection.count) chars, ~\(calWords) words")
+                    print("🧠 HASH DETAIL: Reminders section: \(remindersSection.count) chars, ~\(remWords) words")
+                    print("🧠 HASH DETAIL: Combined section: \(combinedDataSection.count) chars, ~\(comboWords) words")
                     
                     var dataBlock: [String: Any] = ["type": "text", "text": combinedDataSection]
                     
@@ -156,10 +172,31 @@ class APIRequestBuilder {
                     if currentDataHash == APIRequestBuilder.lastCalRemHash {
                         dataBlock["cache_control"] = ["type": "ephemeral"]
                         print("🧠 Added cache_control to calendar/reminders section (unchanged)")
+                        print("🧠 CALENDAR CACHE HIT: Old hash \(APIRequestBuilder.lastCalRemHash) matches new hash \(currentDataHash)")
+                        
+                        // Check if the data section starts with the calendar section
+                        if calendarSection.count > 10 {
+                            print("🧠 CALENDAR SECTION PREVIEW: \(String(calendarSection.prefix(200)))...")
+                            print("🧠 CALENDAR/REMINDER SECTION CHAR COUNT: \(combinedDataSection.count)")
+                        }
                     } else {
                         // Update the hash for next time
+                        print("🧠 CALENDAR CACHE MISS: Old hash \(APIRequestBuilder.lastCalRemHash) differs from new hash \(currentDataHash)")
+                        
+                        // Print diagnostic info for calendar content changes
+                        if calendarSection.count > 0 {
+                            print("🧠 CALENDAR CONTENT CHANGED!")
+                            print("🧠 PREVIEW OF NEW CONTENT: \(String(calendarSection.prefix(200)))...")
+                        }
+                        
                         APIRequestBuilder.lastCalRemHash = currentDataHash
                         print("🧠 Calendar/reminders content changed, not using cache this time")
+                        
+                        // Log a preview of the calendar section to see what changed
+                        if calendarSection.count > 10 {
+                            print("🧠 CALENDAR SECTION PREVIEW (UPDATED): \(String(calendarSection.prefix(200)))...")
+                            print("🧠 CALENDAR/REMINDER SECTION CHAR COUNT: \(combinedDataSection.count)")
+                        }
                     }
                     
                     newContent.append(dataBlock)
@@ -208,6 +245,7 @@ class APIRequestBuilder {
     static func formatCurrentDateTime() -> String {
         return DateFormatter.formatCurrentDateTimeWithTimezone()
     }
+    
     
     /**
      * Configures the HTTP request headers for Claude API communication.

@@ -486,10 +486,58 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             isProcessing = true
         }
         
-        // First, ensure we have the latest data from external sources
-        // This fixes the issue where external changes aren't reflected in Claude's context
+        // Log the message we're sending
+        print("📨 Sending user message to Claude: \"\(userMessage.prefix(30))...\"")
+        
+        // First, check the calendar data hash BEFORE fetching new data
+        let previousCalendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
+        let previousCalendarHash = previousCalendarEvents.hashValue
+        print("🔍 HASH CHECK (Before): Calendar events hash = \(previousCalendarHash), count = \(previousCalendarEvents.count)")
+        
+        // Now force fetching fresh data for comparison
+        print("🔄 Forcing a fresh fetch of event data to compare hash values")
         await refreshContextData()
         print("🕒 Pre-loaded fresh context data before sending message to Claude")
+        
+        // Fetch calendar data AGAIN to see if the hash changed after refresh
+        let freshCalendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
+        let freshCalendarHash = freshCalendarEvents.hashValue
+        print("🔍 HASH CHECK (After): Calendar events hash = \(freshCalendarHash), count = \(freshCalendarEvents.count)")
+        
+        // Check if the hash changed during this operation
+        if previousCalendarHash != freshCalendarHash {
+            print("⚠️ HASH DIFF DETECTED during message send! Hash changed from \(previousCalendarHash) to \(freshCalendarHash)")
+            
+            // Show what changed in calendar data
+            let onlyInPrevious = previousCalendarEvents.filter { prev in
+                !freshCalendarEvents.contains { fresh in
+                    fresh.id == prev.id
+                }
+            }
+            
+            let onlyInFresh = freshCalendarEvents.filter { fresh in
+                !previousCalendarEvents.contains { prev in
+                    prev.id == fresh.id
+                }
+            }
+            
+            let modifiedInFresh = freshCalendarEvents.filter { fresh in
+                previousCalendarEvents.contains { prev in
+                    prev.id == fresh.id && prev.hashValue != fresh.hashValue
+                }
+            }
+            
+            print("⚠️ Calendar Changes:")
+            print("⚠️ - Removed events: \(onlyInPrevious.count)")
+            print("⚠️ - Added events: \(onlyInFresh.count)")
+            print("⚠️ - Modified events: \(modifiedInFresh.count)")
+            
+            // Hash difference was detected - the new data will be used automatically
+            // No need to force cache reset as we've already detected the change
+            print("⚠️ Using freshly fetched calendar data - hash difference detected")
+        } else {
+            print("✅ HASH CHECK: Calendar hash unchanged during message send operation")
+        }
         
         // Prepare context for Claude
         var memoryContent = "No memory available."
@@ -501,7 +549,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         }
         
         // Format calendar events and reminders for context
-        let calendarContext = formatCalendarEvents(calendarEvents)
+        let calendarContext = formatCalendarEvents(freshCalendarEvents)  // Use the fresh events
         let remindersContext = formatReminders(reminders)
         
         // Get location information if enabled
@@ -583,19 +631,41 @@ class ChatManager: ObservableObject, @unchecked Sendable {
      * @return Formatted string of calendar events
      */
     private func formatCalendarEvents(_ events: [CalendarEvent]) -> String {
+        print("📆 Formatting \(events.count) calendar events for Claude context")
+        
         if events.isEmpty {
+            print("📆 No events to format, returning default message")
             return "No upcoming events."
         }
         
-        return events.map { event in
-            """
+        // Sort events by start date to present them in a more logical order
+        let sortedEvents = events.sorted { $0.startDate < $1.startDate }
+        print("📆 Sorted events by start date")
+        
+        // Format each event into a string
+        let formattedEvents = sortedEvents.map { event in
+            let eventString = """
             ID: \(event.id)
             Title: \(event.title)
             Start: \(formatDate(event.startDate))
             End: \(formatDate(event.endDate))
             Notes: \(event.notes ?? "None")
             """
-        }.joined(separator: "\n\n")
+            return eventString
+        }
+        
+        // Log a preview of the formatted content
+        if !formattedEvents.isEmpty {
+            print("📆 Calendar formatting preview (first event):")
+            print(formattedEvents[0])
+            print("📆 ... and \(formattedEvents.count - 1) more events")
+        }
+        
+        // Join all formatted events with double newlines
+        let result = formattedEvents.joined(separator: "\n\n")
+        print("📆 Formatted calendar context length: \(result.count) characters")
+        
+        return result
     }
     
     /**
@@ -884,11 +954,6 @@ class ChatManager: ObservableObject, @unchecked Sendable {
      * Updates the API service with the latest context data
      * This should be called after any calendar events, reminders, or memories change
      * to ensure the API has access to the latest context information
-     */
-    /**
-     * Updates the API service with the latest context data
-     * This should be called after any calendar events, reminders, or memories change
-     * to ensure the API has access to the latest context information
      * 
      * IMPORTANT: This method is now called before each API request to ensure
      * the date/time and all context data is always up-to-date.
@@ -896,6 +961,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
     func refreshContextData() async {
         print("🔄 Refreshing context data for up-to-date information")
         print("🕒 Current time: \(DateFormatter.formatCurrentDateTimeWithTimezone())")
+        
+        // Keep track of refresh start time for performance monitoring
+        let refreshStartTime = Date()
         
         // Refresh memory content
         if let manager = memoryManager {
@@ -919,20 +987,33 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         }
         
         // Force a fresh fetch of calendar events
+        print("🔄 CALENDAR REFRESH: Beginning calendar events fetch...")
         let calendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
         let calendarContext = formatCalendarEvents(calendarEvents)
         await apiService.updateCalendarContext(calendarContext)
-        print("🔄 Calendar context refreshed with \(calendarEvents.count) events")
+        print("🔄 CALENDAR REFRESH: Completed and updated API service with \(calendarEvents.count) events")
+        print("🔄 CALENDAR REFRESH: Context length: \(calendarContext.count) characters")
+        if !calendarEvents.isEmpty {
+            print("🔄 CALENDAR REFRESH: Sample of formatted context:")
+            let contextSample = String(calendarContext.prefix(300))
+            print("🔄 CALENDAR REFRESH: \(contextSample)...[truncated]")
+        }
         
         // Force a fresh fetch of reminders
+        print("🔄 REMINDERS REFRESH: Beginning reminders fetch...")
         let reminders = await eventKitManager?.fetchReminders() ?? []
         let remindersContext = formatReminders(reminders)
         await apiService.updateRemindersContext(remindersContext)
-        print("🔄 Reminders context refreshed with \(reminders.count) reminders")
+        print("🔄 REMINDERS REFRESH: Completed and updated API service with \(reminders.count) reminders")
+        print("🔄 REMINDERS REFRESH: Context length: \(remindersContext.count) characters")
         
         // Get fresh location data if needed
         let locationContext = await getLocationContext()
         await apiService.updateLocationContext(locationContext)
         print("🔄 Location context refreshed")
+        
+        // Log total refresh time
+        let refreshTime = Date().timeIntervalSince(refreshStartTime)
+        print("🔄 Context refresh completed in \(String(format: "%.2f", refreshTime)) seconds")
     }
 }
