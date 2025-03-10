@@ -1,27 +1,84 @@
 import SwiftUI
 
+/// A lightweight wrapper view that loads and presents the actual content
 struct PromptCachingView: View {
+    @ObservedObject var chatManager: ChatManager
+    @EnvironmentObject private var themeManager: ThemeManager
+    @State private var isLoaded = false
+    
+    var body: some View {
+        ZStack {
+            if isLoaded {
+                // Only show the content view once we're ready
+                PromptCachingContentView(chatManager: chatManager)
+                    .environmentObject(themeManager)
+            } else {
+                // Show loading indicator
+                VStack {
+                    ProgressView()
+                        .padding()
+                    Text("Loading cache metrics...")
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Prompt Caching")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            // Small delay to allow the view to render first
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isLoaded = true
+            }
+        }
+    }
+}
+
+/// The actual content view that loads after the wrapper view is displayed
+struct PromptCachingContentView: View {
     @ObservedObject var chatManager: ChatManager
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var themeManager: ThemeManager
     @State private var showingResetConfirmation = false
     @State private var testResult: String? = nil
     @State private var refreshID = UUID()
+    @State private var performanceReport: String = "Loading report..."
+    @State private var hitRate: Double = 0.0
+    @State private var effectiveness: Double = 0.0
+    @State private var savingsPercent: Double = 0.0
+    @State private var estimatedSavings: String = "0.0000"
+    @State private var isMetricsLoaded = false
     
     var body: some View {
         List {
             Section {
-                MetricsCardView(chatManager: chatManager)
+                if isMetricsLoaded {
+                    MetricsView(
+                        hitRate: hitRate,
+                        effectiveness: effectiveness,
+                        savingsPercent: savingsPercent,
+                        estimatedSavings: estimatedSavings,
+                        accentColor: themeManager.accentColor(for: colorScheme)
+                    )
                     .listRowInsets(EdgeInsets())
                     .padding(.vertical, 8)
+                } else {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .padding()
+                        Spacer()
+                    }
+                    .listRowInsets(EdgeInsets())
+                    .padding(.vertical, 8)
+                }
             }
             
             Section(header: Text("Detailed Report")) {
-                Text(chatManager.getCachePerformanceReport())
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .textSelection(.enabled)
-                    .padding(.vertical, 4)
+                Text(performanceReport)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundColor(.secondary)
+                .textSelection(.enabled)
+                .padding(.vertical, 4)
             }
             
             Section(header: Text("About Prompt Caching")) {
@@ -83,8 +140,6 @@ struct PromptCachingView: View {
                 .padding(.vertical, 4)
             }
         }
-        .navigationTitle("Prompt Caching")
-        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Reset", role: .destructive) {
@@ -114,8 +169,8 @@ struct PromptCachingView: View {
                     }
                 }
                 
-                // Force refresh
-                refreshID = UUID()
+                // Reload the data after reset
+                loadData()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -138,59 +193,71 @@ struct PromptCachingView: View {
         )
         .id(refreshID)  // Force refresh when metrics are reset
         .accentColor(themeManager.accentColor(for: colorScheme))
+        .onAppear {
+            loadData()
+        }
+    }
+    
+    private func loadData() {
+        // Reset loading states
+        isMetricsLoaded = false
+        performanceReport = "Loading report..."
+        
+        // Run calculations in background
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Get a direct reference to the tracker
+            let tracker = CachePerformanceTracker.shared
+            
+            // Calculate hit rate
+            let hitRateValue = tracker.totalRequests > 0 ? 
+                Double(tracker.cacheHits) / Double(tracker.totalRequests) * 100.0 : 0.0
+            
+            // Calculate effectiveness
+            let potentialTokensWithoutCache = tracker.totalInputTokens + tracker.totalCacheReadTokens
+            let effectivenessValue = potentialTokensWithoutCache > 0 ? 
+                Double(tracker.totalCacheReadTokens) / Double(potentialTokensWithoutCache) * 100.0 : 0.0
+            
+            // Calculate savings percent
+            let regularCostPerMille = 0.003 // $3/MTok input tokens
+            let costWithoutCaching = Double(potentialTokensWithoutCache) * regularCostPerMille / 1000.0
+            let savingsPercentValue = costWithoutCaching > 0 ? 
+                (tracker.estimatedSavings / costWithoutCaching) * 100.0 : 0.0
+                
+            // Format estimated savings
+            let savingsString = String(format: "%.4f", tracker.estimatedSavings)
+            
+            // Get performance report text
+            var reportText = "Loading report..."
+            
+            // Add a small artificial delay to prevent potential race conditions
+            Thread.sleep(forTimeInterval: 0.1)
+            
+            // Call the report function through the chatManager to avoid any access issues
+            reportText = chatManager.getCachePerformanceReport()
+            
+            // Update UI on main thread
+            DispatchQueue.main.async {
+                self.hitRate = hitRateValue
+                self.effectiveness = effectivenessValue
+                self.savingsPercent = savingsPercentValue
+                self.estimatedSavings = savingsString
+                self.performanceReport = reportText
+                self.isMetricsLoaded = true
+                
+                // Update the refresh ID to ensure the view updates
+                self.refreshID = UUID()
+            }
+        }
     }
 }
 
-struct MetricsCardView: View {
-    @ObservedObject var chatManager: ChatManager
-    @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var themeManager: ThemeManager
-    
-    // Parse values from performance report
-    private var hitRate: Double {
-        let report = chatManager.getCachePerformanceReport()
-        if let range = report.range(of: "Cache hits:.*\\((.*?)%\\)", options: .regularExpression) {
-            let substring = report[range]
-            if let percentRange = substring.range(of: "[0-9.]+(?=%)", options: .regularExpression) {
-                return Double(substring[percentRange]) ?? 0.0
-            }
-        }
-        return 0.0
-    }
-    
-    private var effectiveness: Double {
-        let report = chatManager.getCachePerformanceReport()
-        if let range = report.range(of: "Cache effectiveness: (.*?)%", options: .regularExpression) {
-            let substring = report[range]
-            if let percentRange = substring.range(of: "[0-9.]+(?=%)", options: .regularExpression) {
-                return Double(substring[percentRange]) ?? 0.0
-            }
-        }
-        return 0.0
-    }
-    
-    private var estimatedSavings: String {
-        let report = chatManager.getCachePerformanceReport()
-        if let range = report.range(of: "Savings: \\$(.*?) \\(", options: .regularExpression) {
-            let substring = report[range]
-            if let valueRange = substring.range(of: "\\$(.*?) \\(", options: .regularExpression) {
-                let value = substring[valueRange]
-                return String(value.dropFirst(1).dropLast(2))
-            }
-        }
-        return "$0.0000"
-    }
-    
-    private var savingsPercent: Double {
-        let report = chatManager.getCachePerformanceReport()
-        if let range = report.range(of: "Savings: \\$.*? \\((.*?)%\\)", options: .regularExpression) {
-            let substring = report[range]
-            if let percentRange = substring.range(of: "[0-9.]+(?=%)", options: .regularExpression) {
-                return Double(substring[percentRange]) ?? 0.0
-            }
-        }
-        return 0.0
-    }
+/// Lightweight view for displaying metrics
+struct MetricsView: View {
+    let hitRate: Double
+    let effectiveness: Double
+    let savingsPercent: Double
+    let estimatedSavings: String
+    let accentColor: Color
     
     var body: some View {
         VStack(spacing: 16) {
@@ -226,7 +293,7 @@ struct MetricsCardView: View {
                     .foregroundColor(.secondary)
                 Text("$\(estimatedSavings)")
                     .font(.system(.title2, design: .rounded, weight: .bold))
-                    .foregroundColor(themeManager.accentColor(for: colorScheme))
+                    .foregroundColor(accentColor)
             }
         }
         .padding()
