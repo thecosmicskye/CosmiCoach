@@ -40,3 +40,4 @@ xcuserdata/
 *.key
 api_keys.txt
 secrets.json
+/build

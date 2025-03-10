@@ -27,6 +27,7 @@
 		2A712F0F2D79404100D148EC /* APIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */; };
 		2A771BA92D725173000B70E6 /* CommandModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A771BA82D725173000B70E6 /* CommandModels.swift */; };
 		2ABF1DA72D6FFEFE00E5A6C1 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A352A2A2A352A2A2A35 /* OnboardingView.swift */; };
+		2AEC0FF32D7EA9ED00268460 /* ProcessToolUseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AEC0FF12D7EA9ED00268460 /* ProcessToolUseService.swift */; };
 		2AF38BCC2D6EE8C600756FD8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */; };
 		E4C961F42D73F9500012035F /* ThemeColorModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A372A2A2A372A2A2A39 /* ThemeColorModifier.swift */; };
 		E4C961F62D73F9600012035F /* ThemeSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */; };
@@ -80,6 +81,7 @@
 		2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequestBuilder.swift; sourceTree = "<group>"; };
 		2A771BA82D725173000B70E6 /* CommandModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandModels.swift; sourceTree = "<group>"; };
 		2A7B3FFF2D6EFCFC004CF1E4 /* CosmiCoachTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CosmiCoachTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2AEC0FF12D7EA9ED00268460 /* ProcessToolUseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessToolUseService.swift; sourceTree = "<group>"; };
 		2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ADHDCoach/Assets.xcassets; sourceTree = "<group>"; };
 		3A3A3A3A3A3A3A3A3A3A3A3A /* CosmiCoach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CosmiCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E4C961FA2D741EDF0012035F /* ChatAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAPIService.swift; sourceTree = "<group>"; };
@@ -109,6 +111,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		2AEC0FF22D7EA9ED00268460 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				2AEC0FF12D7EA9ED00268460 /* ProcessToolUseService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
 		5A5A5A5A5A5A5A5A5A5A5A5A = {
 			isa = PBXGroup;
 			children = (
@@ -133,6 +143,7 @@
 				2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */,
 				8A8A8A8A8A8A8A8A8A8A8A8A /* Models */,
 				9A9A9A9A9A9A9A9A9A9A9A9A /* Managers */,
+				2AEC0FF22D7EA9ED00268460 /* Services */,
 				AAAAAAAAAAAAAAAAAAAAAA1 /* Extensions */,
 				2A2A2A342A2A2A342A2A2A34 /* Info.plist */,
 			);
@@ -321,6 +332,7 @@
 				1A1A1A1B1A1A1A1B1A1A1A1B /* ContentView.swift in Sources */,
 				1A1A1A1C1A1A1A1C1A1A1A1C /* MessageBubbleView.swift in Sources */,
 				1A1A1A1D1A1A1A1D1A1A1A1D /* SettingsView.swift in Sources */,
+				2AEC0FF32D7EA9ED00268460 /* ProcessToolUseService.swift in Sources */,
 				1A1A1A1D1A1A1A1D1A1A1A1F /* OperationStatusView.swift in Sources */,
 				E4C962072D7510730012035F /* CachePerformanceTracker.swift in Sources */,
 				1A1A1A1E1A1A1A1E1A1A1A1E /* ChatMessage.swift in Sources */,
