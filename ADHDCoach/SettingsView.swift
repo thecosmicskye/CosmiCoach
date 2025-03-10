@@ -8,7 +8,7 @@ struct SettingsView: View {
     @EnvironmentObject private var locationManager: LocationManager
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var chatManager: ChatManager
-    @State private var apiKey = ""
+    @AppStorage("claude_api_key") private var apiKey = ""
     @AppStorage("check_basics_daily") private var checkBasicsDaily = true
     @AppStorage("token_limit") private var tokenLimit = 75000
     @AppStorage("enable_automatic_responses") private var enableAutomaticResponses = false
@@ -17,10 +17,6 @@ struct SettingsView: View {
     @State private var testResult: String? = nil
     @State private var showingDeleteChatConfirmation = false
     @State private var showingResetConfirmation = false
-    
-    init() {
-        _apiKey = State(initialValue: UserDefaults.standard.string(forKey: "claude_api_key") ?? "")
-    }
     
     func testApiKey() async {
         isTestingKey = true
