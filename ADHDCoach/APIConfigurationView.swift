@@ -205,8 +205,52 @@ struct APIConfigurationView: View {
                 .padding(.vertical, 4)
             }
             
-            Section(header: Text("Token Limit")) {
-                TokenLimitView(tokenLimit: $tokenLimit)
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.title3)
+                            .foregroundColor(themeManager.accentColor(for: colorScheme))
+                        Text("Token Limit")
+                            .font(.headline)
+                    }
+                    
+                    Text("Controls how much conversation history is sent to Claude. Higher limits provide more context but cost more per request.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.vertical, 4)
+                    
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("\(tokenLimit)")
+                                .font(.headline)
+                            Spacer()
+                            Text(tokenLimitDescription(tokenLimit))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(themeManager.accentColor(for: colorScheme).opacity(0.1))
+                                )
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+                        )
+                        
+                        Slider(value: Binding(
+                            get: { Double(tokenLimit) },
+                            set: { tokenLimit = Int($0) }
+                        ), in: 10000...200000, step: 5000)
+                        .accentColor(themeManager.accentColor(for: colorScheme))
+                        .padding(.vertical, 8)
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(.vertical, 4)
             }
             
             Section(header: Text("About Claude API")) {
@@ -223,50 +267,15 @@ struct APIConfigurationView: View {
     }
 }
 
-struct TokenLimitView: View {
-    @Binding var tokenLimit: Int
-    @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var themeManager: ThemeManager
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("\(tokenLimit)")
-                    .font(.headline)
-                Spacer()
-                Text(tokenLimitDescription)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(themeManager.accentColor(for: colorScheme).opacity(0.1))
-                    )
-            }
-            
-            Slider(value: Binding(
-                get: { Double(tokenLimit) },
-                set: { tokenLimit = Int($0) }
-            ), in: 10000...100000, step: 5000)
-            .accentColor(themeManager.accentColor(for: colorScheme))
-            .padding(.vertical, 8)
-            
-            Text("Controls how much conversation history is sent to Claude. Higher limits provide more context but cost more per request.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.vertical, 8)
-    }
-    
-    private var tokenLimitDescription: String {
-        switch tokenLimit {
-        case 10000...25000: return "Minimal"
-        case 25001...50000: return "Balanced"
-        case 50001...75000: return "Enhanced"
-        case 75001...100000: return "Maximum"
-        default: return "Custom"
-        }
+// Helper function to get token limit description
+func tokenLimitDescription(_ limit: Int) -> String {
+    switch limit {
+    case 10000...25000: return "Minimum"
+    case 25001...75000: return "Affordable"
+    case 75001...125000: return "Balanced"
+    case 125001...175000: return "Long Chats"
+    case 175001...200000: return "Very Long Chats"
+    default: return "Custom"
     }
 }
 
