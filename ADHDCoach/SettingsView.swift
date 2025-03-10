@@ -125,7 +125,11 @@ struct SettingsView: View {
                     }
                 }
                 
-                Section(header: Text("Coaching Preferences")) {
+                Section(footer: 
+                    Text("Reminds you to check important daily basics like medication, hydration, and meals.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                ) {
                     Toggle("Daily Basics Check", isOn: $checkBasicsDaily)
                 }
                 
@@ -258,15 +262,19 @@ struct SettingsView: View {
                     }
                 }
                 
-                Section {
-                    Toggle("Automatic Messages", isOn: $enableAutomaticResponses)
-                    
+                Section(footer:
                     Text("Cosmic Coach will automatically send you a message when you open the app (only if you've been away for at least 5 minutes).")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                ) {
+                    Toggle("Automatic Messages", isOn: $enableAutomaticResponses)
                 }
                 
-                Section {
+                Section(footer:
+                    Text("Cosmic Coach will use your location in its context window.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                ) {
                     Toggle("Location Awareness", isOn: $enableLocationAwareness)
                         .onChange(of: enableLocationAwareness) { oldValue, newValue in
                             if newValue {
@@ -278,10 +286,6 @@ struct SettingsView: View {
                                 locationManager.stopUpdatingLocation()
                             }
                         }
-                    
-                    Text("Cosmic Coach will use your location in its context window.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
                 
                 Section(header: Text("About")) {
