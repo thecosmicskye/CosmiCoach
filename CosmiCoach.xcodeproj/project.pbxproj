@@ -22,15 +22,11 @@
 		2A06F4922D711B770030A1AE /* LocationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A06F4912D711B770030A1AE /* LocationManager.swift */; };
 		2A2A2FD52D7E339F0059A323 /* MemoryContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2FD42D7E339F0059A323 /* MemoryContentView.swift */; };
 		2A2A2FD72D7E37A00059A323 /* PromptCachingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2FD62D7E379F0059A323 /* PromptCachingView.swift */; };
+		2A2A2FD92D7E3A760059A323 /* APIConfigurationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2FD82D7E3A760059A323 /* APIConfigurationView.swift */; };
 		2A712F0E2D79404100D148EC /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A712F0C2D79404100D148EC /* APIModels.swift */; };
 		2A712F0F2D79404100D148EC /* APIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */; };
 		2A771BA92D725173000B70E6 /* CommandModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A771BA82D725173000B70E6 /* CommandModels.swift */; };
 		2ABF1DA72D6FFEFE00E5A6C1 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A352A2A2A352A2A2A35 /* OnboardingView.swift */; };
-		2AD2B6082D6EFDFA00782E3F /* MemoryManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FF2D6EFDDA00782E3F /* MemoryManagerTests.swift */; };
-		2AD2B6092D6EFDFA00782E3F /* ReminderItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B6002D6EFDDA00782E3F /* ReminderItemTests.swift */; };
-		2AD2B60A2D6EFDFA00782E3F /* ChatManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FC2D6EFDDA00782E3F /* ChatManagerTests.swift */; };
-		2AD2B60B2D6EFDFA00782E3F /* ChatMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FD2D6EFDDA00782E3F /* ChatMessageTests.swift */; };
-		2AD2B60D2D6EFDFA00782E3F /* EventKitManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AD2B5FE2D6EFDDA00782E3F /* EventKitManagerTests.swift */; };
 		2AF38BCC2D6EE8C600756FD8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */; };
 		E4C961F42D73F9500012035F /* ThemeColorModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A372A2A2A372A2A2A39 /* ThemeColorModifier.swift */; };
 		E4C961F62D73F9600012035F /* ThemeSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */; };
@@ -79,15 +75,11 @@
 		2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSelectionView.swift; sourceTree = "<group>"; };
 		2A2A2FD42D7E339F0059A323 /* MemoryContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryContentView.swift; sourceTree = "<group>"; };
 		2A2A2FD62D7E379F0059A323 /* PromptCachingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PromptCachingView.swift; sourceTree = "<group>"; };
+		2A2A2FD82D7E3A760059A323 /* APIConfigurationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIConfigurationView.swift; sourceTree = "<group>"; };
 		2A712F0C2D79404100D148EC /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
 		2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequestBuilder.swift; sourceTree = "<group>"; };
 		2A771BA82D725173000B70E6 /* CommandModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandModels.swift; sourceTree = "<group>"; };
 		2A7B3FFF2D6EFCFC004CF1E4 /* CosmiCoachTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CosmiCoachTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		2AD2B5FC2D6EFDDA00782E3F /* ChatManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatManagerTests.swift; sourceTree = "<group>"; };
-		2AD2B5FD2D6EFDDA00782E3F /* ChatMessageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessageTests.swift; sourceTree = "<group>"; };
-		2AD2B5FE2D6EFDDA00782E3F /* EventKitManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventKitManagerTests.swift; sourceTree = "<group>"; };
-		2AD2B5FF2D6EFDDA00782E3F /* MemoryManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryManagerTests.swift; sourceTree = "<group>"; };
-		2AD2B6002D6EFDDA00782E3F /* ReminderItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReminderItemTests.swift; sourceTree = "<group>"; };
 		2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ADHDCoach/Assets.xcassets; sourceTree = "<group>"; };
 		3A3A3A3A3A3A3A3A3A3A3A3A /* CosmiCoach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CosmiCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E4C961FA2D741EDF0012035F /* ChatAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatAPIService.swift; sourceTree = "<group>"; };
@@ -117,22 +109,9 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		2AD2B6012D6EFDDA00782E3F /* ADHDCoachTests */ = {
-			isa = PBXGroup;
-			children = (
-				2AD2B5FC2D6EFDDA00782E3F /* ChatManagerTests.swift */,
-				2AD2B5FD2D6EFDDA00782E3F /* ChatMessageTests.swift */,
-				2AD2B5FE2D6EFDDA00782E3F /* EventKitManagerTests.swift */,
-				2AD2B5FF2D6EFDDA00782E3F /* MemoryManagerTests.swift */,
-				2AD2B6002D6EFDDA00782E3F /* ReminderItemTests.swift */,
-			);
-			path = ADHDCoachTests;
-			sourceTree = "<group>";
-		};
 		5A5A5A5A5A5A5A5A5A5A5A5A = {
 			isa = PBXGroup;
 			children = (
-				2AD2B6012D6EFDDA00782E3F /* ADHDCoachTests */,
 				2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */,
 				6A6A6A6A6A6A6A6A6A6A6A6A /* ADHDCoach */,
 				7A7A7A7A7A7A7A7A7A7A7A7A /* Products */,
@@ -148,6 +127,7 @@
 				2A2A2A2B2A2A2A2B2A2A2A2B /* ContentView.swift */,
 				2A2A2A2C2A2A2A2C2A2A2A2C /* MessageBubbleView.swift */,
 				2A2A2A2D2A2A2A2D2A2A2A2D /* SettingsView.swift */,
+				2A2A2FD82D7E3A760059A323 /* APIConfigurationView.swift */,
 				2A2A2A352A2A2A352A2A2A35 /* OnboardingView.swift */,
 				2A2A2A2D2A2A2A2D2A2A2A2F /* OperationStatusView.swift */,
 				2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */,
@@ -312,11 +292,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				2AD2B6082D6EFDFA00782E3F /* MemoryManagerTests.swift in Sources */,
-				2AD2B6092D6EFDFA00782E3F /* ReminderItemTests.swift in Sources */,
-				2AD2B60A2D6EFDFA00782E3F /* ChatManagerTests.swift in Sources */,
-				2AD2B60B2D6EFDFA00782E3F /* ChatMessageTests.swift in Sources */,
-				2AD2B60D2D6EFDFA00782E3F /* EventKitManagerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -326,6 +301,7 @@
 			files = (
 				E4C961F62D73F9600012035F /* ThemeSelectionView.swift in Sources */,
 				E4C961F72D73F9600012035F /* Theme.swift in Sources */,
+				2A2A2FD92D7E3A760059A323 /* APIConfigurationView.swift in Sources */,
 				E4C961F82D73F9600012035F /* ThemeManager.swift in Sources */,
 				E4C962052D741EFA0012035F /* DateFormatter+Shared.swift in Sources */,
 				2A2A2FD72D7E37A00059A323 /* PromptCachingView.swift in Sources */,
