@@ -34,9 +34,13 @@ class EventKitManager: ObservableObject {
             object: nil,
             queue: .main) { [weak self] _ in
                 print("📅 EventKitManager: Received EKEventStore change notification")
+                
                 // Force reset of the store on next fetch to get latest data
-                // Hash comparison will automatically detect changes
                 self?.eventStore.reset()
+                
+                // The hash comparison in fetchUpcomingEvents will automatically
+                // detect changes when data is fetched next time
+                print("📅 EventKitManager: Store reset completed - changes will be detected on next fetch")
         }
     }
     
@@ -167,13 +171,19 @@ class EventKitManager: ObservableObject {
      * @return Array of calendar events
      */
     func fetchUpcomingEvents(days: Int) -> [CalendarEvent] {
-        guard calendarAccessGranted else { return [] }
+        guard calendarAccessGranted else { 
+            print("📅 EventKitManager: Calendar access not granted, returning empty events array")
+            return [] 
+        }
         
         // No need to reset the store here - it's reset by the notification observer when changes occur
         // We'll compare hashes to detect changes in the fetched data
         
+        print("📅 EventKitManager: Fetching upcoming events for next \(days) days")
+        
         // Get calendars
         let calendars = eventStore.calendars(for: .event)
+        print("📅 EventKitManager: Found \(calendars.count) calendars")
         
         // Always use a fresh Date() for current time
         let startDate = Date()
@@ -183,6 +193,8 @@ class EventKitManager: ObservableObject {
         let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: calendars)
         let events = eventStore.events(matching: predicate)
         
+        print("📅 EventKitManager: Raw events fetched: \(events.count)")
+        
         // Calculate a hash from the events to detect changes
         let calendarEvents = events.map { CalendarEvent(from: $0) }
         let newHash = calculateEventsHash(calendarEvents)
@@ -190,9 +202,21 @@ class EventKitManager: ObservableObject {
         // If hash is different, data has changed
         if lastCalendarEventsHash != newHash {
             print("📅 EventKitManager: Calendar events have changed (hash: \(lastCalendarEventsHash) -> \(newHash))")
+            print("📅 EventKitManager: Calendar data diff detected! Will provide fresh data to Claude")
             lastCalendarEventsHash = newHash
         } else {
-            print("📅 EventKitManager: Calendar events unchanged since last fetch")
+            print("📅 EventKitManager: Calendar events unchanged since last fetch (hash: \(newHash))")
+        }
+        
+        // Log first few events for debugging
+        if !calendarEvents.isEmpty {
+            print("📅 EventKitManager: First \(min(3, calendarEvents.count)) calendar events:")
+            for i in 0..<min(3, calendarEvents.count) {
+                let event = calendarEvents[i]
+                print("📅 EventKitManager:   - Event[\(i)]: \(event.title), Start: \(DateFormatter.shared.string(from: event.startDate))")
+            }
+        } else {
+            print("📅 EventKitManager: No calendar events found")
         }
         
         return calendarEvents
@@ -207,13 +231,68 @@ class EventKitManager: ObservableObject {
         
         // Include count in hash to detect additions/removals
         hasher.combine(events.count)
+        print("📅 Hash Debug: Including event count in hash: \(events.count)")
         
-        // Hash each event ID to detect changes in specific events
-        for event in events {
-            hasher.combine(event.id)
+        // Only log the first few events to avoid console spam
+        let maxEventsToLog = min(events.count, 5)
+        
+        // Sort events consistently if possible to produce more stable hashes
+        var sortedEvents = events
+        if let calEvents = events as? [CalendarEvent] {
+            sortedEvents = calEvents.sorted { 
+                $0.startDate < $1.startDate 
+            } as! [T]
+            print("📅 Hash Debug: Sorted \(events.count) calendar events by start date for consistent hashing")
         }
         
-        return hasher.finalize()
+        // Hash each event
+        for (index, event) in sortedEvents.enumerated() {
+            if let calEvent = event as? CalendarEvent {
+                // Hash each component of the event
+                hasher.combine(calEvent.id)
+                hasher.combine(calEvent.title)
+                
+                // Round dates to nearest minute for stable hashing
+                let startInterval = calEvent.startDate.timeIntervalSince1970
+                let roundedStartInterval = round(startInterval / 60) * 60
+                hasher.combine(roundedStartInterval)
+                
+                let endInterval = calEvent.endDate.timeIntervalSince1970
+                let roundedEndInterval = round(endInterval / 60) * 60
+                hasher.combine(roundedEndInterval)
+                
+                // Include notes in hash if present
+                if let notes = calEvent.notes {
+                    hasher.combine(notes)
+                }
+                
+                // Include calendar information
+                hasher.combine(calEvent.calendar.title)
+                
+                // Only log a few events to prevent console spam
+                if index < maxEventsToLog {
+                    print("📅 Hash Debug: Adding event to hash - ID: \(calEvent.id), Title: \(calEvent.title)")
+                    print("📅 Hash Debug:   - Start: \(DateFormatter.shared.string(from: calEvent.startDate))")
+                    print("📅 Hash Debug:   - End: \(DateFormatter.shared.string(from: calEvent.endDate))")
+                    print("📅 Hash Debug:   - Notes: \(calEvent.notes ?? "none")")
+                    print("📅 Hash Debug:   - Calendar: \(calEvent.calendar.title)")
+                }
+            } else {
+                hasher.combine(event.id)
+                if index < maxEventsToLog {
+                    print("📅 Hash Debug: Adding generic event to hash - ID: \(event.id)")
+                }
+            }
+        }
+        
+        if events.count > maxEventsToLog {
+            print("📅 Hash Debug: ... and \(events.count - maxEventsToLog) more events (not logged)")
+        }
+        
+        let finalHash = hasher.finalize()
+        print("📅 Hash Debug: Final hash value calculated: \(finalHash)")
+        
+        return finalHash
     }
     
     func addCalendarEvent(title: String, startDate: Date, endDate: Date, notes: String? = nil, messageId: UUID? = nil, chatManager: ChatManager? = nil) -> Bool {
