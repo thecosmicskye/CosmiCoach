@@ -252,6 +252,25 @@ struct APIConfigurationView: View {
                 .padding(.vertical, 4)
             }
             
+            Section {
+                NavigationLink {
+                    PromptCachingView(
+                        chatManager: chatManager
+                    )
+                    .environmentObject(themeManager)
+                } label: {
+                    HStack {
+                        Text("Prompt Caching")
+                        
+                        Spacer()
+                        
+                        Text("View Analytics")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
             Section(header: Text("About Claude API")) {
                 Text("You will need to create an Anthropic account and subscribe to their API service to use this app. API usage is billed directly by Anthropic based on your account's plan.")
                     .font(.caption)

@@ -14,25 +14,25 @@ class CachePerformanceTracker {
     static let shared = CachePerformanceTracker()
     
     /// Total number of API requests made
-    private(set) var totalRequests: Int = 0
+    public private(set) var totalRequests: Int = 0
     
     /// Number of requests that resulted in cache hits
-    private(set) var cacheHits: Int = 0
+    public private(set) var cacheHits: Int = 0
     
     /// Number of requests that resulted in cache misses
-    private(set) var cacheMisses: Int = 0
+    public private(set) var cacheMisses: Int = 0
     
     /// Total number of input tokens processed
-    private(set) var totalInputTokens: Int = 0
+    public private(set) var totalInputTokens: Int = 0
     
     /// Total number of tokens used for cache creation
-    private(set) var totalCacheCreationTokens: Int = 0
+    public private(set) var totalCacheCreationTokens: Int = 0
     
     /// Total number of tokens read from cache
-    private(set) var totalCacheReadTokens: Int = 0
+    public private(set) var totalCacheReadTokens: Int = 0
     
     /// Estimated cost savings from using cache
-    private(set) var estimatedSavings: Double = 0.0
+    public private(set) var estimatedSavings: Double = 0.0
     
     /// UserDefaults keys for persistence
     private enum UserDefaultsKeys {

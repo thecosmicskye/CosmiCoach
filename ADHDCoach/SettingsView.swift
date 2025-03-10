@@ -239,18 +239,6 @@ struct SettingsView: View {
                 
                 Section {
                     NavigationLink {
-                        PromptCachingView(
-                            chatManager: chatManager
-                        )
-                    } label: {
-                        HStack {
-                            Text("Prompt Caching")
-                        }
-                    }
-                }
-                
-                Section {
-                    NavigationLink {
                         ThemeSelectionView()
                             .environmentObject(themeManager)
                     } label: {
