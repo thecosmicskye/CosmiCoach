@@ -125,14 +125,6 @@ struct SettingsView: View {
                     }
                 }
                 
-                Section(footer: 
-                    Text("Reminds you to check important daily basics like medication, hydration, and meals.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                ) {
-                    Toggle("Daily Basics Check", isOn: $checkBasicsDaily)
-                }
-                
                 Section {
                     NavigationLink {
                         MemoryContentView(
@@ -190,6 +182,61 @@ struct SettingsView: View {
                 }
                 
                 Section {
+                    NavigationLink {
+                        ThemeSelectionView()
+                            .environmentObject(themeManager)
+                    } label: {
+                        HStack {
+                            Text("Theme")
+                            
+                            Spacer()
+                            
+                            HStack {
+                                Circle()
+                                    .fill(colorScheme == .dark ? themeManager.currentTheme.darkModeAccentColor : themeManager.currentTheme.accentColor)
+                                    .frame(width: 16, height: 16)
+                                Text(themeManager.currentTheme.name)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+                
+                Section(footer: 
+                    Text("Cosmic Coach will remind you to check important daily basics like eating and drinking water.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                ) {
+                    Toggle("Daily Basics Check", isOn: $checkBasicsDaily)
+                }
+                
+                Section(footer:
+                    Text("Cosmic Coach will automatically send you a message when you open the app (only if you've been away for at least 5 minutes).")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                ) {
+                    Toggle("Automatic Messages", isOn: $enableAutomaticResponses)
+                }
+                
+                Section(footer:
+                    Text("Cosmic Coach will use your location in its context window.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                ) {
+                    Toggle("Location Awareness", isOn: $enableLocationAwareness)
+                        .onChange(of: enableLocationAwareness) { oldValue, newValue in
+                            if newValue {
+                                // When enabled, immediately request location access
+                                print("📍 Location awareness toggled ON - requesting access")
+                                locationManager.requestAccess()
+                            } else {
+                                print("📍 Location awareness toggled OFF - stopping updates")
+                                locationManager.stopUpdatingLocation()
+                            }
+                        }
+                }
+                
+                Section {
                     Button("Delete Chat History") {
                         showingDeleteChatConfirmation = true
                     }
@@ -239,53 +286,6 @@ struct SettingsView: View {
                     } message: {
                         Text("This will delete all Chat message data. This action cannot be undone.")
                     }
-                }
-                
-                Section {
-                    NavigationLink {
-                        ThemeSelectionView()
-                            .environmentObject(themeManager)
-                    } label: {
-                        HStack {
-                            Text("Theme")
-                            
-                            Spacer()
-                            
-                            HStack {
-                                Circle()
-                                    .fill(colorScheme == .dark ? themeManager.currentTheme.darkModeAccentColor : themeManager.currentTheme.accentColor)
-                                    .frame(width: 16, height: 16)
-                                Text(themeManager.currentTheme.name)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-                
-                Section(footer:
-                    Text("Cosmic Coach will automatically send you a message when you open the app (only if you've been away for at least 5 minutes).")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                ) {
-                    Toggle("Automatic Messages", isOn: $enableAutomaticResponses)
-                }
-                
-                Section(footer:
-                    Text("Cosmic Coach will use your location in its context window.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                ) {
-                    Toggle("Location Awareness", isOn: $enableLocationAwareness)
-                        .onChange(of: enableLocationAwareness) { oldValue, newValue in
-                            if newValue {
-                                // When enabled, immediately request location access
-                                print("📍 Location awareness toggled ON - requesting access")
-                                locationManager.requestAccess()
-                            } else {
-                                print("📍 Location awareness toggled OFF - stopping updates")
-                                locationManager.stopUpdatingLocation()
-                            }
-                        }
                 }
                 
                 Section(header: Text("About")) {
