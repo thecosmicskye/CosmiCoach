@@ -176,8 +176,6 @@ struct APIConfigurationView: View {
                         
                         // Get API key link
                         HStack {
-                            Spacer()
-                            // This ButtonStyle wrapper prevents the tap area from extending beyond the visible content
                             Button(action: {
                                 UIApplication.shared.open(URL(string: "https://console.anthropic.com/")!)
                             }) {
@@ -189,6 +187,7 @@ struct APIConfigurationView: View {
                                         .font(.caption)
                                         .foregroundColor(themeManager.accentColor(for: colorScheme))
                                 }
+                                .frame(maxWidth: .infinity, alignment: .center)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
                                 .background(
