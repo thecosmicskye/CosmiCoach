@@ -13,29 +13,8 @@ struct ContentView: View {
     @State private var scrollToBottom = false
     @AppStorage("hasAppearedBefore") private var hasAppearedBefore = false
     @Environment(\.scenePhase) private var scenePhase
-    
-    // Setup keyboard appearance notification
-    private func setupKeyboardObserver() {
-        // When keyboard will show
-        NotificationCenter.default.addObserver(
-            forName: UIResponder.keyboardWillShowNotification,
-            object: nil,
-            queue: .main
-        ) { [self] notification in
-            // Check if auto-scroll is enabled or if we're at the bottom
-            let isAtBottom = UserDefaults.standard.bool(forKey: "ChatIsAtBottom")
-            
-            // Only scroll when keyboard shows if we're explicitly at bottom
-            if isAtBottom {
-                // Delay the scroll slightly to allow layout to update
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    scrollToBottom = true
-                }
-            }
-        }
-    }
-    
-    // This function is now moved to the ChatScrollView component
+    @StateObject private var keyboardState = KeyboardState()
+    @State private var inputText = ""
     
     // Helper function to reset chat when notification is received
     private func setupNotificationObserver() {
@@ -57,42 +36,55 @@ struct ContentView: View {
     
     var body: some View {
         NavigationStack {
-            GeometryReader { geometry in
-                VStack(spacing: 0) {
-                    // Chat messages list
-                    ChatScrollView(
-                        messages: chatManager.messages,
-                        statusMessagesProvider: chatManager.combinedStatusMessagesForMessage,
-                        streamingUpdateCount: chatManager.streamingUpdateCount,
-                        shouldScrollToBottom: $scrollToBottom,
-                        isEmpty: chatManager.messages.isEmpty
-                    )
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        // Dismiss keyboard when tapping on scroll view area
-                        if let controller = KeyboardAccessoryController.sharedInstance {
-                            controller.deactivateTextField()
-                        } else {
-                            // Fallback to standard method
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                        }
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    if chatManager.messages.isEmpty {
+                        EmptyStateView()
+                    } else {
+                        MessageListView(
+                            messages: chatManager.messages,
+                            statusMessagesProvider: chatManager.combinedStatusMessagesForMessage
+                        )
                     }
-                
-                                    // Using our keyboard-attached input
-                    KeyboardInputAccessory(
-                        text: .constant(""),
-                        onSend: sendMessage,
-                        colorScheme: colorScheme,
-                        themeColor: themeManager.accentColor(for: colorScheme),
-                        isDisabled: chatManager.isProcessing
-                    )
-                    .frame(height: 0) // No visible height - it's part of the keyboard now
-                    .onTapGesture {
-                        // Activate the text field
-                        KeyboardAccessoryController.sharedInstance?.activateTextField()
+                    Color.clear
+                        .frame(height: 1)
+                        .id("bottomScrollID")
+                        .onAppear {
+                            scrollToBottom = true
+                        }
+                    
+                    // Reserve space for input
+                    Spacer()
+                        .frame(height: 44)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .scrollClipDisabled()
+                .onChange(of: chatManager.messages.count) { _, _ in
+                    scrollToBottom(animated: true)
+                }
+                .onChange(of: chatManager.streamingUpdateCount) { _, _ in
+                    // Skip animation for streaming updates for better performance
+                    scrollToBottom(animated: false)
+                }
+                .onChange(of: scrollToBottom) { _, newValue in
+                    if newValue {
+                        scrollToLastMessage()
+                        scrollToBottom = false
                     }
                 }
+                
+                // Keyboard attached input
+                KeyboardAttachedView(
+                    keyboardState: keyboardState,
+                    text: $inputText,
+                    onSend: sendMessage,
+                    colorScheme: colorScheme,
+                    themeColor: themeManager.accentColor(for: colorScheme),
+                    isDisabled: chatManager.isProcessing
+                )
+                .frame(height: 44)
             }
+            .ignoresSafeArea(.keyboard)
             .navigationTitle("Cosmic Coach")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(colorScheme)
@@ -100,13 +92,8 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
-                        // Dismiss keyboard first to prevent accessory view overlay issues
-                        if let controller = KeyboardAccessoryController.sharedInstance {
-                            controller.deactivateTextField()
-                        } else {
-                            // Fallback to standard method
-                            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                        }
+                        // Hide keyboard before showing settings
+                        hideKeyboard()
                         
                         // Then show settings
                         showingSettings = true
@@ -125,9 +112,7 @@ struct ContentView: View {
                     .environmentObject(chatManager)
                     .onAppear {
                         // Force keyboard dismiss when settings appear
-                        if let controller = KeyboardAccessoryController.sharedInstance {
-                            controller.deactivateTextField()
-                        }
+                        hideKeyboard()
                     }
             }
             .applyThemeColor()
@@ -139,7 +124,6 @@ struct ContentView: View {
                 
                 // Setup notification observers
                 setupNotificationObserver()
-                setupKeyboardObserver()
                 print("⏱️ ContentView.onAppear - Set up notification observers")
                 
                 // Check if automatic messages should be enabled in settings and log it
@@ -213,27 +197,48 @@ struct ContentView: View {
         }
     }
     
-    private func sendMessage() {
-        guard let text = KeyboardAccessoryController.currentText?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty else { return }
-        
-        // Dismiss keyboard using our accessory controller
-        if let controller = KeyboardAccessoryController.sharedInstance {
-            controller.deactivateTextField()
-        } else {
-            // Fallback to standard method if controller isn't available
-            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    private func scrollToLastMessage() {
+        DispatchQueue.main.async {
+            withAnimation {
+                // Using proxy from ScrollViewReader to scroll to the bottom
+                if let scrollView = UIScrollView.findScrollView() {
+                    let bottomOffset = CGPoint(
+                        x: 0,
+                        y: max(0, scrollView.contentSize.height - scrollView.bounds.height + scrollView.contentInset.bottom)
+                    )
+                    scrollView.setContentOffset(bottomOffset, animated: true)
+                }
+            }
         }
+    }
+    
+    private func scrollToBottom(animated: Bool = true) {
+        if animated {
+            scrollToBottom = true
+        } else {
+            scrollToLastMessage()
+        }
+    }
+    
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+    
+    private func sendMessage() {
+        let trimmedText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return }
+        
+        // Clear input text
+        inputText = ""
+        
+        // Dismiss keyboard
+        hideKeyboard()
         
         // Add user message to chat
-        chatManager.addUserMessage(content: text)
+        chatManager.addUserMessage(content: trimmedText)
         
         // Trigger scroll to bottom after adding user message
         scrollToBottom = true
-        
-        // Ensure we mark as at bottom when sending a message
-        UserDefaults.standard.set(true, forKey: "ChatIsAtBottom")
-        UserDefaults.standard.synchronize()
         
         // Send to Claude API
         Task {
@@ -242,7 +247,7 @@ struct ContentView: View {
             let reminders = await eventKitManager.fetchReminders()
             
             await chatManager.sendMessageToClaude(
-                userMessage: text,
+                userMessage: trimmedText,
                 calendarEvents: calendarEvents,
                 reminders: reminders
             )
@@ -567,578 +572,297 @@ struct ScrollDetector: UIViewRepresentable {
         .environmentObject(LocationManager())
 }
 
-#Preview("Chat Components") {
+#Preview("Message Components") {
     VStack {
-        ChatScrollView(
+        MessageListView(
             messages: [
                 ChatMessage(id: UUID(), content: "Hello there!", timestamp: Date(), isUser: true, isComplete: true),
                 ChatMessage(id: UUID(), content: "Hi! How can I help you today?", timestamp: Date(), isUser: false, isComplete: true)
             ],
-            statusMessagesProvider: { _ in [] },
-            streamingUpdateCount: 0,
-            shouldScrollToBottom: .constant(false),
-            isEmpty: false
+            statusMessagesProvider: { _ in [] }
         )
         .frame(height: 300)
         
         Divider()
         
-        ChatScrollView(
-            messages: [],
-            statusMessagesProvider: { _ in [] },
-            streamingUpdateCount: 0,
-            shouldScrollToBottom: .constant(false),
-            isEmpty: true
-        )
-        .frame(height: 300)
+        EmptyStateView()
+            .frame(height: 300)
     }
     .padding()
 }
 
-// Implements an input bar that sticks to the keyboard during interactive dismissal
-struct KeyboardInputAccessory: UIViewControllerRepresentable {
+#Preview("Input Components") {
+    VStack {
+        TextInputView(
+            text: .constant("Hello there!"),
+            onSend: {},
+            colorScheme: .light,
+            themeColor: .blue,
+            isDisabled: false
+        )
+        
+        Divider()
+        
+        TextInputView(
+            text: .constant(""),
+            onSend: {},
+            colorScheme: .dark,
+            themeColor: .blue,
+            isDisabled: true
+        )
+        .preferredColorScheme(.dark)
+    }
+    .padding()
+}
+
+
+// Find ScrollView in the view hierarchy
+extension UIScrollView {
+    static func findScrollView() -> UIScrollView? {
+        let windows = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+        
+        for window in windows {
+            if let scrollView = findScrollView(in: window) {
+                return scrollView
+            }
+        }
+        return nil
+    }
+    
+    private static func findScrollView(in view: UIView) -> UIScrollView? {
+        if let scrollView = view as? UIScrollView {
+            return scrollView
+        }
+        
+        for subview in view.subviews {
+            if let scrollView = findScrollView(in: subview) {
+                return scrollView
+            }
+        }
+        
+        return nil
+    }
+}
+
+// MARK: - KeyboardState
+class KeyboardState: ObservableObject {
+    @Published var keyboardOffset: CGFloat = 0
+    @Published var isKeyboardVisible: Bool = false
+}
+
+// MARK: - TextInputView
+struct TextInputView: View {
     @Binding var text: String
     var onSend: () -> Void
     var colorScheme: ColorScheme
     var themeColor: Color
     var isDisabled: Bool
     
-    func makeUIViewController(context: Context) -> KeyboardAccessoryController {
-        let controller = KeyboardAccessoryController()
-        controller.delegate = context.coordinator
-        controller.themeColor = UIColor(themeColor)
-        controller.isDarkMode = colorScheme == .dark
-        controller.isDisabled = isDisabled
-        controller.textFieldText = text
-        
-        return controller
-    }
-    
-    func updateUIViewController(_ uiViewController: KeyboardAccessoryController, context: Context) {
-        // Avoid text update while editing to prevent cursor jumps
-        if !uiViewController.textField.isFirstResponder {
-            uiViewController.textField.text = text
-        }
-        
-        // Update controller properties
-        uiViewController.textFieldText = text
-        uiViewController.themeColor = UIColor(themeColor)
-        uiViewController.isDarkMode = colorScheme == .dark
-        uiViewController.isDisabled = isDisabled
-        
-        // Update container height based on keyboard state
-        let isKeyboardHidden = !uiViewController.textField.isFirstResponder
-        uiViewController.updateContainerHeight(forKeyboardHidden: isKeyboardHidden)
-        
-        // Update appearance when theme, color scheme, or disabled state changes
-        if context.coordinator.parent.themeColor != themeColor || 
-           context.coordinator.parent.colorScheme != colorScheme ||
-           context.coordinator.parent.isDisabled != isDisabled {
-            uiViewController.updateAppearance()
-        }
-        
-        context.coordinator.parent = self
-    }
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: KeyboardInputAccessory
-        
-        init(_ parent: KeyboardInputAccessory) {
-            self.parent = parent
-        }
-        
-        func textFieldDidChangeSelection(_ textField: UITextField) {
-            parent.text = textField.text ?? ""
-        }
-        
-        func textFieldDidBeginEditing(_ textField: UITextField) {
-            // Update container height in controller
-            if let controller = textField.getKeyboardAccessoryController() {
-                controller.updateContainerHeight(forKeyboardHidden: false)
+    var body: some View {
+        HStack {
+            TextField("Message", text: $text)
+                .padding(.horizontal, 15)
+                .padding(.vertical, 8)
+                .background(
+                    colorScheme == .dark ? Color(UIColor.secondarySystemBackground) : Color(UIColor.secondarySystemBackground)
+                )
+                .cornerRadius(18)
+            
+            Button(action: onSend) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(isDisabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : themeColor)
             }
+            .disabled(isDisabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            // Update container height in controller
-            if let controller = textField.getKeyboardAccessoryController() {
-                // Ensure this happens immediately for proper safe area padding
-                DispatchQueue.main.async {
-                    controller.updateContainerHeight(forKeyboardHidden: true)
-                }
-            }
-        }
-        
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            if !(textField.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true) {
-                parent.onSend()
-                textField.resignFirstResponder()
-            }
-            return true
-        }
+        .padding(.horizontal)
     }
 }
 
-class KeyboardAccessoryController: UIViewController {
-    var textField = UITextField()
-    var sendButton = UIButton(type: .system)
-    var delegate: UITextFieldDelegate?
-    var themeColor: UIColor = .systemBlue
-    var isDarkMode: Bool = false
-    var isDisabled: Bool = false
-    var textFieldText: String = ""
+// MARK: - KeyboardAttachedView
+struct KeyboardAttachedView: UIViewControllerRepresentable {
+    var keyboardState: KeyboardState
+    @Binding var text: String
+    var onSend: () -> Void
+    var colorScheme: ColorScheme
+    var themeColor: Color
+    var isDisabled: Bool
     
-    // Static property to access the current text from anywhere
-    static var currentText: String?
-    
-    // Static shared instance for easier access
-    static var sharedInstance: KeyboardAccessoryController?
-    
-    // State management
-    private var accessoryViewDisplayState: String = "hidden"
-    private var lastKeyboardAnimation: TimeInterval = 0
-    
-    lazy var containerView: UIView = {
-        let view = UIView()
-        updateContainerAppearance(view)
-        return view
-    }()
-    
-    // Track keyboard state - determined directly from responder status
-    private var isKeyboardVisible: Bool {
-        return textField.isFirstResponder
+    func makeUIViewController(context: Context) -> KeyboardObservingViewController {
+        return KeyboardObservingViewController(
+            keyboardState: keyboardState,
+            text: $text,
+            onSend: onSend,
+            colorScheme: colorScheme,
+            themeColor: themeColor,
+            isDisabled: isDisabled
+        )
     }
     
-    // Keep track of last applied height to prevent unnecessary updates
-    private var lastAppliedHeight: CGFloat = 90.0
+    func updateUIViewController(_ uiViewController: KeyboardObservingViewController, context: Context) {
+        uiViewController.updateText(text)
+        uiViewController.updateAppearance(
+            colorScheme: colorScheme,
+            themeColor: themeColor,
+            isDisabled: isDisabled
+        )
+    }
+}
+
+// MARK: - KeyboardObservingViewController
+class KeyboardObservingViewController: UIViewController {
+    private var emptyView = UIView()
+    private var inputHostView: UIHostingController<TextInputView>!
+    private var keyboardState: KeyboardState
+    private var bottomConstraint: NSLayoutConstraint?
+    private var text: Binding<String>
+    private var onSend: () -> Void
+    private var colorScheme: ColorScheme
+    private var themeColor: Color
+    private var isDisabled: Bool
     
-    // Debug mode for transitions
-    private let debugStateTransitions = false
+    init(
+        keyboardState: KeyboardState,
+        text: Binding<String>,
+        onSend: @escaping () -> Void,
+        colorScheme: ColorScheme,
+        themeColor: Color,
+        isDisabled: Bool
+    ) {
+        self.keyboardState = keyboardState
+        self.text = text
+        self.onSend = onSend
+        self.colorScheme = colorScheme
+        self.themeColor = themeColor
+        self.isDisabled = isDisabled
+        super.init(nibName: nil, bundle: nil)
+    }
+    
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // Set up the container view
-        containerView.translatesAutoresizingMaskIntoConstraints = false
-        // Initial height should be 90.0 (for safe area padding) since keyboard is not shown by default
-        containerView.frame.size.height = 90.0
-        lastAppliedHeight = 90.0
+        // Add an empty view to track keyboard position
+        emptyView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(emptyView)
         
-        // Set the shared instance for easier access
-        KeyboardAccessoryController.sharedInstance = self
-        
-        setupViews()
-        textField.inputAccessoryView = nil
-        
-        // Observe keyboard frame change notifications
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(keyboardWillChangeFrame),
-            name: UIResponder.keyboardWillChangeFrameNotification,
-            object: nil
-        )
-        
-        // Observe keyboard will show and hide notifications
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(keyboardWillShow),
-            name: UIResponder.keyboardWillShowNotification,
-            object: nil
-        )
-        
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(keyboardWillHide),
-            name: UIResponder.keyboardWillHideNotification,
-            object: nil
-        )
-        
-        // Observe theme changes
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(themeDidChange),
-            name: NSNotification.Name("ThemeDidChangeNotification"),
-            object: nil
-        )
-        
-        // Observe trait collection changes for dark/light mode
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(userInterfaceStyleDidChange),
-            name: UIApplication.didBecomeActiveNotification,
-            object: nil
-        )
-        
-        // Add a special observer for explicit keyboard dismissal requests
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleForcedDismissal),
-            name: NSNotification.Name("DismissKeyboardNotification"),
-            object: nil
-        )
-    }
-    
-    @objc private func keyboardWillShow(_ notification: Notification) {
-        if debugStateTransitions {
-            print("⌨️ KeyboardAccessory: keyboardWillShow notification received")
-        }
-        
-        // Get animation parameters if available
-        var duration: TimeInterval = 0.25
-        if let userInfo = notification.userInfo,
-           let animDuration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval {
-            duration = animDuration
-            lastKeyboardAnimation = Date().timeIntervalSince1970 + duration
-        }
-        
-        // Update accessory state to match keyboard
-        updateTextFieldAppearance()
-        updateContainerHeight(forKeyboardHidden: false)
-        
-        // Do a delayed update after animation completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.05) {
-            // Only apply if we're still in the same animation sequence
-            if Date().timeIntervalSince1970 >= self.lastKeyboardAnimation {
-                self.updateContainerHeight(forKeyboardHidden: false)
-            }
-        }
-    }
-    
-    @objc private func keyboardWillHide(_ notification: Notification) {
-        if debugStateTransitions {
-            print("⌨️ KeyboardAccessory: keyboardWillHide notification received")
-        }
-        
-        // Get animation parameters if available
-        var duration: TimeInterval = 0.25
-        if let userInfo = notification.userInfo,
-           let animDuration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? TimeInterval {
-            duration = animDuration
-            lastKeyboardAnimation = Date().timeIntervalSince1970 + duration
-        }
-        
-        // Update appearance immediately
-        updateTextFieldAppearance()
-        updateContainerHeight(forKeyboardHidden: true)
-        
-        // Then delayed update to match keyboard animation
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration + 0.05) {
-            // Only apply if we're still in the same animation sequence
-            if Date().timeIntervalSince1970 >= self.lastKeyboardAnimation {
-                self.updateContainerHeight(forKeyboardHidden: true)
-            }
-        }
-    }
-    
-    
-    func updateContainerHeight(forKeyboardHidden: Bool) {
-        // Set appropriate height based on keyboard state
-        let newHeight: CGFloat = forKeyboardHidden ? 90.0 : 60.0
-        
-        // Check if we're already at the desired height to prevent flickering
-        if abs(lastAppliedHeight - newHeight) < 0.1 {
-            return // Skip if height is already correct
-        }
-        
-        // Track this state change for debugging
-        let oldState = accessoryViewDisplayState
-        accessoryViewDisplayState = forKeyboardHidden ? "hidden" : "visible"
-        
-        if debugStateTransitions {
-            print("⌨️ KeyboardAccessory: State transition \(oldState) → \(accessoryViewDisplayState) (height: \(lastAppliedHeight) → \(newHeight))")
-        }
-        
-        // Update frame directly - no animation to avoid conflicts with iOS animations
-        var newFrame = containerView.frame
-        newFrame.size.height = newHeight
-        containerView.frame = newFrame
-        
-        // Update parent frame if possible
-        if let inputAccessoryView = self.inputAccessoryView {
-            inputAccessoryView.frame.size.height = newHeight
-        }
-        
-        // Remember this height
-        lastAppliedHeight = newHeight
-        
-        // Ensure child views are updated properly if needed
-        updateTextFieldAppearance()
-    }
-    
-    
-    // Forward the legacy method to our new implementation
-    func updateContainerConstraints() {
-        // Just check text field responder state for now 
-        let keyboardShouldBeHidden = !textField.isFirstResponder
-        updateContainerHeight(forKeyboardHidden: keyboardShouldBeHidden)
-    }
-    
-    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
-        super.traitCollectionDidChange(previousTraitCollection)
-        if traitCollection.userInterfaceStyle != previousTraitCollection?.userInterfaceStyle {
-            updateAppearance()
-        }
-    }
-    
-    @objc private func userInterfaceStyleDidChange() {
-        updateAppearance()
-    }
-    
-    @objc private func themeDidChange() {
-        updateAppearance()
-    }
-    
-    @objc private func handleForcedDismissal() {
-        // Force deactivation of the text field and update container height
-        if textField.isFirstResponder {
-            textField.resignFirstResponder()
-        }
-        
-        // Update the container height to hidden state
-        updateContainerHeight(forKeyboardHidden: true)
-        
-        // Also force another update after a slight delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            self.updateContainerHeight(forKeyboardHidden: true)
-        }
-    }
-    
-    func updateAppearance() {
-        updateContainerAppearance(containerView)
-        updateTextFieldAppearance()
-        updateSendButtonAppearance()
-        updateContainerConstraints()
-    }
-    
-    private func updateContainerAppearance(_ view: UIView) {
-        // Match system background colors for consistency
-        view.backgroundColor = isDarkMode ? .systemBackground : .systemBackground
-    }
-    
-    func updateTextFieldAppearance() {
-        // Set background color based on mode, without the blue highlight
-        let backgroundColor = isDarkMode ? UIColor.secondarySystemBackground : UIColor.secondarySystemBackground
-        let textColor = isDarkMode ? UIColor.white : UIColor.black
-        
-        // Apply consistent styling
-        textField.backgroundColor = backgroundColor
-        textField.textColor = textColor
-        textField.borderStyle = .none
-        textField.layer.cornerRadius = 18
-        textField.clipsToBounds = true
-        textField.attributedPlaceholder = NSAttributedString(
-            string: "Message",
-            attributes: [NSAttributedString.Key.foregroundColor: UIColor.placeholderText]
-        )
-        
-        // Update container height based on keyboard state
-        updateContainerHeight(forKeyboardHidden: !textField.isFirstResponder)
-    }
-    
-    // Method to maintain compatibility with older code
-    func setDebugBackground(active: Bool) {
-        updateTextFieldAppearance()
-    }
-    
-    private func updateSendButtonAppearance() {
-        let textIsEmpty = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
-        sendButton.tintColor = (isDisabled || textIsEmpty) ? .gray : themeColor
-        
-        // Remove any existing targets to avoid multiple attachments
-        sendButton.removeTarget(nil, action: nil, for: .touchUpInside)
-        
-        // Only add the action target if text is not empty and not disabled
-        if !textIsEmpty && !isDisabled {
-            sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
-        }
-    }
-    
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        becomeFirstResponder()
-    }
-    
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-    
-    @objc private func keyboardWillChangeFrame(notification: Notification) {
-        guard let userInfo = notification.userInfo,
-              let endFrame = userInfo[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
-              let duration = userInfo[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
-              let curve = userInfo[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt else { return }
-        
-        // Detect swipe to dismiss keyboard
-        if endFrame.origin.y >= UIScreen.main.bounds.height && textField.isFirstResponder {
-            print("Keyboard being dismissed by swipe gesture")
-            
-            // Update the container height BEFORE resigning first responder
-            updateContainerHeight(forKeyboardHidden: true)
-            
-            // Then resign first responder
-            UIView.animate(
-                withDuration: duration,
-                delay: 0,
-                options: UIView.AnimationOptions(rawValue: curve),
-                animations: {
-                    self.textField.resignFirstResponder()
-                },
-                completion: { _ in
-                    // One final update after animation completes
-                    self.updateContainerHeight(forKeyboardHidden: true)
-                }
-            )
-        }
-    }
-    
-    private func setupViews() {
-        // Set initial container view size - use 90.0 as default safe area padding height
-        containerView.frame = CGRect(x: 0, y: 0, width: UIScreen.main.bounds.width, height: 90.0)
-        
-        // Configure text field
-        updateTextFieldAppearance()
-        textField.delegate = delegate
-        textField.returnKeyType = .default
-        textField.autocorrectionType = .yes
-        textField.text = textFieldText
-        
-        // Update the static property when text changes
-        textField.addTarget(self, action: #selector(textFieldDidChange), for: .editingChanged)
-        
-        // Configure send button
-        let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold)
-        sendButton.setImage(UIImage(systemName: "arrow.up.circle.fill", withConfiguration: config), for: .normal)
-        updateSendButtonAppearance()
-        
-        // Add container tap handler
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(containerTapped))
-        containerView.addGestureRecognizer(tapGesture)
-        
-        // Add subviews and configure layout
-        containerView.addSubview(textField)
-        containerView.addSubview(sendButton)
-        
-        textField.translatesAutoresizingMaskIntoConstraints = false
-        sendButton.translatesAutoresizingMaskIntoConstraints = false
-        
-        // Add padding to text field
-        textField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 15, height: textField.frame.height))
-        textField.leftViewMode = .always
-        textField.rightView = UIView(frame: CGRect(x: 0, y: 0, width: 15, height: textField.frame.height))
-        textField.rightViewMode = .always
-        
-        // Set fixed constraints that won't change
+        // Constrain empty view to keyboard layout guide edges
         NSLayoutConstraint.activate([
-            textField.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: 16.0),
-            // Fixed height and centerY alignment ensures consistent sizing regardless of container height
-            textField.heightAnchor.constraint(equalToConstant: 36.0),
-            textField.centerYAnchor.constraint(equalTo: containerView.topAnchor, constant: 30.0),
-            
-            sendButton.leadingAnchor.constraint(equalTo: textField.trailingAnchor, constant: 8.0),
-            sendButton.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -16.0),
-            sendButton.centerYAnchor.constraint(equalTo: textField.centerYAnchor),
-            sendButton.widthAnchor.constraint(equalToConstant: 44.0),
-            sendButton.heightAnchor.constraint(equalToConstant: 44.0)
+            emptyView.leadingAnchor.constraint(equalTo: view.keyboardLayoutGuide.leadingAnchor),
+            emptyView.trailingAnchor.constraint(equalTo: view.keyboardLayoutGuide.trailingAnchor),
+            emptyView.topAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+            emptyView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.bottomAnchor)
         ])
+        
+        // Setup the text input view
+        setupTextInputView()
     }
     
-    @objc func containerTapped() {
-        activateTextField()
+    private func setupTextInputView() {
+        // Create the SwiftUI text input view
+        let textView = TextInputView(
+            text: text,
+            onSend: onSend,
+            colorScheme: colorScheme,
+            themeColor: themeColor,
+            isDisabled: isDisabled
+        )
+        inputHostView = UIHostingController(rootView: textView)
+        
+        // Add it to the view hierarchy
+        addChild(inputHostView)
+        inputHostView.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(inputHostView.view)
+        inputHostView.didMove(toParent: self)
+        
+        // Constrain the text input view
+        NSLayoutConstraint.activate([
+            inputHostView.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            inputHostView.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            inputHostView.view.heightAnchor.constraint(equalToConstant: 44)
+        ])
+        
+        // Create the bottom constraint that will be updated as the keyboard moves
+        bottomConstraint = inputHostView.view.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
+        bottomConstraint?.isActive = true
     }
     
-    @objc func sendTapped() {
-        // Prevent any action if text field is empty
-        guard let text = textField.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else {
-            return
-        }
-        
-        if let delegate = delegate {
-            _ = delegate.textFieldShouldReturn?(textField)
-            textField.resignFirstResponder()
-        }
+    func updateText(_ newText: String) {
+        inputHostView.rootView = TextInputView(
+            text: text,
+            onSend: onSend,
+            colorScheme: colorScheme,
+            themeColor: themeColor,
+            isDisabled: isDisabled
+        )
     }
     
-    func activateTextField() {
-        if debugStateTransitions {
-            print("⌨️ KeyboardAccessory: activateTextField() called, current state: \(accessoryViewDisplayState)")
-        }
+    func updateAppearance(colorScheme: ColorScheme, themeColor: Color, isDisabled: Bool) {
+        self.colorScheme = colorScheme
+        self.themeColor = themeColor
+        self.isDisabled = isDisabled
         
-        // Ensure controller is first responder
-        if !isFirstResponder {
-            becomeFirstResponder()
-        }
+        inputHostView.rootView = TextInputView(
+            text: text,
+            onSend: onSend,
+            colorScheme: colorScheme,
+            themeColor: themeColor,
+            isDisabled: isDisabled
+        )
+    }
+    
+    override func viewWillLayoutSubviews() {
+        super.viewWillLayoutSubviews()
         
-        // If the text field isn't currently focused, focus it
-        if !textField.isFirstResponder {
-            textField.becomeFirstResponder()
+        if let window = view.window {
+            // Get keyboard frame in window coordinates
+            let keyboardFrameInWindow = emptyView.convert(emptyView.bounds, to: window)
+            let screenHeight = window.frame.height
+            let keyboardTop = keyboardFrameInWindow.minY
             
-            // Update container height proactively
-            updateContainerHeight(forKeyboardHidden: false)
+            // Get the duration of the current animation (if any)
+            let duration = UIView.inheritedAnimationDuration
             
-            // Also schedule a delayed update to handle any transition issues
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                self.updateContainerHeight(forKeyboardHidden: false)
+            // Update observable state
+            let isVisible = keyboardTop < screenHeight
+            
+            // For standard keyboard show/hide (non-interactive)
+            if duration > 0 {
+                // Use smooth animation with extra bounce that matches keyboard animation
+                keyboardState.isKeyboardVisible = isVisible
+                
+                // We'll use a UIKit animation for the UIKit view (inputHostView)
+                // This will ensure the input stays attached to the keyboard
+                UIView.animate(withDuration: duration, 
+                              delay: 0,
+                              options: [.allowUserInteraction],
+                              animations: {
+                    // Layout changes will happen automatically due to constraint
+                    self.view.layoutIfNeeded()
+                })
+                
+                // Notify SwiftUI side of the animation if we want to coordinate other UI elements
+                DispatchQueue.main.async {
+                    withAnimation(.smooth(duration: duration, extraBounce: -0.15)) {
+                        // This allows other SwiftUI elements to coordinate with this animation if needed
+                        self.keyboardState.keyboardOffset = isVisible ? screenHeight - keyboardTop : 0
+                    }
+                }
+            } else {
+                // This is from interactive scroll dismissal - no animation needed
+                // The text field will follow the keyboard due to the constraint
+                self.view.layoutIfNeeded()
+                
+                // Update state without animation for scroll dismissal
+                keyboardState.isKeyboardVisible = isVisible
+                keyboardState.keyboardOffset = isVisible ? screenHeight - keyboardTop : 0
             }
         }
-    }
-    
-    // Helper method for deactivating text field 
-    func deactivateTextField() {
-        if debugStateTransitions {
-            print("⌨️ KeyboardAccessory: deactivateTextField() called, current state: \(accessoryViewDisplayState)")
-        }
-        
-        // Only resign if we're actually first responder
-        if textField.isFirstResponder {
-            // Update height first
-            updateContainerHeight(forKeyboardHidden: true)
-            
-            // Then resign
-            textField.resignFirstResponder()
-            
-            // Also schedule a delayed update to handle any transition issues
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                self.updateContainerHeight(forKeyboardHidden: true)
-            }
-        }
-    }
-    
-    // These methods enable the keyboard input accessory view
-    override var canBecomeFirstResponder: Bool {
-        return true
-    }
-    
-    override var inputAccessoryView: UIView? {
-        // Set the height based on focus state before returning
-        let height = textField.isFirstResponder ? 60.0 : 90.0
-        containerView.frame.size.height = height
-        return containerView
-    }
-    
-    // Handle text field changes and update static property
-    @objc func textFieldDidChange(_ textField: UITextField) {
-        KeyboardAccessoryController.currentText = textField.text
-        updateSendButtonAppearance()
-    }
-}
-
-// Extension to help find the KeyboardAccessoryController
-extension UITextField {
-    func getKeyboardAccessoryController() -> KeyboardAccessoryController? {
-        // Find controller in responder chain
-        var responder: UIResponder? = self
-        while let nextResponder = responder?.next {
-            if let controller = nextResponder as? KeyboardAccessoryController {
-                return controller
-            }
-            responder = nextResponder
-        }
-        
-        // Fallback to shared instance
-        return KeyboardAccessoryController.sharedInstance
     }
 }
 
