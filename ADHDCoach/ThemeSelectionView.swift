@@ -12,17 +12,12 @@ struct ThemeSelectionView: View {
         _selectedThemeId = State(initialValue: UserDefaults.standard.string(forKey: "selected_theme_id") ?? "pink")
     }
     
-    // Method to force keyboard and accessory dismissal
+    // Method to force keyboard dismissal
     private func forceKeyboardDismissal() {
         // Dismiss any active keyboard
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         
-        // Ensure keyboard accessory controller is deactivated
-        if let controller = KeyboardAccessoryController.sharedInstance {
-            controller.deactivateTextField()
-        }
-        
-        // Notify the keyboard controller to dismiss
+        // Notify any observers that keyboard should be dismissed
         NotificationCenter.default.post(name: NSNotification.Name("DismissKeyboardNotification"), object: nil)
     }
     
