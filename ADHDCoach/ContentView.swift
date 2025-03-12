@@ -650,6 +650,27 @@ extension UIScrollView {
 class KeyboardState: ObservableObject {
     @Published var keyboardOffset: CGFloat = 0
     @Published var isKeyboardVisible: Bool = false
+    
+    // Add timestamp for state changes to help with debugging
+    private var lastStateChangeTime: Date = Date()
+    private var stateChangeCount: Int = 0
+    
+    func setKeyboardVisible(_ visible: Bool, height: CGFloat, source: String) {
+        // Only log if state actually changed 
+        if isKeyboardVisible != visible {
+            stateChangeCount += 1
+            let now = Date()
+            let timeSinceLastChange = now.timeIntervalSince(lastStateChangeTime)
+            
+            print("⌨️ KeyboardState CHANGE #\(stateChangeCount) - \(isKeyboardVisible ? "VISIBLE" : "HIDDEN") → \(visible ? "VISIBLE" : "HIDDEN")")
+            print("⌨️ KeyboardState source: \(source), height: \(height), time since last change: \(timeSinceLastChange)s")
+            
+            // Update state
+            lastStateChangeTime = now
+            isKeyboardVisible = visible
+            keyboardOffset = height
+        }
+    }
 }
 
 // MARK: - TextInputView
@@ -723,6 +744,18 @@ class KeyboardObservingViewController: UIViewController {
     private var themeColor: Color
     private var isDisabled: Bool
     
+    // Experiment: Track view controller lifecycle
+    private var viewAppearanceCounter = 0
+    private var debugTimer: Timer?
+    
+    deinit {
+        // Clean up all observers and timers
+        NotificationCenter.default.removeObserver(self)
+        debugTimer?.invalidate()
+        debugTimer = nil
+        print("⌨️ KeyboardVC lifecycle: deinit")
+    }
+    
     init(
         keyboardState: KeyboardState,
         text: Binding<String>,
@@ -746,6 +779,7 @@ class KeyboardObservingViewController: UIViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
+        print("⌨️ KeyboardVC lifecycle: viewDidLoad")
         
         // Add an empty view to track keyboard position
         emptyView.translatesAutoresizingMaskIntoConstraints = false
@@ -761,6 +795,12 @@ class KeyboardObservingViewController: UIViewController {
         
         // Setup the text input view
         setupTextInputView()
+        
+        // Add direct keyboard observation in addition to layout guide
+        setupKeyboardObservers()
+        
+        // Start debug timer to periodically check keyboard status
+        startDebugTimer()
     }
     
     private func setupTextInputView() {
@@ -816,6 +856,152 @@ class KeyboardObservingViewController: UIViewController {
         )
     }
     
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        viewAppearanceCounter += 1
+        print("⌨️ KeyboardVC lifecycle: viewWillAppear (count: \(viewAppearanceCounter))")
+    }
+    
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        print("⌨️ KeyboardVC lifecycle: viewDidAppear")
+        
+        // Experiment: Force a keyboard status check after view appears
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.checkKeyboardStatus()
+        }
+    }
+    
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        print("⌨️ KeyboardVC lifecycle: viewWillDisappear")
+    }
+    
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        print("⌨️ KeyboardVC lifecycle: viewDidDisappear")
+    }
+    
+    private func startDebugTimer() {
+        // Stop any existing timer
+        debugTimer?.invalidate()
+        
+        // Create a new timer that fires every 2 seconds
+        debugTimer = Timer.scheduledTimer(
+            withTimeInterval: 2.0,
+            repeats: true
+        ) { [weak self] _ in
+            self?.checkKeyboardStatus()
+        }
+    }
+    
+    private func checkKeyboardStatus() {
+        // Perform a manual check of keyboard status
+        if let window = view.window {
+            let keyboardFrameInWindow = emptyView.convert(emptyView.bounds, to: window)
+            let screenHeight = window.frame.height
+            let keyboardTop = keyboardFrameInWindow.minY
+            let keyboardHeight = screenHeight - keyboardTop
+            
+            // Log the current status
+            print("⌨️ TIMER CHECK - emptyView bounds: \(emptyView.bounds), frame: \(emptyView.frame)")
+            print("⌨️ TIMER CHECK - Window frame: \(window.frame), safeArea: \(window.safeAreaInsets)")
+            print("⌨️ TIMER CHECK - Keyboard top: \(keyboardTop), height: \(keyboardHeight)")
+            print("⌨️ TIMER CHECK - Keyboard visible in state: \(keyboardState.isKeyboardVisible)")
+            
+            // Detect keyboard state from UI position
+            let isVisible = keyboardTop < screenHeight && keyboardHeight > 200
+            
+            // If there's a mismatch between our state and reality, update it
+            if isVisible != keyboardState.isKeyboardVisible {
+                print("⌨️ TIMER CHECK - MISMATCH DETECTED: State says keyboard is \(keyboardState.isKeyboardVisible ? "VISIBLE" : "HIDDEN") but it appears to be \(isVisible ? "VISIBLE" : "HIDDEN")")
+                
+                // Update the state to match reality
+                self.keyboardState.setKeyboardVisible(isVisible, height: isVisible ? keyboardHeight : 0, source: "timerCheck-correction")
+            }
+        }
+    }
+    
+    private func setupKeyboardObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillShow),
+            name: UIResponder.keyboardWillShowNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardDidShow),
+            name: UIResponder.keyboardDidShowNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardWillHide),
+            name: UIResponder.keyboardWillHideNotification,
+            object: nil
+        )
+        
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(keyboardDidHide),
+            name: UIResponder.keyboardDidHideNotification,
+            object: nil
+        )
+    }
+    
+    @objc func keyboardWillShow(_ notification: Notification) {
+        print("⌨️ NOTIFICATION: keyboardWillShow received")
+        if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+           let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double {
+            let keyboardHeight = keyboardFrame.height
+            print("⌨️ NOTIFICATION: Keyboard will show - Height: \(keyboardHeight), Duration: \(duration)")
+            
+            // Update keyboard state using our new method
+            self.keyboardState.setKeyboardVisible(true, height: keyboardHeight, source: "keyboardWillShow")
+            
+            // Animate changes
+            UIView.animate(withDuration: duration) {
+                self.view.layoutIfNeeded()
+            }
+        }
+    }
+    
+    @objc func keyboardDidShow(_ notification: Notification) {
+        print("⌨️ NOTIFICATION: keyboardDidShow received")
+        if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+            let keyboardHeight = keyboardFrame.height
+            print("⌨️ NOTIFICATION: Keyboard did show - Height: \(keyboardHeight)")
+            
+            // Update keyboard state using our new method
+            self.keyboardState.setKeyboardVisible(true, height: keyboardHeight, source: "keyboardDidShow")
+        }
+    }
+    
+    @objc func keyboardWillHide(_ notification: Notification) {
+        print("⌨️ NOTIFICATION: keyboardWillHide received")
+        if let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double {
+            print("⌨️ NOTIFICATION: Keyboard will hide - Duration: \(duration)")
+            
+            // Update keyboard state using our new method
+            self.keyboardState.setKeyboardVisible(false, height: 0, source: "keyboardWillHide")
+            
+            // Animate changes
+            UIView.animate(withDuration: duration) {
+                self.view.layoutIfNeeded()
+            }
+        }
+    }
+    
+    @objc func keyboardDidHide(_ notification: Notification) {
+        print("⌨️ NOTIFICATION: keyboardDidHide received")
+        
+        // Update keyboard state using our new method
+        self.keyboardState.setKeyboardVisible(false, height: 0, source: "keyboardDidHide")
+    }
+    
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
         
@@ -828,50 +1014,22 @@ class KeyboardObservingViewController: UIViewController {
             // Get the duration of the current animation (if any)
             let duration = UIView.inheritedAnimationDuration
             
-            // Update observable state
-            let isVisible = keyboardTop < screenHeight
+            // Calculate keyboard height
+            let keyboardHeight = screenHeight - keyboardTop
             
-            // Always log keyboard state for debugging
-            print("⌨️ Keyboard check - Current state: \(keyboardState.isKeyboardVisible ? "VISIBLE" : "HIDDEN"), New state: \(isVisible ? "VISIBLE" : "HIDDEN")")
-            print("⌨️ Keyboard metrics - Top: \(keyboardTop), Screen: \(screenHeight), Height: \(screenHeight - keyboardTop)")
+            // Check if this is a realistic keyboard height - iOS keyboards are typically > 200pts
+            // This prevents false positives during app initialization
+            let isVisible = keyboardTop < screenHeight && keyboardHeight > 200
             
-            // Log keyboard visibility changes
-            if isVisible != keyboardState.isKeyboardVisible {
-                print("⌨️ Keyboard visibility CHANGED: \(isVisible ? "SHOWING" : "HIDING")")
-                print("⌨️ Keyboard height: \(isVisible ? screenHeight - keyboardTop : 0) points")
-                print("⌨️ Animation duration: \(duration)s")
-            }
+            // Log for debugging (separate from state changes)
+            print("⌨️ Layout check - emptyView frame: \(emptyView.frame), inWindow: \(keyboardFrameInWindow)")
+            print("⌨️ Keyboard metrics - Top: \(keyboardTop), Screen: \(screenHeight), Height: \(keyboardHeight)")
+            print("⌨️ Duration: \(duration), SafeArea: \(String(describing: window.safeAreaInsets))")
             
-            // For standard keyboard show/hide (non-interactive)
-            if duration > 0 {
-                // Use smooth animation with extra bounce that matches keyboard animation
-                keyboardState.isKeyboardVisible = isVisible
-                
-                // We'll use a UIKit animation for the UIKit view (inputHostView)
-                // This will ensure the input stays attached to the keyboard
-                UIView.animate(withDuration: duration, 
-                              delay: 0,
-                              options: [.allowUserInteraction],
-                              animations: {
-                    // Layout changes will happen automatically due to constraint
-                    self.view.layoutIfNeeded()
-                })
-                
-                // Notify SwiftUI side of the animation if we want to coordinate other UI elements
-                DispatchQueue.main.async {
-                    withAnimation(.smooth(duration: duration, extraBounce: -0.15)) {
-                        // This allows other SwiftUI elements to coordinate with this animation if needed
-                        self.keyboardState.keyboardOffset = isVisible ? screenHeight - keyboardTop : 0
-                    }
-                }
-            } else {
-                // This is from interactive scroll dismissal - no animation needed
-                // The text field will follow the keyboard due to the constraint
+            // Only update state from layout if we don't have an active notification-based update
+            if duration == 0 {
+                // This might be interactive keyboard dismissal which doesn't trigger notifications
                 self.view.layoutIfNeeded()
-                
-                // Update state without animation for scroll dismissal
-                keyboardState.isKeyboardVisible = isVisible
-                keyboardState.keyboardOffset = isVisible ? screenHeight - keyboardTop : 0
             }
         }
     }
