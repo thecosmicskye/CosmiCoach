@@ -831,6 +831,17 @@ class KeyboardObservingViewController: UIViewController {
             // Update observable state
             let isVisible = keyboardTop < screenHeight
             
+            // Always log keyboard state for debugging
+            print("⌨️ Keyboard check - Current state: \(keyboardState.isKeyboardVisible ? "VISIBLE" : "HIDDEN"), New state: \(isVisible ? "VISIBLE" : "HIDDEN")")
+            print("⌨️ Keyboard metrics - Top: \(keyboardTop), Screen: \(screenHeight), Height: \(screenHeight - keyboardTop)")
+            
+            // Log keyboard visibility changes
+            if isVisible != keyboardState.isKeyboardVisible {
+                print("⌨️ Keyboard visibility CHANGED: \(isVisible ? "SHOWING" : "HIDING")")
+                print("⌨️ Keyboard height: \(isVisible ? screenHeight - keyboardTop : 0) points")
+                print("⌨️ Animation duration: \(duration)s")
+            }
+            
             // For standard keyboard show/hide (non-interactive)
             if duration > 0 {
                 // Use smooth animation with extra bounce that matches keyboard animation
