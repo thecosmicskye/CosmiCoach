@@ -841,6 +841,7 @@ class KeyboardObservingViewController: UIViewController {
         // Add an empty view to track keyboard position
         emptyView.translatesAutoresizingMaskIntoConstraints = false
         emptyView.layer.borderWidth = debugOutlineMode == .keyboardAttachedView ? 4 : 0
+        emptyView.backgroundColor = UIColor.systemBackground
         emptyView.layer.borderColor = UIColor.magenta.cgColor
         view.addSubview(emptyView)
         
