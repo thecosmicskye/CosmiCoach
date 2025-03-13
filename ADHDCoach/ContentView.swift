@@ -38,57 +38,67 @@ struct ContentView: View {
         NavigationStack {
             GeometryReader { geometry in
                 ZStack(alignment: .bottom) {
-                    ScrollView {
-                        if chatManager.messages.isEmpty {
-                            EmptyStateView()
-                        } else {
-                            MessageListView(
-                                messages: chatManager.messages,
-                                statusMessagesProvider: chatManager.combinedStatusMessagesForMessage
-                            )
-                        }
-                        Color.clear
-                            .frame(height: 1)
-                            .id("bottomScrollID")
-                            .onAppear {
-                                scrollToBottom = true
+                    // Calculate available scroll height by subtracting input height from total height
+                    let inputHeight: CGFloat = 44
+                    let availableHeight = geometry.size.height - inputHeight
+                    
+                    VStack(spacing: 0) {
+                        ScrollView {
+                            if chatManager.messages.isEmpty {
+                                EmptyStateView()
+                            } else {
+                                MessageListView(
+                                    messages: chatManager.messages,
+                                    statusMessagesProvider: chatManager.combinedStatusMessagesForMessage
+                                )
                             }
+                            Color.clear
+                                .frame(height: 1)
+                                .id("bottomScrollID")
+                                .onAppear {
+                                    scrollToBottom = true
+                                }
+                        }
+                        .scrollDismissesKeyboard(.interactively)
+                        .scrollClipDisabled()
+                        .onChange(of: chatManager.messages.count) { _, _ in
+                            scrollToBottom(animated: true)
+                        }
+                        .onChange(of: chatManager.streamingUpdateCount) { _, _ in
+                            // Skip animation for streaming updates for better performance
+                            scrollToBottom(animated: false)
+                        }
+                        .onChange(of: scrollToBottom) { _, newValue in
+                            if newValue {
+                                scrollToLastMessage()
+                                scrollToBottom = false
+                            }
+                        }
+                        .onChange(of: keyboardState.isKeyboardVisible) { _, _ in
+                            // Scroll to bottom when keyboard visibility changes
+                            scrollToBottom(animated: true)
+                        }
                         
-                        // Reserve space for input and keyboard
+                        // Add bottom padding that adjusts with keyboard height
+                        // This ensures the scroll area stops above the input+keyboard
                         Spacer()
-                            .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 44 : 44)
+                            .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 10 : 44)
                     }
                     .frame(height: geometry.size.height)
-                    .scrollDismissesKeyboard(.interactively)
-                    .scrollClipDisabled()
-                    .onChange(of: chatManager.messages.count) { _, _ in
-                        scrollToBottom(animated: true)
-                    }
-                    .onChange(of: chatManager.streamingUpdateCount) { _, _ in
-                        // Skip animation for streaming updates for better performance
-                        scrollToBottom(animated: false)
-                    }
-                    .onChange(of: scrollToBottom) { _, newValue in
-                        if newValue {
-                            scrollToLastMessage()
-                            scrollToBottom = false
-                        }
-                    }
-                    .onChange(of: keyboardState.isKeyboardVisible) { _, _ in
-                        // Scroll to bottom when keyboard visibility changes
-                        scrollToBottom(animated: true)
-                    }
                     
-                    // Keyboard attached input
-                    KeyboardAttachedView(
-                        keyboardState: keyboardState,
-                        text: $inputText,
-                        onSend: sendMessage,
-                        colorScheme: colorScheme,
-                        themeColor: themeManager.accentColor(for: colorScheme),
-                        isDisabled: chatManager.isProcessing
-                    )
-                    .frame(height: 44)
+                    // Keyboard attached input that sits at the bottom
+                    VStack {
+                        Spacer()
+                        KeyboardAttachedView(
+                            keyboardState: keyboardState,
+                            text: $inputText,
+                            onSend: sendMessage,
+                            colorScheme: colorScheme,
+                            themeColor: themeManager.accentColor(for: colorScheme),
+                            isDisabled: chatManager.isProcessing
+                        )
+                        .frame(height: 44)
+                    }
                 }
             }
             .ignoresSafeArea(.keyboard)
@@ -307,7 +317,7 @@ struct MessageListView: View {
                 .frame(height: 1)
                 .id("bottomID")
         }
-        .padding(.vertical, 8)
+        .padding(.top, 8)
     }
 }
 
@@ -595,33 +605,8 @@ struct ScrollDetector: UIViewRepresentable {
         EmptyStateView()
             .frame(height: 300)
     }
-    .padding()
+    .padding(.horizontal)
 }
-
-#Preview("Input Components") {
-    VStack {
-        TextInputView(
-            text: .constant("Hello there!"),
-            onSend: {},
-            colorScheme: .light,
-            themeColor: .blue,
-            isDisabled: false
-        )
-        
-        Divider()
-        
-        TextInputView(
-            text: .constant(""),
-            onSend: {},
-            colorScheme: .dark,
-            themeColor: .blue,
-            isDisabled: true
-        )
-        .preferredColorScheme(.dark)
-    }
-    .padding()
-}
-
 
 // Find ScrollView in the view hierarchy
 extension UIScrollView {
@@ -700,7 +685,7 @@ struct TextInputView: View {
             
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 30, weight: .semibold))
                     .foregroundColor(isDisabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : themeColor)
             }
             .disabled(isDisabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
