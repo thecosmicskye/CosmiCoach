@@ -30,7 +30,7 @@ struct ContentView: View {
     
     // Debug outline state
     @State private var debugOutlineMode: DebugOutlineMode = .none
-    @State private var showDebugTools: Bool = false
+    @State private var showDebugTools: Bool = true
     
     // Helper function to reset chat when notification is received
     private func setupNotificationObserver() {
