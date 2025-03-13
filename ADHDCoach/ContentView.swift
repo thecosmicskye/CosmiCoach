@@ -36,53 +36,60 @@ struct ContentView: View {
     
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottom) {
-                ScrollView {
-                    if chatManager.messages.isEmpty {
-                        EmptyStateView()
-                    } else {
-                        MessageListView(
-                            messages: chatManager.messages,
-                            statusMessagesProvider: chatManager.combinedStatusMessagesForMessage
-                        )
-                    }
-                    Color.clear
-                        .frame(height: 1)
-                        .id("bottomScrollID")
-                        .onAppear {
-                            scrollToBottom = true
+            GeometryReader { geometry in
+                ZStack(alignment: .bottom) {
+                    ScrollView {
+                        if chatManager.messages.isEmpty {
+                            EmptyStateView()
+                        } else {
+                            MessageListView(
+                                messages: chatManager.messages,
+                                statusMessagesProvider: chatManager.combinedStatusMessagesForMessage
+                            )
                         }
-                    
-                    // Reserve space for input
-                    Spacer()
-                        .frame(height: 44)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .scrollClipDisabled()
-                .onChange(of: chatManager.messages.count) { _, _ in
-                    scrollToBottom(animated: true)
-                }
-                .onChange(of: chatManager.streamingUpdateCount) { _, _ in
-                    // Skip animation for streaming updates for better performance
-                    scrollToBottom(animated: false)
-                }
-                .onChange(of: scrollToBottom) { _, newValue in
-                    if newValue {
-                        scrollToLastMessage()
-                        scrollToBottom = false
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottomScrollID")
+                            .onAppear {
+                                scrollToBottom = true
+                            }
+                        
+                        // Reserve space for input and keyboard
+                        Spacer()
+                            .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 44 : 44)
                     }
+                    .frame(height: geometry.size.height)
+                    .scrollDismissesKeyboard(.interactively)
+                    .scrollClipDisabled()
+                    .onChange(of: chatManager.messages.count) { _, _ in
+                        scrollToBottom(animated: true)
+                    }
+                    .onChange(of: chatManager.streamingUpdateCount) { _, _ in
+                        // Skip animation for streaming updates for better performance
+                        scrollToBottom(animated: false)
+                    }
+                    .onChange(of: scrollToBottom) { _, newValue in
+                        if newValue {
+                            scrollToLastMessage()
+                            scrollToBottom = false
+                        }
+                    }
+                    .onChange(of: keyboardState.isKeyboardVisible) { _, _ in
+                        // Scroll to bottom when keyboard visibility changes
+                        scrollToBottom(animated: true)
+                    }
+                    
+                    // Keyboard attached input
+                    KeyboardAttachedView(
+                        keyboardState: keyboardState,
+                        text: $inputText,
+                        onSend: sendMessage,
+                        colorScheme: colorScheme,
+                        themeColor: themeManager.accentColor(for: colorScheme),
+                        isDisabled: chatManager.isProcessing
+                    )
+                    .frame(height: 44)
                 }
-                
-                // Keyboard attached input
-                KeyboardAttachedView(
-                    keyboardState: keyboardState,
-                    text: $inputText,
-                    onSend: sendMessage,
-                    colorScheme: colorScheme,
-                    themeColor: themeManager.accentColor(for: colorScheme),
-                    isDisabled: chatManager.isProcessing
-                )
-                .frame(height: 44)
             }
             .ignoresSafeArea(.keyboard)
             .navigationTitle("Cosmic Coach")
