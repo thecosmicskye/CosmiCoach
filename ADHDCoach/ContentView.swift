@@ -30,6 +30,7 @@ struct ContentView: View {
     
     // Debug outline state
     @State private var debugOutlineMode: DebugOutlineMode = .none
+    @State private var showDebugTools: Bool = false
     
     // Helper function to reset chat when notification is received
     private func setupNotificationObserver() {
@@ -53,10 +54,10 @@ struct ContentView: View {
         NavigationStack {
             GeometryReader { geometry in
                 ZStack(alignment: .bottom) {
-                    // Debug border around entire ZStack
-                    Color.clear
-                        .border(debugOutlineMode == .zStack ? Color.blue : Color.clear, 
-                               width: 4)
+                    // Debug border around entire ZStack (only shown when in debug mode)
+                    if debugOutlineMode == .zStack {
+                        Color.clear.border(Color.blue, width: 4)
+                    }
                     // Calculate available scroll height by subtracting input height from total height
                     let inputHeight: CGFloat = 54
                     let availableHeight = geometry.size.height - inputHeight
@@ -64,21 +65,20 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         ScrollView {
                             // Debug border to visualize ScrollView content area
-                            Color.clear
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .border(debugOutlineMode == .scrollView ? Color.green : Color.clear, 
-                                      width: 3)
+                            if debugOutlineMode == .scrollView {
+                                Color.clear
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .border(Color.green, width: 3)
+                            }
                             if chatManager.messages.isEmpty {
                                 EmptyStateView()
-                                    .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, 
-                                          width: 2)
+                                    .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
                             } else {
                                 MessageListView(
                                     messages: chatManager.messages,
                                     statusMessagesProvider: chatManager.combinedStatusMessagesForMessage
                                 )
-                                .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, 
-                                      width: 2)
+                                .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
                             }
                             Color.clear
                                 .frame(height: 1)
@@ -106,19 +106,16 @@ struct ContentView: View {
                             // Scroll to bottom when keyboard visibility changes
                             scrollToBottom(animated: true)
                         }
-                        .border(debugOutlineMode == .scrollView ? Color.green : Color.clear, 
-                               width: 2)
+                        .border(debugOutlineMode == .scrollView ? Color.green : Color.clear, width: 2)
                         
                         // Add bottom padding that adjusts with keyboard height
                         // This ensures the scroll area stops above the input+keyboard
                         Spacer()
                             .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 10 : 54)
-                            .border(debugOutlineMode == .spacer ? Color.yellow : Color.clear, 
-                                   width: 2)
+                            .border(debugOutlineMode == .spacer ? Color.yellow : Color.clear, width: 2)
                     }
                     .frame(height: geometry.size.height)
-                    .border(debugOutlineMode == .vStack ? Color.orange : Color.clear, 
-                           width: 2)
+                    .border(debugOutlineMode == .vStack ? Color.orange : Color.clear, width: 2)
                     
                     // Keyboard attached input that sits at the bottom
                     VStack {
@@ -133,11 +130,9 @@ struct ContentView: View {
                             debugOutlineMode: debugOutlineMode
                         )
                         .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 22 : 54)
-                        .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, 
-                               width: 2)
+                        .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, width: 2)
                     }
-                    .border(debugOutlineMode == .keyboardAttachedView ? Color.cyan : Color.clear, 
-                           width: 2)
+                    .border(debugOutlineMode == .keyboardAttachedView ? Color.cyan : Color.clear, width: 2)
                 }
             }
             .ignoresSafeArea(.keyboard)
@@ -160,18 +155,20 @@ struct ContentView: View {
                     }
                 }
                 
-                // Debug outline toggle
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        ForEach(DebugOutlineMode.allCases, id: \.self) { mode in
-                            Button(mode.rawValue) {
-                                debugOutlineMode = mode
+                // Debug outline toggle (only shown when debug tools are enabled)
+                if showDebugTools {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Menu {
+                            ForEach(DebugOutlineMode.allCases, id: \.self) { mode in
+                                Button(mode.rawValue) {
+                                    debugOutlineMode = mode
+                                }
                             }
+                        } label: {
+                            Image(systemName: "square.dashed")
+                                .font(.system(size: 18))
+                                .foregroundColor(debugOutlineMode != .none ? .red : .gray)
                         }
-                    } label: {
-                        Image(systemName: "square.dashed")
-                            .font(.system(size: 18))
-                            .foregroundColor(debugOutlineMode != .none ? .red : .gray)
                     }
                 }
             }
@@ -737,8 +734,7 @@ struct TextInputView: View {
                     colorScheme == .dark ? Color(UIColor.secondarySystemBackground) : Color(UIColor.secondarySystemBackground)
                 )
                 .cornerRadius(18)
-                .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, 
-                      width: 1)
+                .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, width: 1)
             
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
@@ -748,8 +744,7 @@ struct TextInputView: View {
             .disabled(isDisabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(.horizontal)
-        .border(debugOutlineMode == .textInput ? Color.mint : Color.clear, 
-               width: 2)
+        .border(debugOutlineMode == .textInput ? Color.mint : Color.clear, width: 2)
     }
 }
 
@@ -840,9 +835,8 @@ class KeyboardObservingViewController: UIViewController {
         
         // Add an empty view to track keyboard position
         emptyView.translatesAutoresizingMaskIntoConstraints = false
-        emptyView.layer.borderWidth = debugOutlineMode == .keyboardAttachedView ? 4 : 0
         emptyView.backgroundColor = UIColor.systemBackground
-        emptyView.layer.borderColor = UIColor.magenta.cgColor
+        updateDebugBorders()
         view.addSubview(emptyView)
         
         // Constrain empty view to keyboard layout guide edges
@@ -878,14 +872,11 @@ class KeyboardObservingViewController: UIViewController {
         // Add it to the view hierarchy
         addChild(inputHostView)
         inputHostView.view.translatesAutoresizingMaskIntoConstraints = false
-        inputHostView.view.layer.borderWidth = debugOutlineMode == .textInput ? 3 : 0
-        inputHostView.view.layer.borderColor = UIColor.systemIndigo.cgColor
+        // Debug borders set in updateDebugBorders()
         view.addSubview(inputHostView.view)
         inputHostView.didMove(toParent: self)
         
-        // Add border to the main view for debugging
-        view.layer.borderWidth = debugOutlineMode == .keyboardAttachedView ? 2 : 0
-        view.layer.borderColor = UIColor.systemTeal.cgColor
+        // Debug borders are set in updateDebugBorders()
         
         // Constrain the text input view
         NSLayoutConstraint.activate([
@@ -910,21 +901,29 @@ class KeyboardObservingViewController: UIViewController {
         )
     }
     
+    // Helper method to update all debug borders based on current debug mode
+    private func updateDebugBorders() {
+        // Only apply borders if in appropriate debug mode
+        emptyView.layer.borderWidth = debugOutlineMode == .keyboardAttachedView ? 4 : 0
+        emptyView.layer.borderColor = UIColor.magenta.cgColor
+        
+        view.layer.borderWidth = debugOutlineMode == .keyboardAttachedView ? 2 : 0
+        view.layer.borderColor = UIColor.systemTeal.cgColor
+        
+        if let hostView = inputHostView?.view {
+            hostView.layer.borderWidth = debugOutlineMode == .textInput ? 3 : 0
+            hostView.layer.borderColor = UIColor.systemIndigo.cgColor
+        }
+    }
+    
     func updateAppearance(colorScheme: ColorScheme, themeColor: Color, isDisabled: Bool, debugOutlineMode: DebugOutlineMode) {
         self.colorScheme = colorScheme
         self.themeColor = themeColor
         self.isDisabled = isDisabled
         self.debugOutlineMode = debugOutlineMode
         
-        // Update the view borders based on the debug mode
-        emptyView.layer.borderWidth = debugOutlineMode == .keyboardAttachedView ? 4 : 0
-        view.layer.borderWidth = debugOutlineMode == .keyboardAttachedView ? 2 : 0
-        inputHostView.view.layer.borderWidth = debugOutlineMode == .textInput ? 3 : 0
-        
-        // Update border colors
-        emptyView.layer.borderColor = UIColor.magenta.cgColor
-        view.layer.borderColor = UIColor.systemTeal.cgColor
-        inputHostView.view.layer.borderColor = UIColor.systemIndigo.cgColor
+        // Update the debug borders
+        updateDebugBorders()
         
         inputHostView.rootView = TextInputView(
             text: text,
