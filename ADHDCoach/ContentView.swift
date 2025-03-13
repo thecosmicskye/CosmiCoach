@@ -132,7 +132,7 @@ struct ContentView: View {
                             isDisabled: chatManager.isProcessing,
                             debugOutlineMode: debugOutlineMode
                         )
-                        .frame(height: 44)
+                        .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 12 : 44)
                         .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, 
                                width: 2)
                     }
