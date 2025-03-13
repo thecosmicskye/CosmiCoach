@@ -58,7 +58,7 @@ struct ContentView: View {
                         .border(debugOutlineMode == .zStack ? Color.blue : Color.clear, 
                                width: 4)
                     // Calculate available scroll height by subtracting input height from total height
-                    let inputHeight: CGFloat = 44
+                    let inputHeight: CGFloat = 54
                     let availableHeight = geometry.size.height - inputHeight
                     
                     VStack(spacing: 0) {
@@ -112,7 +112,7 @@ struct ContentView: View {
                         // Add bottom padding that adjusts with keyboard height
                         // This ensures the scroll area stops above the input+keyboard
                         Spacer()
-                            .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 10 : 44)
+                            .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 10 : 54)
                             .border(debugOutlineMode == .spacer ? Color.yellow : Color.clear, 
                                    width: 2)
                     }
@@ -132,7 +132,7 @@ struct ContentView: View {
                             isDisabled: chatManager.isProcessing,
                             debugOutlineMode: debugOutlineMode
                         )
-                        .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 12 : 44)
+                        .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 22 : 54)
                         .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, 
                                width: 2)
                     }
@@ -605,7 +605,7 @@ struct ScrollDetector: UIViewRepresentable {
                 let bottomPosition = contentHeight - scrollViewHeight
                 
                 // If we're not at the bottom, make sure state reflects this
-                if (bottomPosition - scrollOffset) > 44 {
+                if (bottomPosition - scrollOffset) > 54 {
                     UserDefaults.standard.set(false, forKey: "ChatIsAtBottom")
                     UserDefaults.standard.synchronize()
                 }
@@ -618,8 +618,8 @@ struct ScrollDetector: UIViewRepresentable {
             let scrollOffset = scrollView.contentOffset.y
             let bottomPosition = contentHeight - scrollViewHeight
             
-            // If we're within 44 points of the bottom, consider it "at bottom"
-            let isAtBottom = (bottomPosition - scrollOffset) <= 44
+            // If we're within 54 points of the bottom, consider it "at bottom"
+            let isAtBottom = (bottomPosition - scrollOffset) <= 54
             
             // Save current position to UserDefaults for keyboard observer
             // Use synchronize to ensure value is immediately available
@@ -891,7 +891,7 @@ class KeyboardObservingViewController: UIViewController {
         NSLayoutConstraint.activate([
             inputHostView.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             inputHostView.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            inputHostView.view.heightAnchor.constraint(equalToConstant: 44)
+            inputHostView.view.heightAnchor.constraint(equalToConstant: 54)
         ])
         
         // Create the bottom constraint that will be updated as the keyboard moves
