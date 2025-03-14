@@ -7,6 +7,9 @@ struct MarkdownTextView: View {
     
     private let markdownProcessor = MarkdownProcessor()
     @State private var attributedString: AttributedString = AttributedString("")
+    @State private var processingTask: Task<Void, Never>? = nil
+    @State private var retryCount: Int = 0
+    @State private var lastProcessedMarkdown: String = ""
     
     var body: some View {
         Text(attributedString)
@@ -14,17 +17,79 @@ struct MarkdownTextView: View {
                 processMarkdown()
             }
             .onChange(of: markdown) { _ in
+                // Cancel previous task if it's still running
+                processingTask?.cancel()
                 processMarkdown()
             }
+            .onDisappear {
+                // Clean up task if view disappears
+                processingTask?.cancel()
+            }
+            // Adding an id based on markdown length ensures the view refreshes
+            // when content changes, even if SwiftUI doesn't detect it
+            .id("markdown-\(markdown.count)-\(retryCount)")
     }
     
     private func processMarkdown() {
-        Task {
-            // Process markdown on a background thread
-            let processed = await markdownProcessor.processMarkdown(markdown)
-            // Update the UI on the main thread
-            await MainActor.run {
-                self.attributedString = processed
+        // Save the markdown we're processing
+        let currentMarkdown = markdown
+        
+        // Skip processing if the content is identical and we already processed it
+        if currentMarkdown == lastProcessedMarkdown && !attributedString.characters.isEmpty {
+            return
+        }
+        
+        // Create a new task and store the reference
+        processingTask = Task {
+            do {
+                // Check for cancellation before processing
+                try Task.checkCancellation()
+                
+                // Process markdown on a background thread
+                let processed = await markdownProcessor.processMarkdown(currentMarkdown)
+                
+                // Check for cancellation before updating UI
+                try Task.checkCancellation()
+                
+                // Update the UI on the main thread
+                await MainActor.run {
+                    self.attributedString = processed
+                    self.lastProcessedMarkdown = currentMarkdown
+                    
+                    // If processing produced empty or minimal results for non-empty markdown,
+                    // retry up to 3 times with a delay
+                    if currentMarkdown.count > 10 && processed.characters.count < min(10, currentMarkdown.count/2) && retryCount < 3 {
+                        retryCount += 1
+                        print("Markdown processing produced minimal results, retrying (\(retryCount)/3)")
+                        
+                        // Schedule a retry after a short delay
+                        Task {
+                            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+                            if !Task.isCancelled {
+                                processMarkdown()
+                            }
+                        }
+                    } else {
+                        retryCount = 0
+                    }
+                }
+            } catch {
+                // Task was cancelled or failed
+                print("Markdown processing cancelled or failed: \(error)")
+                
+                // If we failed and haven't exceeded retry limit, try again
+                if retryCount < 3 {
+                    await MainActor.run {
+                        retryCount += 1
+                        print("Retrying after failure (\(retryCount)/3)")
+                    }
+                    
+                    // Schedule a retry after a delay
+                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    if !Task.isCancelled {
+                        processMarkdown()
+                    }
+                }
             }
         }
     }
@@ -34,30 +99,43 @@ struct MarkdownTextView: View {
 class MarkdownProcessor {
     func processMarkdown(_ text: String) async -> AttributedString {
         // This will run on a background thread thanks to the async function
-        let document = Document(parsing: text)
-        return createAttributedString(from: document)
+        do {
+            // Add error handling to prevent crashes
+            let document = Document(parsing: text)
+            return createAttributedString(from: document)
+        } catch {
+            print("Error parsing markdown: \(error)")
+            // Return the plain text if markdown parsing fails
+            return AttributedString(text)
+        }
     }
     
     private func createAttributedString(from document: Document) -> AttributedString {
         // Convert the Markdown document to NSAttributedString
         var attributedString = AttributedString("")
         
-        for child in document.children {
-            attributedString.append(renderBlock(child))
+        do {
+            for child in document.children {
+                attributedString.append(renderBlock(child))
+            }
+            return attributedString
+        } catch {
+            print("Error creating attributed string: \(error)")
+            // Return a simple attributed string with the document's plain text
+            return AttributedString(document.format())
         }
-        
-        return attributedString
     }
     
     private func renderBlock(_ block: Markup) -> AttributedString {
-        switch block {
-        case let paragraph as Paragraph:
-            var content = AttributedString("")
-            for child in paragraph.children {
-                content.append(renderInline(child))
-            }
-            content.append(AttributedString("\n\n"))
-            return content
+        do {
+            switch block {
+            case let paragraph as Paragraph:
+                var content = AttributedString("")
+                for child in paragraph.children {
+                    content.append(renderInline(child))
+                }
+                content.append(AttributedString("\n\n"))
+                return content
             
         case let heading as Heading:
             var content = AttributedString("")
@@ -155,12 +233,18 @@ class MarkdownProcessor {
             // Default fallback for other block types
             return AttributedString(block.format() + "\n\n")
         }
+        } catch {
+            print("Error rendering block: \(error)")
+            // Return a simple block with the content
+            return AttributedString(block.format() + "\n\n")
+        }
     }
     
     private func renderInline(_ inline: Markup) -> AttributedString {
-        switch inline {
-        case let text as Markdown.Text:
-            return AttributedString(text.string)
+        do {
+            switch inline {
+            case let text as Markdown.Text:
+                return AttributedString(text.string)
             
         case let emphasis as Emphasis:
             var content = AttributedString("")
@@ -217,6 +301,11 @@ class MarkdownProcessor {
             
         default:
             // Default fallback
+            return AttributedString(inline.format())
+        }
+        } catch {
+            print("Error rendering inline: \(error)")
+            // Return a simple string with the inline content
             return AttributedString(inline.format())
         }
     }
