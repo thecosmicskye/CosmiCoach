@@ -5,6 +5,9 @@ struct MessageBubbleView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var themeManager: ThemeManager
     
+    // State to force refresh when message completion changes
+    @State private var refreshTrigger = UUID()
+    
     var body: some View {
         HStack {
             if message.isUser {
@@ -37,6 +40,13 @@ struct MessageBubbleView: View {
                         .background(Color.clear)
                         .cornerRadius(16)
                         .textSelection(.enabled)  // Enable text selection for copying
+                        .id(message.isComplete ? "complete-\(refreshTrigger)" : "streaming-\(message.id)")
+                        .onChange(of: message.isComplete) { isComplete in
+                            if isComplete {
+                                // Force refresh when message completes
+                                refreshTrigger = UUID()
+                            }
+                        }
                         .contextMenu {
                             Button(action: {
                                 UIPasteboard.general.string = message.content
