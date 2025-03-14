@@ -421,9 +421,9 @@ struct TextInputView: View {
             TextField("Message", text: $text)
                 .padding(.horizontal, 15)
                 .padding(.vertical, 8)
-                .cornerRadius(18)
                 .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, width: 1)
-            
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 18))
             // Send button
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
@@ -651,7 +651,7 @@ class KeyboardObservingViewController: UIViewController {
             keyboardTrackingView.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.2)
         } else {
             keyboardTrackingView.layer.borderWidth = 0
-            keyboardTrackingView.backgroundColor = .clear
+            keyboardTrackingView.backgroundColor = UIColor.systemBackground
         }
         
         // Safe area visualization - use a different color to clearly distinguish from keyboard tracking
