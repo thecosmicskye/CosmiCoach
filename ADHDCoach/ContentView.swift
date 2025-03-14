@@ -12,6 +12,7 @@ enum DebugOutlineMode: String, CaseIterable {
     case vStack = "VStack"
     case zStack = "ZStack"
     case textInput = "Text Input"
+    case safeArea = "Safe Area"
 }
 
 struct ContentView: View {
@@ -473,6 +474,7 @@ struct KeyboardAttachedView: UIViewControllerRepresentable {
 class KeyboardObservingViewController: UIViewController {
     // Core views
     private var keyboardTrackingView = UIView()
+    private var safeAreaView = UIView()
     private var inputHostView: UIHostingController<TextInputView>!
     
     // Constants
@@ -526,6 +528,9 @@ class KeyboardObservingViewController: UIViewController {
         // Setup keyboard tracking view using UIKit's keyboardLayoutGuide
         setupKeyboardTrackingView()
         
+        // Setup safe area visualization
+        setupSafeAreaView()
+        
         // Setup text input SwiftUI view
         setupTextInputView()
         
@@ -533,14 +538,29 @@ class KeyboardObservingViewController: UIViewController {
         updateDebugBorders()
     }
     
+    private func setupSafeAreaView() {
+        safeAreaView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(safeAreaView)
+        
+        NSLayoutConstraint.activate([
+            safeAreaView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            safeAreaView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            safeAreaView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            safeAreaView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor)
+        ])
+    }
+    
     private func setupKeyboardTrackingView() {
         keyboardTrackingView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(keyboardTrackingView)
         
-        // Track the keyboard using the keyboard layout guide
+        // Use proper constraints that won't resize incorrectly on keyboard dismiss
+        // Pin to screen edges horizontally and to keyboard layout guide vertically
         NSLayoutConstraint.activate([
-            keyboardTrackingView.leadingAnchor.constraint(equalTo: view.keyboardLayoutGuide.leadingAnchor),
-            keyboardTrackingView.trailingAnchor.constraint(equalTo: view.keyboardLayoutGuide.trailingAnchor),
+            // Pin horizontally to view edges instead of keyboard guide
+            keyboardTrackingView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            keyboardTrackingView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            // Still track keyboard vertically
             keyboardTrackingView.topAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
             keyboardTrackingView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.bottomAnchor)
         ])
@@ -591,25 +611,64 @@ class KeyboardObservingViewController: UIViewController {
         self.colorScheme = colorScheme
         self.themeColor = themeColor
         self.isDisabled = isDisabled
+        
+        // Only update debug borders if the mode changed to avoid unnecessary redrawing
+        let debugModeChanged = self.debugOutlineMode != debugOutlineMode
         self.debugOutlineMode = debugOutlineMode
         
         // Update SwiftUI view
         inputHostView.rootView = createTextInputView()
         
         // Update debug visualization if needed
-        updateDebugBorders()
+        if debugModeChanged {
+            updateDebugBorders()
+            
+            // Bring safe area view to front when in safe area debug mode
+            if debugOutlineMode == .safeArea {
+                view.bringSubviewToFront(safeAreaView)
+            } 
+            // Bring keyboard tracking view to front when in keyboard view debug mode
+            else if debugOutlineMode == .keyboardAttachedView {
+                view.bringSubviewToFront(keyboardTrackingView)
+            }
+            // Always keep input view on top
+            if let hostView = inputHostView?.view {
+                view.bringSubviewToFront(hostView)
+            }
+        }
     }
     
     private func updateDebugBorders() {
         let isKeyboardAttachedDebug = debugOutlineMode == .keyboardAttachedView
+        let isSafeAreaDebug = debugOutlineMode == .safeArea
         let isTextInputDebug = debugOutlineMode == .textInput
         
-        keyboardTrackingView.layer.borderWidth = isKeyboardAttachedDebug ? 2 : 0
-        keyboardTrackingView.layer.borderColor = UIColor.white.cgColor
+        // The keyboardTrackingView is not the entire safe area - it's just a UIView that's attached
+        // to the keyboard layout guide. Visualize it with a background color+border.
+        if isKeyboardAttachedDebug {
+            keyboardTrackingView.layer.borderWidth = 2
+            keyboardTrackingView.layer.borderColor = UIColor.systemBlue.cgColor
+            keyboardTrackingView.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.2)
+        } else {
+            keyboardTrackingView.layer.borderWidth = 0
+            keyboardTrackingView.backgroundColor = .clear
+        }
         
-        view.layer.borderWidth = isKeyboardAttachedDebug ? 1 : 0
+        // Safe area visualization - use a different color to clearly distinguish from keyboard tracking
+        if isSafeAreaDebug {
+            safeAreaView.layer.borderWidth = 2
+            safeAreaView.layer.borderColor = UIColor.systemGreen.cgColor
+            safeAreaView.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.1)
+        } else {
+            safeAreaView.layer.borderWidth = 0
+            safeAreaView.backgroundColor = .clear
+        }
+        
+        // Main controller view
+        view.layer.borderWidth = (isKeyboardAttachedDebug || isSafeAreaDebug) ? 1 : 0
         view.layer.borderColor = UIColor.systemTeal.cgColor
         
+        // Text input host view
         if let hostView = inputHostView?.view {
             hostView.layer.borderWidth = isTextInputDebug ? 2 : 0
             hostView.layer.borderColor = UIColor.systemIndigo.cgColor
@@ -677,8 +736,12 @@ class KeyboardObservingViewController: UIViewController {
     
     private func updateKeyboardPositionDuringInteractiveGesture(in window: UIWindow) {
         // Get keyboard position in window coordinates
-        let keyboardFrameInWindow = keyboardTrackingView.convert(keyboardTrackingView.bounds, to: window)
+        // Use view.keyboardLayoutGuide directly for position tracking instead of the keyboardTrackingView
+        let keyboardFrame = view.keyboardLayoutGuide.layoutFrame
         let screenHeight = window.frame.height
+        
+        // Convert keyboard frame to window coordinates for accurate measurement
+        let keyboardFrameInWindow = view.convert(keyboardFrame, to: window)
         let keyboardTop = keyboardFrameInWindow.minY
         
         // Calculate keyboard height and determine visibility
