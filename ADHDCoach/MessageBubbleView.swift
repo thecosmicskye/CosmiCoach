@@ -12,21 +12,39 @@ struct MessageBubbleView: View {
             }
             
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
-                Text(message.content)
-                    .font(.body)
-                    .lineSpacing(1.5)
-                    .padding(message.isUser ? EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12) : EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2)) // Less horizontal padding for Claude
-                    .background(message.isUser ? themeManager.accentColor(for: colorScheme) : (message.isUser ? Color(.systemGray5) : Color.clear)) // No background for Claude's messages
-                    .foregroundColor(message.isUser ? .white : .primary)
-                    .cornerRadius(16)
-                    .textSelection(.enabled)  // Enable text selection for copying
-                    .contextMenu {
-                        Button(action: {
-                            UIPasteboard.general.string = message.content
-                        }) {
-                            Label("Copy", systemImage: "doc.on.doc")
+                // Use regular Text for user messages, MarkdownText for Claude messages
+                if message.isUser {
+                    Text(message.content)
+                        .font(.body)
+                        .lineSpacing(1.5)
+                        .padding(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
+                        .background(themeManager.accentColor(for: colorScheme))
+                        .foregroundColor(.white)
+                        .cornerRadius(16)
+                        .textSelection(.enabled)  // Enable text selection for copying
+                        .contextMenu {
+                            Button(action: {
+                                UIPasteboard.general.string = message.content
+                            }) {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
                         }
-                    }
+                } else {
+                    // Claude message with markdown support
+                    MarkdownTextView(markdown: message.content)
+                        .lineSpacing(1.5)
+                        .padding(EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2))
+                        .background(Color.clear)
+                        .cornerRadius(16)
+                        .textSelection(.enabled)  // Enable text selection for copying
+                        .contextMenu {
+                            Button(action: {
+                                UIPasteboard.general.string = message.content
+                            }) {
+                                Label("Copy", systemImage: "doc.on.doc")
+                            }
+                        }
+                }
                 
                 if message.isUser || (!message.isComplete && !message.isUser) {
                     HStack {
@@ -55,7 +73,7 @@ struct MessageBubbleView: View {
 
 #Preview {
     VStack {
-        MessageBubbleView(message: ChatMessage(content: "Hello, how can I help you today?", isUser: false))
+        MessageBubbleView(message: ChatMessage(content: "Hello, how can I help you today?\n\n**Bold text** and *italic text*\n\n- List item 1\n- List item 2", isUser: false))
         MessageBubbleView(message: ChatMessage(content: "I'm feeling overwhelmed with my tasks", isUser: true))
     }
     .padding()
