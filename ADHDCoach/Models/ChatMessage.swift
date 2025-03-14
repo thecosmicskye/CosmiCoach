@@ -1,6 +1,6 @@
 import Foundation
 
-struct ChatMessage: Identifiable, Codable {
+struct ChatMessage: Identifiable, Codable, Equatable {
     let id: UUID
     var content: String
     let timestamp: Date

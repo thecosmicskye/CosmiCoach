@@ -55,6 +55,159 @@ struct ContentView: View {
         }
     }
     
+    // MARK: - View Building Methods
+    
+    /// Creates the debug border for the message list
+    @ViewBuilder
+    private func messageListBorder() -> some View {
+        if debugOutlineMode == .messageList {
+            Color.purple.frame(width: 2)
+        } else {
+            Color.clear.frame(width: 0)
+        }
+    }
+    
+    /// Creates the debug border for the scroll view
+    @ViewBuilder
+    private func scrollViewBorder() -> some View {
+        if debugOutlineMode == .scrollView {
+            Color.green.frame(width: 2)
+        } else {
+            Color.clear.frame(width: 0)
+        }
+    }
+    
+    /// Creates the debug border for the spacer
+    @ViewBuilder
+    private func spacerBorder() -> some View {
+        if debugOutlineMode == .spacer {
+            Color.yellow.frame(width: 2)
+        } else {
+            Color.clear.frame(width: 0)
+        }
+    }
+    
+    /// Creates the keyboard attached view
+    private func createKeyboardAttachedView(inputBaseHeight: CGFloat, safeAreaBottomPadding: CGFloat) -> some View {
+        KeyboardAttachedView(
+            keyboardState: keyboardState,
+            text: $inputText,
+            onSend: sendMessage,
+            colorScheme: colorScheme,
+            themeColor: themeManager.accentColor(for: colorScheme),
+            isDisabled: chatManager.isProcessing,
+            debugOutlineMode: debugOutlineMode
+        )
+        .frame(height: keyboardState.getInputViewPadding(
+            baseHeight: inputBaseHeight,
+            safeAreaPadding: safeAreaBottomPadding
+        ))
+        .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, width: 2)
+    }
+    
+    /// Creates the message content view
+    @ViewBuilder
+    private func messageContentView() -> some View {
+        if chatManager.messages.isEmpty {
+            EmptyStateView()
+                .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
+        } else {
+            MessageListView(
+                messages: chatManager.messages,
+                statusMessagesProvider: chatManager.combinedStatusMessagesForMessage
+            )
+            .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
+        }
+    }
+    
+    /// Creates the debug scroll view decoration
+    @ViewBuilder
+    private func scrollViewDebugDecoration() -> some View {
+        if debugOutlineMode == .scrollView {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .border(Color.green, width: 3)
+        }
+    }
+    
+    /// Creates the settings button
+    private func settingsButton() -> some View {
+        Button(action: {
+            hideKeyboard()
+            showingSettings = true
+        }) {
+            Image(systemName: "gear")
+                .font(.system(size: 22))
+                .foregroundColor(themeManager.accentColor(for: colorScheme))
+        }
+    }
+    
+    /// Creates the debug outline menu
+    @ViewBuilder
+    private func debugOutlineMenu() -> some View {
+        if showDebugTools {
+            Menu {
+                ForEach(DebugOutlineMode.allCases, id: \.self) { mode in
+                    Button(mode.rawValue) {
+                        debugOutlineMode = mode
+                    }
+                }
+            } label: {
+                Image(systemName: "square.dashed")
+                    .font(.system(size: 18))
+                    .foregroundColor(debugOutlineMode != .none ? .red : .gray)
+            }
+        }
+    }
+
+    /// Creates the scrollable message area
+    private func createScrollView(scrollView: ScrollViewProxy) -> some View {
+        ScrollView {
+            // Message content - either empty state or message list
+            messageContentView()
+            
+            // Debug border for ScrollView
+            scrollViewDebugDecoration()
+            
+            // Bottom anchor for scrolling
+            Color.clear
+                .frame(height: 1)
+                .id("messageBottom")
+        }
+        .onChange(of: chatManager.messages.count) { _, _ in
+            // Scroll to bottom when messages count changes
+            withAnimation {
+                scrollView.scrollTo("messageBottom", anchor: .bottom)
+            }
+        }
+        .onChange(of: chatManager.messages.last?.content) { _, _ in
+            // Scroll when the content of the last message changes (for streaming responses)
+            withAnimation {
+                scrollView.scrollTo("messageBottom", anchor: .bottom)
+            }
+        }
+        .onAppear {
+            // Scroll to bottom when view appears
+            scrollView.scrollTo("messageBottom", anchor: .bottom)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .scrollClipDisabled()
+        .border(debugOutlineMode == .scrollView ? Color.green : Color.clear, width: 2)
+    }
+    
+    /// Creates the settings sheet
+    private func settingsSheet() -> some View {
+        SettingsView()
+            .environmentObject(themeManager)
+            .environmentObject(memoryManager)
+            .environmentObject(locationManager)
+            .environmentObject(chatManager)
+            .onAppear {
+                hideKeyboard()
+            }
+    }
+    
+    // MARK: - Main View Body
     var body: some View {
         NavigationStack {
             GeometryReader { geometry in
@@ -71,29 +224,9 @@ struct ContentView: View {
                     // Content VStack
                     VStack(spacing: 0) {
                         // Main scrollable content area with message list
-                        ScrollView {
-                            // Message content - either empty state or message list
-                            if chatManager.messages.isEmpty {
-                                EmptyStateView()
-                                    .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
-                            } else {
-                                MessageListView(
-                                    messages: chatManager.messages,
-                                    statusMessagesProvider: chatManager.combinedStatusMessagesForMessage
-                                )
-                                .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
-                            }
-                            
-                            // Debug border for ScrollView
-                            if debugOutlineMode == .scrollView {
-                                Color.clear
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .border(Color.green, width: 3)
-                            }
+                        ScrollViewReader { scrollView in
+                            createScrollView(scrollView: scrollView)
                         }
-                        .scrollDismissesKeyboard(.interactively)
-                        .scrollClipDisabled()
-                        .border(debugOutlineMode == .scrollView ? Color.green : Color.clear, width: 2)
                         
                         // Dynamic spacer that adjusts based on keyboard presence
                         Spacer()
@@ -107,20 +240,10 @@ struct ContentView: View {
                     .border(debugOutlineMode == .vStack ? Color.orange : Color.clear, width: 2)
                     
                     // Keyboard attached input view
-                    KeyboardAttachedView(
-                        keyboardState: keyboardState,
-                        text: $inputText,
-                        onSend: sendMessage,
-                        colorScheme: colorScheme,
-                        themeColor: themeManager.accentColor(for: colorScheme),
-                        isDisabled: chatManager.isProcessing,
-                        debugOutlineMode: debugOutlineMode
+                    createKeyboardAttachedView(
+                        inputBaseHeight: inputBaseHeight,
+                        safeAreaBottomPadding: safeAreaBottomPadding
                     )
-                    .frame(height: keyboardState.getInputViewPadding(
-                        baseHeight: inputBaseHeight,
-                        safeAreaPadding: safeAreaBottomPadding
-                    ))
-                    .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, width: 2)
                 }
             }
             .ignoresSafeArea(.keyboard)
@@ -130,42 +253,16 @@ struct ContentView: View {
             .tint(themeManager.accentColor(for: colorScheme))
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: {
-                        hideKeyboard()
-                        showingSettings = true
-                    }) {
-                        Image(systemName: "gear")
-                            .font(.system(size: 22))
-                            .foregroundColor(themeManager.accentColor(for: colorScheme))
-                    }
+                    settingsButton()
                 }
                 
                 // Debug outline toggle (only shown when debug tools are enabled)
-                if showDebugTools {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Menu {
-                            ForEach(DebugOutlineMode.allCases, id: \.self) { mode in
-                                Button(mode.rawValue) {
-                                    debugOutlineMode = mode
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "square.dashed")
-                                .font(.system(size: 18))
-                                .foregroundColor(debugOutlineMode != .none ? .red : .gray)
-                        }
-                    }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    debugOutlineMenu()
                 }
             }
             .sheet(isPresented: $showingSettings) {
-                SettingsView()
-                    .environmentObject(themeManager)
-                    .environmentObject(memoryManager)
-                    .environmentObject(locationManager)
-                    .environmentObject(chatManager)
-                    .onAppear {
-                        hideKeyboard()
-                    }
+                settingsSheet()
             }
             .applyThemeColor()
             .onAppear {
@@ -290,11 +387,6 @@ struct MessageListView: View {
                     }
                 }
             }
-            
-            // Invisible anchor for scrolling
-            Color.clear
-                .frame(height: 1)
-                .id("bottomID")
         }
         .padding(.top, 8)
     }
