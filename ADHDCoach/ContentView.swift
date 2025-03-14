@@ -19,35 +19,37 @@ enum DebugOutlineMode: String, CaseIterable {
 var inputViewLayoutDebug = false
 
 struct ContentView: View {
+    // MARK: - Environment Objects
     @EnvironmentObject private var chatManager: ChatManager
     @EnvironmentObject private var eventKitManager: EventKitManager
     @EnvironmentObject private var memoryManager: MemoryManager
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var locationManager: LocationManager
+    
+    // MARK: - Environment Values
     @Environment(\.colorScheme) private var colorScheme
-    @State private var showingSettings = false
-    @AppStorage("hasAppearedBefore") private var hasAppearedBefore = false
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var keyboardState = KeyboardState()
+    
+    // MARK: - State
+    @AppStorage("hasAppearedBefore") private var hasAppearedBefore = false
+    @State private var showingSettings = false
     @State private var inputText = ""
+    @StateObject private var keyboardState = KeyboardState()
     
-    // Debug outline state
+    // MARK: - Debug State
     @State private var debugOutlineMode: DebugOutlineMode = .none
-    @State private var showDebugTools: Bool = true
+    @State private var showDebugTools: Bool = false
     
-    // Helper function to reset chat when notification is received
+    // MARK: - Methods
+    /// Sets up notification observer for chat history deletion
     private func setupNotificationObserver() {
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("ChatHistoryDeleted"),
             object: nil,
             queue: .main
         ) { [self] _ in
-            // This will be called when chat history is deleted
-            // Use Task with MainActor to safely modify the MainActor-isolated property
             Task { @MainActor in
                 chatManager.messages = []
-                
-                // Try sending automatic message after chat history deletion
                 await chatManager.checkAndSendAutomaticMessageAfterHistoryDeletion()
             }
         }
@@ -57,26 +59,19 @@ struct ContentView: View {
         NavigationStack {
             GeometryReader { geometry in
                 ZStack(alignment: .bottom) {
+                    // Constants for layout management
+                    let inputBaseHeight: CGFloat = 54
+                    let safeAreaBottomPadding: CGFloat = 20
+                    
                     // Debug border around entire ZStack
                     if debugOutlineMode == .zStack {
                         Color.clear.border(Color.blue, width: 4)
                     }
                     
-                    // Constants for layout management
-                    let inputBaseHeight: CGFloat = 54
-                    let safeAreaBottomPadding: CGFloat = 20
-                    
                     // Content VStack
                     VStack(spacing: 0) {
                         // Main scrollable content area with message list
                         ScrollView {
-                            // Debug border for ScrollView
-                            if debugOutlineMode == .scrollView {
-                                Color.clear
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                    .border(Color.green, width: 3)
-                            }
-                            
                             // Message content - either empty state or message list
                             if chatManager.messages.isEmpty {
                                 EmptyStateView()
@@ -87,6 +82,13 @@ struct ContentView: View {
                                     statusMessagesProvider: chatManager.combinedStatusMessagesForMessage
                                 )
                                 .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
+                            }
+                            
+                            // Debug border for ScrollView
+                            if debugOutlineMode == .scrollView {
+                                Color.clear
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .border(Color.green, width: 3)
                             }
                         }
                         .scrollDismissesKeyboard(.interactively)
@@ -129,10 +131,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
-                        // Hide keyboard before showing settings
                         hideKeyboard()
-                        
-                        // Then show settings
                         showingSettings = true
                     }) {
                         Image(systemName: "gear")
@@ -165,123 +164,83 @@ struct ContentView: View {
                     .environmentObject(locationManager)
                     .environmentObject(chatManager)
                     .onAppear {
-                        // Force keyboard dismiss when settings appear
                         hideKeyboard()
                     }
             }
             .applyThemeColor()
             .onAppear {
-                print("⏱️ ContentView.onAppear - START")
-                // Connect the memory manager to the chat manager
+                // Connect memory manager to chat manager
                 chatManager.setMemoryManager(memoryManager)
-                print("⏱️ ContentView.onAppear - Connected memory manager to chat manager")
                 
                 // Setup notification observers
                 setupNotificationObserver()
-                print("⏱️ ContentView.onAppear - Set up notification observers")
                 
-                // Check if automatic messages should be enabled in settings and log it
+                // Check for automatic messages
                 let automaticMessagesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
-                print("⏱️ ContentView.onAppear - Automatic messages enabled in settings: \(automaticMessagesEnabled)")
                 
-                // Only check for automatic messages if we have appeared before
-                // This ensures we don't trigger on the initial app launch/init
                 if hasAppearedBefore {
-                    print("⏱️ ContentView.onAppear - This is a RE-APPEARANCE (hasAppearedBefore=true), likely from background")
-                    
-                    // Ensure memory is properly loaded
+                    // This is a reappearance, load memory
                     Task {
-                        print("⏱️ ContentView.onAppear - Task started for memory loading")
                         let _ = await memoryManager.readMemory()
-                        if let fileURL = memoryManager.getMemoryFileURL() {
-                            print("⏱️ ContentView.onAppear - Memory file exists: \(FileManager.default.fileExists(atPath: fileURL.path))")
-                            print("⏱️ ContentView.onAppear - Memory content length: \(memoryManager.memoryContent.count)")
-                        }
-                        
                         // Memory loaded - automatic messages handled by ADHDCoachApp
                     }
                 } else {
-                    print("⏱️ ContentView.onAppear - This is the FIRST appearance (hasAppearedBefore=false), setting to true")
-                    // Just load memory but don't check for automatic messages on first appearance
+                    // This is the first appearance
                     Task {
                         let _ = await memoryManager.readMemory()
-                        if let fileURL = memoryManager.getMemoryFileURL() {
-                            print("⏱️ ContentView.onAppear - Memory file exists: \(FileManager.default.fileExists(atPath: fileURL.path))")
-                            print("⏱️ ContentView.onAppear - Memory content length: \(memoryManager.memoryContent.count)")
-                        }
                     }
                     // Mark that we've appeared before for next time
                     hasAppearedBefore = true
-                    print("⏱️ ContentView.onAppear - Set hasAppearedBefore to TRUE in AppStorage")
                 }
-                print("⏱️ ContentView.onAppear - END (task continues asynchronously)")
-            }
-            .task {
-                // This is a different lifecycle event than onAppear
-                print("⏱️ ContentView.task - Running")
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
-                print("⏱️ ContentView.onChange(scenePhase) - \(oldPhase) -> \(newPhase)")
-                
                 // Check for transition to active state (from any state)
-                if newPhase == .active {
-                    print("⏱️ ContentView.onChange - App becoming active")
-                    
+                if newPhase == .active && hasAppearedBefore {
                     // Only run necessary updates if we've seen the app before
-                    if hasAppearedBefore {
-                        // Log last session time for debugging
-                        if let lastSessionTime = UserDefaults.standard.object(forKey: "last_app_session_time") as? TimeInterval {
-                            let lastTime = Date(timeIntervalSince1970: lastSessionTime)
-                            let timeSinceLastSession = Date().timeIntervalSince(lastTime)
-                            print("⏱️ ContentView.onChange - Last session time: \(lastTime)")
-                            print("⏱️ ContentView.onChange - Time since last session: \(timeSinceLastSession) seconds")
-                            
-                            // Load memory - automatic messages handled by ADHDCoachApp
-                            Task {
-                                print("⏱️ ContentView.onChange - Ensuring memory is loaded")
-                                let _ = await memoryManager.readMemory()
-                                print("⏱️ ContentView.onChange - Memory loaded")
-                            }
+                    if let lastSessionTime = UserDefaults.standard.object(forKey: "last_app_session_time") as? TimeInterval {
+                        // Load memory - automatic messages handled by ADHDCoachApp
+                        Task {
+                            let _ = await memoryManager.readMemory()
                         }
-                    } else {
-                        print("⏱️ ContentView.onChange - Not checking automatic messages, hasAppearedBefore = false")
                     }
                 }
             }
         }
     }
+    // MARK: - Keyboard & Message Handling
     
-    
+    /// Dismisses the keyboard
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
     
+    /// Processes and sends user message
     private func sendMessage() {
         let trimmedText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
         
-        // Clear input text first, but capture the content
+        // Store message and clear input
         let messageToSend = trimmedText
         inputText = ""
         
-        // Add user message to chat first (to update UI immediately)
+        // Add user message to chat immediately
         chatManager.addUserMessage(content: messageToSend)
         
-        // Use animation for dismissing the keyboard to make it smooth
+        // Dismiss keyboard with animation
         withAnimation(.easeOut(duration: 0.25)) {
-            // Dismiss keyboard after the UI updates
             hideKeyboard()
         }
         
-        // Send to Claude API after the animation completes
+        // Process message asynchronously
         Task {
-            // Small delay to allow the keyboard animation to start
+            // Small delay for animation
             try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
             
-            // Get context from EventKit
+            // Get context data
             let calendarEvents = eventKitManager.fetchUpcomingEvents(days: 7)
             let reminders = await eventKitManager.fetchReminders()
             
+            // Send to API
             await chatManager.sendMessageToClaude(
                 userMessage: messageToSend,
                 calendarEvents: calendarEvents,
@@ -291,7 +250,9 @@ struct ContentView: View {
     }
 }
 
-// Dedicated view for the empty state
+// MARK: - Supporting Views
+
+/// Displays welcome message when no chat messages exist
 struct EmptyStateView: View {
     var body: some View {
         VStack {
@@ -308,7 +269,7 @@ struct EmptyStateView: View {
     }
 }
 
-// Dedicated view for the message list
+/// Displays the list of chat messages
 struct MessageListView: View {
     let messages: [ChatMessage]
     let statusMessagesProvider: (ChatMessage) -> [OperationStatusMessage]
@@ -320,8 +281,7 @@ struct MessageListView: View {
                     MessageBubbleView(message: message)
                         .padding(.horizontal)
                     
-                    // If this is the message that triggered an operation,
-                    // display the operation status message right after it
+                    // Show operation status messages after AI messages
                     if !message.isUser && message.isComplete {
                         ForEach(statusMessagesProvider(message)) { statusMessage in
                             OperationStatusView(statusMessage: statusMessage)
@@ -331,7 +291,7 @@ struct MessageListView: View {
                 }
             }
             
-            // Invisible spacer view at the end for scrolling
+            // Invisible anchor for scrolling
             Color.clear
                 .frame(height: 1)
                 .id("bottomID")
@@ -341,7 +301,9 @@ struct MessageListView: View {
 }
 
 
-#Preview {
+// MARK: - Previews
+
+#Preview("Main View") {
     ContentView()
         .environmentObject(ChatManager())
         .environmentObject(EventKitManager())
@@ -383,11 +345,10 @@ class KeyboardState: ObservableObject {
     ///   - visible: Whether keyboard is visible
     ///   - height: Height of keyboard in points
     func setKeyboardVisible(_ visible: Bool, height: CGFloat) {
-        // Track both visibility changes and height changes
+        // Only trigger updates when there's an actual change
         let heightChanged = visible && keyboardOffset != height
         let visibilityChanged = isKeyboardVisible != visible
         
-        // Only trigger updates when there's an actual change
         if visibilityChanged || heightChanged {
             isKeyboardVisible = visible
             keyboardOffset = visible ? height : 0
@@ -406,6 +367,8 @@ class KeyboardState: ObservableObject {
 
 // MARK: - TextInputView
 struct TextInputView: View {
+    // MARK: Properties
+    
     // Input properties
     @Binding var text: String
     var onSend: () -> Void
@@ -416,7 +379,7 @@ struct TextInputView: View {
     var isDisabled: Bool
     var debugOutlineMode: DebugOutlineMode
     
-    // Local state to prevent button freezing
+    // Local state
     @State private var isSending = false
     
     // Computed properties
@@ -428,45 +391,25 @@ struct TextInputView: View {
         isButtonDisabled ? .gray : themeColor
     }
     
+    // MARK: Body
     var body: some View {
         HStack {
-            // Text input field - explicitly using .animation(nil) to prevent animation during keyboard transition
+            // Text input field
             TextField("Message", text: $text)
                 .padding(.horizontal, 15)
                 .padding(.vertical, 8)
                 .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, width: 1)
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 18))
-                .animation(nil, value: text) // Prevent TextField from animating during transitions
-                .background(
-                    GeometryReader { geometry in
-                        Color.clear
-                            .onAppear {
-                                if inputViewLayoutDebug {
-                                    print("📏 TextField size: \(geometry.size), position: \(geometry.frame(in: .global).origin)")
-                                }
-                            }
-                            .onChange(of: geometry.frame(in: .global)) { oldFrame, newFrame in
-                                if inputViewLayoutDebug {
-                                    print("📏 TextField position changed: \(oldFrame.origin) -> \(newFrame.origin)")
-                                    print("📏 TextField size: \(newFrame.size)")
-                                }
-                            }
-                    }
-                )
+                .animation(nil, value: text) // Prevent animation during transitions
             
-            // Send button with improved responsiveness
+            // Send button
             Button {
-                // Prevent multiple taps
                 guard !isSending else { return }
-                
-                // Set sending state to true to prevent multiple taps
                 isSending = true
-                
-                // Trigger send action
                 onSend()
                 
-                // Reset button state after a brief delay to handle animation
+                // Reset button state after a brief delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                     isSending = false
                 }
@@ -476,35 +419,19 @@ struct TextInputView: View {
                     .foregroundColor(buttonColor)
             }
             .disabled(isButtonDisabled)
-            .animation(.default, value: isButtonDisabled) // Only animate button color changes
+            .animation(.default, value: isButtonDisabled)
         }
         .padding(.horizontal)
         .border(debugOutlineMode == .textInput ? Color.mint : Color.clear, width: 2)
         .transaction { transaction in
-            // Disable animations for position changes to prevent stuttering
-            transaction.animation = nil
+            transaction.animation = nil // Prevent position animations
         }
-        .background(
-            GeometryReader { geometry in
-                Color.clear
-                    .onAppear {
-                        if inputViewLayoutDebug {
-                            print("📏 text-field-row size: \(geometry.size), position: \(geometry.frame(in: .global).origin)")
-                        }
-                    }
-                    .onChange(of: geometry.frame(in: .global)) { oldFrame, newFrame in
-                        if inputViewLayoutDebug {
-                            print("📏 text-field-row position changed: \(oldFrame.origin) -> \(newFrame.origin)")
-                            print("📏 text-field-row size: \(newFrame.size)")
-                        }
-                    }
-            }
-        )
     }
 }
 
 // MARK: - KeyboardAttachedView
 struct KeyboardAttachedView: UIViewControllerRepresentable {
+    // MARK: Properties
     var keyboardState: KeyboardState
     @Binding var text: String
     var onSend: () -> Void
@@ -513,6 +440,7 @@ struct KeyboardAttachedView: UIViewControllerRepresentable {
     var isDisabled: Bool
     var debugOutlineMode: DebugOutlineMode
     
+    // MARK: UIViewControllerRepresentable
     func makeUIViewController(context: Context) -> KeyboardObservingViewController {
         return KeyboardObservingViewController(
             keyboardState: keyboardState,
@@ -538,16 +466,16 @@ struct KeyboardAttachedView: UIViewControllerRepresentable {
 
 // MARK: - KeyboardObservingViewController
 class KeyboardObservingViewController: UIViewController {
-    // Core views
+    // MARK: Views
     private var keyboardTrackingView = UIView()
     private var safeAreaView = UIView()
     private var inputHostView: UIHostingController<TextInputView>!
     
-    // Constants
+    // MARK: Constants
     private let inputViewHeight: CGFloat = 54
     private let keyboardVisibilityThreshold: CGFloat = 100
     
-    // State and properties
+    // MARK: Properties
     private var keyboardState: KeyboardState
     private var bottomConstraint: NSLayoutConstraint?
     private var text: Binding<String>
@@ -557,6 +485,7 @@ class KeyboardObservingViewController: UIViewController {
     private var isDisabled: Bool
     private var debugOutlineMode: DebugOutlineMode
     
+    // MARK: Lifecycle
     deinit {
         NotificationCenter.default.removeObserver(self)
     }
@@ -584,23 +513,18 @@ class KeyboardObservingViewController: UIViewController {
         fatalError("init(coder:) has not been implemented")
     }
     
+    // MARK: View Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViews()
         setupKeyboardObservers()
     }
     
+    // MARK: View Setup
     private func setupViews() {
-        // Setup keyboard tracking view using UIKit's keyboardLayoutGuide
         setupKeyboardTrackingView()
-        
-        // Setup safe area visualization
         setupSafeAreaView()
-        
-        // Setup text input SwiftUI view
         setupTextInputView()
-        
-        // Apply debug styling if enabled
         updateDebugBorders()
     }
     
@@ -620,37 +544,35 @@ class KeyboardObservingViewController: UIViewController {
         keyboardTrackingView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(keyboardTrackingView)
         
-        // Use proper constraints that won't resize incorrectly on keyboard dismiss
-        // Pin to screen edges horizontally and to keyboard layout guide vertically
         NSLayoutConstraint.activate([
-            // Pin horizontally to view edges instead of keyboard guide
+            // Pin horizontally to view edges
             keyboardTrackingView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             keyboardTrackingView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            // Still track keyboard vertically
+            // Track keyboard vertically
             keyboardTrackingView.topAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
             keyboardTrackingView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.bottomAnchor)
         ])
     }
     
     private func setupTextInputView() {
-        // Create the SwiftUI view
+        // Create SwiftUI view
         let textView = createTextInputView()
         inputHostView = UIHostingController(rootView: textView)
         
-        // Add the hosting controller as a child
+        // Add hosting controller as child
         addChild(inputHostView)
         inputHostView.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(inputHostView.view)
         inputHostView.didMove(toParent: self)
         
-        // Set up constraints for the input view
+        // Set up constraints
         NSLayoutConstraint.activate([
             inputHostView.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             inputHostView.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             inputHostView.view.heightAnchor.constraint(equalToConstant: inputViewHeight)
         ])
         
-        // Attach the input view to the keyboard
+        // Attach to keyboard
         bottomConstraint = inputHostView.view.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
         bottomConstraint?.isActive = true
     }
@@ -666,6 +588,7 @@ class KeyboardObservingViewController: UIViewController {
         )
     }
     
+    // MARK: Content Updates
     func updateContent(
         text: String,
         colorScheme: ColorScheme,
@@ -673,55 +596,47 @@ class KeyboardObservingViewController: UIViewController {
         isDisabled: Bool,
         debugOutlineMode: DebugOutlineMode
     ) {
-        // Store previous properties to check for changes
+        // Check for changes
         let textChanged = self.text.wrappedValue != text
         let themeColorChanged = self.themeColor != themeColor
         let disabledStateChanged = self.isDisabled != isDisabled
         let debugModeChanged = self.debugOutlineMode != debugOutlineMode
         let colorSchemeChanged = self.colorScheme != colorScheme
+        let visualPropertiesChanged = themeColorChanged || disabledStateChanged || debugModeChanged || colorSchemeChanged
         
-        // Update state properties
-        // When updating text to empty during send, do it immediately without animation
+        // Update text (without animation if clearing)
         if textChanged && text.isEmpty {
             CATransaction.begin()
-            CATransaction.setDisableActions(true) // Disable implicit animations
+            CATransaction.setDisableActions(true)
             self.text.wrappedValue = text
             CATransaction.commit()
         } else {
             self.text.wrappedValue = text
         }
         
+        // Update other properties
         self.colorScheme = colorScheme
         self.themeColor = themeColor
         self.isDisabled = isDisabled
         self.debugOutlineMode = debugOutlineMode
         
-        // Only update SwiftUI view if visual properties changed to avoid flickering
-        if themeColorChanged || disabledStateChanged || debugModeChanged || colorSchemeChanged {
-            // We don't need to update the entire view when only text changes
-            // This avoids unnecessary layout thrashing
+        // Update SwiftUI view if visual properties changed
+        if visualPropertiesChanged {
             inputHostView.rootView = createTextInputView()
-            
-            // Force layout to update immediately
             updateSwiftUIViewPosition()
-            
-            if inputViewLayoutDebug {
-                print("📏 Updating TextInputView content with new properties")
-            }
         }
         
-        // Update debug visualization if needed
+        // Update debug visualization
         if debugModeChanged {
             updateDebugBorders()
             
-            // Bring safe area view to front when in safe area debug mode
+            // Update view order based on debug mode
             if debugOutlineMode == .safeArea {
                 view.bringSubviewToFront(safeAreaView)
-            } 
-            // Bring keyboard tracking view to front when in keyboard view debug mode
-            else if debugOutlineMode == .keyboardAttachedView {
+            } else if debugOutlineMode == .keyboardAttachedView {
                 view.bringSubviewToFront(keyboardTrackingView)
             }
+            
             // Always keep input view on top
             if let hostView = inputHostView?.view {
                 view.bringSubviewToFront(hostView)
@@ -729,31 +644,23 @@ class KeyboardObservingViewController: UIViewController {
         }
     }
     
+    // MARK: Debug Visualization
     private func updateDebugBorders() {
         let isKeyboardAttachedDebug = debugOutlineMode == .keyboardAttachedView
         let isSafeAreaDebug = debugOutlineMode == .safeArea
         let isTextInputDebug = debugOutlineMode == .textInput
         
-        // The keyboardTrackingView is not the entire safe area - it's just a UIView that's attached
-        // to the keyboard layout guide. Visualize it with a background color+border.
-        if isKeyboardAttachedDebug {
-            keyboardTrackingView.layer.borderWidth = 2
-            keyboardTrackingView.layer.borderColor = UIColor.systemBlue.cgColor
-            keyboardTrackingView.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.2)
-        } else {
-            keyboardTrackingView.layer.borderWidth = 0
-            keyboardTrackingView.backgroundColor = UIColor.systemBackground
-        }
+        // Keyboard tracking view
+        keyboardTrackingView.layer.borderWidth = isKeyboardAttachedDebug ? 2 : 0
+        keyboardTrackingView.layer.borderColor = UIColor.systemBlue.cgColor
+        keyboardTrackingView.backgroundColor = isKeyboardAttachedDebug ? 
+            UIColor.systemBlue.withAlphaComponent(0.2) : UIColor.systemBackground
         
-        // Safe area visualization - use a different color to clearly distinguish from keyboard tracking
-        if isSafeAreaDebug {
-            safeAreaView.layer.borderWidth = 2
-            safeAreaView.layer.borderColor = UIColor.systemGreen.cgColor
-            safeAreaView.backgroundColor = UIColor.systemGreen.withAlphaComponent(0.1)
-        } else {
-            safeAreaView.layer.borderWidth = 0
-            safeAreaView.backgroundColor = .clear
-        }
+        // Safe area visualization
+        safeAreaView.layer.borderWidth = isSafeAreaDebug ? 2 : 0
+        safeAreaView.layer.borderColor = UIColor.systemGreen.cgColor
+        safeAreaView.backgroundColor = isSafeAreaDebug ? 
+            UIColor.systemGreen.withAlphaComponent(0.1) : .clear
         
         // Main controller view
         view.layer.borderWidth = (isKeyboardAttachedDebug || isSafeAreaDebug) ? 1 : 0
@@ -766,8 +673,8 @@ class KeyboardObservingViewController: UIViewController {
         }
     }
     
+    // MARK: Keyboard Observation
     private func setupKeyboardObservers() {
-        // Add observers for keyboard notifications
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(keyboardWillChangeFrame),
@@ -790,43 +697,27 @@ class KeyboardObservingViewController: UIViewController {
             return
         }
         
-        // Determine if keyboard is visible based on its position
+        // Check keyboard visibility
         let isVisible = keyboardFrame.minY < UIScreen.main.bounds.height
         
-        // Update keyboard state
+        // Update state
         keyboardState.setKeyboardVisible(isVisible, height: keyboardFrame.height)
         
-        // Log KeyboardAttachedView position if debug enabled
-        if inputViewLayoutDebug {
-            print("📏 KeyboardAttachedView position: \(self.view.frame.origin), size: \(self.view.frame.size)")
-            print("📏 KeyboardAttachedView bounds: \(self.view.bounds)")
-            print("📏 Keyboard frame: \(keyboardFrame), visible: \(isVisible)")
-        }
-        
-        // Extract animation curve to match keyboard precisely
+        // Match keyboard animation exactly
         let curveValue = curve.uintValue
         let animationOptions = UIView.AnimationOptions(rawValue: curveValue << 16)
         
-        // Apply more precise animation with curves matching keyboard exactly
+        // Animate with matching curve
         UIView.animate(withDuration: duration, delay: 0, options: [animationOptions, .beginFromCurrentState]) {
-            // Layout UIKit views to match keyboard movement
             self.view.layoutIfNeeded()
-            
-            // Force SwiftUI view to update by directly setting frame
-            // This helps sync the SwiftUI TextField with the container
             self.updateSwiftUIViewPosition()
         }
     }
     
     private func updateSwiftUIViewPosition() {
-        // Force SwiftUI layout to update immediately
+        // Force layout update
         inputHostView.view.setNeedsLayout()
         inputHostView.view.layoutIfNeeded()
-        
-        // Log the updated position for debugging
-        if inputViewLayoutDebug {
-            print("📏 InputHostView updated position: \(self.inputHostView.view.frame.origin)")
-        }
     }
     
     @objc func keyboardWillHide(_ notification: Notification) {
@@ -835,88 +726,54 @@ class KeyboardObservingViewController: UIViewController {
             return
         }
         
-        // Update keyboard state
+        // Update state
         keyboardState.setKeyboardVisible(false, height: 0)
         
-        // Log KeyboardAttachedView position if debug enabled
-        if inputViewLayoutDebug {
-            print("📏 KeyboardAttachedView (keyboard hiding) position: \(self.view.frame.origin), size: \(self.view.frame.size)")
-        }
-        
-        // Extract animation curve to match keyboard precisely
+        // Match keyboard animation exactly
         let curveValue = curve.uintValue
         let animationOptions = UIView.AnimationOptions(rawValue: curveValue << 16)
         
-        // Apply more precise animation with curves matching keyboard exactly
+        // Animate with matching curve
         UIView.animate(withDuration: duration, delay: 0, options: [animationOptions, .beginFromCurrentState]) {
-            // Layout UIKit views to match keyboard movement
             self.view.layoutIfNeeded()
-            
-            // Force SwiftUI view to update by directly setting frame
             self.updateSwiftUIViewPosition()
         }
     }
     
+    // MARK: Interactive Gesture Handling
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
         
-        // Log position changes during layout if debug enabled
-        if inputViewLayoutDebug {
-            print("📏 KeyboardAttachedView (layoutSubviews) position: \(self.view.frame.origin), size: \(self.view.frame.size)")
-            print("📏 InputHostView position: \(self.inputHostView.view.frame.origin), size: \(self.inputHostView.view.frame.size)")
-            print("📏 KeyboardTrackingView position: \(self.keyboardTrackingView.frame.origin), size: \(self.keyboardTrackingView.frame.size)")
-        }
-        
-        // Force SwiftUI view to update layout to match UIKit container
+        // Update SwiftUI view layout
         updateSwiftUIViewPosition()
         
-        // Only handle interactive keyboard dismissal when no animation is in progress
+        // Handle interactive keyboard dismissal when no animation is in progress
         guard let window = view.window, UIView.inheritedAnimationDuration == 0 else { return }
-        
-        // Track keyboard position during interactive gestures
         updateKeyboardPositionDuringInteractiveGesture(in: window)
     }
     
     private func updateKeyboardPositionDuringInteractiveGesture(in window: UIWindow) {
-        // Get keyboard position in window coordinates
+        // Get keyboard position
         let keyboardFrame = view.keyboardLayoutGuide.layoutFrame
         let screenHeight = window.frame.height
         
-        // Convert keyboard frame to window coordinates for accurate measurement
+        // Convert to window coordinates
         let keyboardFrameInWindow = view.convert(keyboardFrame, to: window)
         let keyboardTop = keyboardFrameInWindow.minY
         
-        // Calculate keyboard height and determine visibility
+        // Calculate visibility
         let keyboardHeight = screenHeight - keyboardTop
         let isVisible = keyboardTop < screenHeight && keyboardHeight > keyboardVisibilityThreshold
         
-        // Log interactive gesture positions if debug enabled
-        if inputViewLayoutDebug {
-            print("📏 KeyboardAttachedView (interactive gesture) position: \(self.view.frame.origin), size: \(self.view.frame.size)")
-            print("📏 Keyboard frame in window: \(keyboardFrameInWindow), visible: \(isVisible), height: \(keyboardHeight)")
-        }
-        
-        // Update on every frame during interactive dismissal to ensure smooth tracking
-        // This helps sync the TextField with the container movement
+        // Check if update needed
         let heightDifference = abs(keyboardState.keyboardOffset - (isVisible ? keyboardHeight : 0))
         let shouldUpdate = heightDifference > 1.0 || keyboardState.isKeyboardVisible != isVisible
         
         if shouldUpdate {
-            // Update keyboard state with new height
+            // Update state and layout
             keyboardState.setKeyboardVisible(isVisible, height: isVisible ? keyboardHeight : 0)
-            
-            // Force immediate layout update for smooth interactive tracking
             view.layoutIfNeeded()
-            
-            // Force SwiftUI view to update by directly setting frame 
             updateSwiftUIViewPosition()
-            
-            if inputViewLayoutDebug {
-                print("📏 Interactive gesture keyboard height: \(keyboardHeight)")
-                if keyboardState.isKeyboardVisible != isVisible {
-                    print("📏 Keyboard visibility changed to: \(isVisible)")
-                }
-            }
         }
     }
 }
