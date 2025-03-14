@@ -15,6 +15,9 @@ enum DebugOutlineMode: String, CaseIterable {
     case safeArea = "Safe Area"
 }
 
+// Flag to enable/disable input view layout debugging logs
+var inputViewLayoutDebug = true
+
 struct ContentView: View {
     @EnvironmentObject private var chatManager: ChatManager
     @EnvironmentObject private var eventKitManager: EventKitManager
@@ -424,6 +427,22 @@ struct TextInputView: View {
                 .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, width: 1)
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 18))
+                .background(
+                    GeometryReader { geometry in
+                        Color.clear
+                            .onAppear {
+                                if inputViewLayoutDebug {
+                                    print("📏 TextField size: \(geometry.size), position: \(geometry.frame(in: .global).origin)")
+                                }
+                            }
+                            .onChange(of: geometry.frame(in: .global)) { oldFrame, newFrame in
+                                if inputViewLayoutDebug {
+                                    print("📏 TextField position changed: \(oldFrame.origin) -> \(newFrame.origin)")
+                                    print("📏 TextField size: \(newFrame.size)")
+                                }
+                            }
+                    }
+                )
             // Send button
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
@@ -434,6 +453,22 @@ struct TextInputView: View {
         }
         .padding(.horizontal)
         .border(debugOutlineMode == .textInput ? Color.mint : Color.clear, width: 2)
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear {
+                        if inputViewLayoutDebug {
+                            print("📏 text-field-row size: \(geometry.size), position: \(geometry.frame(in: .global).origin)")
+                        }
+                    }
+                    .onChange(of: geometry.frame(in: .global)) { oldFrame, newFrame in
+                        if inputViewLayoutDebug {
+                            print("📏 text-field-row position changed: \(oldFrame.origin) -> \(newFrame.origin)")
+                            print("📏 text-field-row size: \(newFrame.size)")
+                        }
+                    }
+            }
+        )
     }
 }
 
@@ -704,6 +739,13 @@ class KeyboardObservingViewController: UIViewController {
         // Update keyboard state
         keyboardState.setKeyboardVisible(isVisible, height: keyboardFrame.height)
         
+        // Log KeyboardAttachedView position if debug enabled
+        if inputViewLayoutDebug {
+            print("📏 KeyboardAttachedView position: \(self.view.frame.origin), size: \(self.view.frame.size)")
+            print("📏 KeyboardAttachedView bounds: \(self.view.bounds)")
+            print("📏 Keyboard frame: \(keyboardFrame), visible: \(isVisible)")
+        }
+        
         // Animate layout changes
         UIView.animate(withDuration: duration) {
             self.view.layoutIfNeeded()
@@ -718,6 +760,11 @@ class KeyboardObservingViewController: UIViewController {
         // Update keyboard state
         keyboardState.setKeyboardVisible(false, height: 0)
         
+        // Log KeyboardAttachedView position if debug enabled
+        if inputViewLayoutDebug {
+            print("📏 KeyboardAttachedView (keyboard hiding) position: \(self.view.frame.origin), size: \(self.view.frame.size)")
+        }
+        
         // Animate layout changes
         UIView.animate(withDuration: duration) {
             self.view.layoutIfNeeded()
@@ -726,6 +773,13 @@ class KeyboardObservingViewController: UIViewController {
     
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
+        
+        // Log position changes during layout if debug enabled
+        if inputViewLayoutDebug {
+            print("📏 KeyboardAttachedView (layoutSubviews) position: \(self.view.frame.origin), size: \(self.view.frame.size)")
+            print("📏 InputHostView position: \(self.inputHostView.view.frame.origin), size: \(self.inputHostView.view.frame.size)")
+            print("📏 KeyboardTrackingView position: \(self.keyboardTrackingView.frame.origin), size: \(self.keyboardTrackingView.frame.size)")
+        }
         
         // Only handle interactive keyboard dismissal when no animation is in progress
         guard let window = view.window, UIView.inheritedAnimationDuration == 0 else { return }
@@ -748,9 +802,19 @@ class KeyboardObservingViewController: UIViewController {
         let keyboardHeight = screenHeight - keyboardTop
         let isVisible = keyboardTop < screenHeight && keyboardHeight > keyboardVisibilityThreshold
         
+        // Log interactive gesture positions if debug enabled
+        if inputViewLayoutDebug {
+            print("📏 KeyboardAttachedView (interactive gesture) position: \(self.view.frame.origin), size: \(self.view.frame.size)")
+            print("📏 Keyboard frame in window: \(keyboardFrameInWindow), visible: \(isVisible), height: \(keyboardHeight)")
+        }
+        
         // Only update if visibility changed during interactive dismissal
         if keyboardState.isKeyboardVisible != isVisible {
             keyboardState.setKeyboardVisible(isVisible, height: isVisible ? keyboardHeight : 0)
+            
+            if inputViewLayoutDebug {
+                print("📏 Keyboard visibility changed to: \(isVisible)")
+            }
         }
     }
 }

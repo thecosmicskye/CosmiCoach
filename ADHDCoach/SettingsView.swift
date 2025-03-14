@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var testResult: String? = nil
     @State private var showingDeleteChatConfirmation = false
     @State private var showingResetConfirmation = false
+    @State private var inputLayoutDebugEnabled: Bool = inputViewLayoutDebug
     
     func testApiKey() async {
         isTestingKey = true
@@ -289,6 +290,13 @@ struct SettingsView: View {
                     } message: {
                         Text("This will delete all Chat message data. This action cannot be undone.")
                     }
+                }
+                
+                Section(header: Text("Developer Options")) {
+                    Toggle("Input Layout Debug", isOn: $inputLayoutDebugEnabled)
+                        .onChange(of: inputLayoutDebugEnabled) { _, newValue in
+                            inputViewLayoutDebug = newValue
+                        }
                 }
                 
                 Section(header: Text("About")) {
