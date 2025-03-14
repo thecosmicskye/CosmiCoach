@@ -113,7 +113,7 @@ struct ContentView: View {
                     )
                     .frame(height: keyboardState.getInputViewPadding(
                         baseHeight: inputBaseHeight,
-                        safeAreaPadding: safeAreaBottomPadding + 2 // Small extra padding for visual consistency
+                        safeAreaPadding: safeAreaBottomPadding
                     ))
                     .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, width: 2)
                 }
