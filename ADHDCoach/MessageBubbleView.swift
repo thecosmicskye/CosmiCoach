@@ -13,8 +13,10 @@ struct MessageBubbleView: View {
             
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
                 Text(message.content)
-                    .padding(12)
-                    .background(message.isUser ? themeManager.accentColor(for: colorScheme) : Color(.systemGray5))
+                    .font(.body)
+                    .lineSpacing(1.5)
+                    .padding(message.isUser ? EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12) : EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2)) // Less horizontal padding for Claude
+                    .background(message.isUser ? themeManager.accentColor(for: colorScheme) : (message.isUser ? Color(.systemGray5) : Color.clear)) // No background for Claude's messages
                     .foregroundColor(message.isUser ? .white : .primary)
                     .cornerRadius(16)
                     .textSelection(.enabled)  // Enable text selection for copying
@@ -26,18 +28,22 @@ struct MessageBubbleView: View {
                         }
                     }
                 
-                HStack {
-                    Text(message.formattedTimestamp)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    
-                    if !message.isComplete && !message.isUser {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .gray))
-                            .scaleEffect(0.7)
+                if message.isUser || (!message.isComplete && !message.isUser) {
+                    HStack {
+                        if message.isUser {
+                            Text(message.formattedTimestamp)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        if !message.isComplete && !message.isUser {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .gray))
+                                .scaleEffect(0.7)
+                        }
                     }
+                    .padding(.horizontal, 4)
                 }
-                .padding(.horizontal, 4)
             }
             
             if !message.isUser {
