@@ -260,23 +260,30 @@ struct ContentView: View {
         let trimmedText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
         
-        // Clear input text
+        // Clear input text first, but capture the content
+        let messageToSend = trimmedText
         inputText = ""
         
-        // Dismiss keyboard
-        hideKeyboard()
+        // Add user message to chat first (to update UI immediately)
+        chatManager.addUserMessage(content: messageToSend)
         
-        // Add user message to chat
-        chatManager.addUserMessage(content: trimmedText)
+        // Use animation for dismissing the keyboard to make it smooth
+        withAnimation(.easeOut(duration: 0.25)) {
+            // Dismiss keyboard after the UI updates
+            hideKeyboard()
+        }
         
-        // Send to Claude API
+        // Send to Claude API after the animation completes
         Task {
+            // Small delay to allow the keyboard animation to start
+            try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+            
             // Get context from EventKit
             let calendarEvents = eventKitManager.fetchUpcomingEvents(days: 7)
             let reminders = await eventKitManager.fetchReminders()
             
             await chatManager.sendMessageToClaude(
-                userMessage: trimmedText,
+                userMessage: messageToSend,
                 calendarEvents: calendarEvents,
                 reminders: reminders
             )
@@ -409,9 +416,12 @@ struct TextInputView: View {
     var isDisabled: Bool
     var debugOutlineMode: DebugOutlineMode
     
+    // Local state to prevent button freezing
+    @State private var isSending = false
+    
     // Computed properties
     private var isButtonDisabled: Bool {
-        isDisabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        isDisabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSending
     }
     
     private var buttonColor: Color {
@@ -420,13 +430,14 @@ struct TextInputView: View {
     
     var body: some View {
         HStack {
-            // Text input field
+            // Text input field - explicitly using .animation(nil) to prevent animation during keyboard transition
             TextField("Message", text: $text)
                 .padding(.horizontal, 15)
                 .padding(.vertical, 8)
                 .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, width: 1)
                 .background(Color(.secondarySystemBackground))
                 .clipShape(RoundedRectangle(cornerRadius: 18))
+                .animation(nil, value: text) // Prevent TextField from animating during transitions
                 .background(
                     GeometryReader { geometry in
                         Color.clear
@@ -443,16 +454,36 @@ struct TextInputView: View {
                             }
                     }
                 )
-            // Send button
-            Button(action: onSend) {
+            
+            // Send button with improved responsiveness
+            Button {
+                // Prevent multiple taps
+                guard !isSending else { return }
+                
+                // Set sending state to true to prevent multiple taps
+                isSending = true
+                
+                // Trigger send action
+                onSend()
+                
+                // Reset button state after a brief delay to handle animation
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    isSending = false
+                }
+            } label: {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 30, weight: .semibold))
                     .foregroundColor(buttonColor)
             }
             .disabled(isButtonDisabled)
+            .animation(.default, value: isButtonDisabled) // Only animate button color changes
         }
         .padding(.horizontal)
         .border(debugOutlineMode == .textInput ? Color.mint : Color.clear, width: 2)
+        .transaction { transaction in
+            // Disable animations for position changes to prevent stuttering
+            transaction.animation = nil
+        }
         .background(
             GeometryReader { geometry in
                 Color.clear
@@ -650,20 +681,31 @@ class KeyboardObservingViewController: UIViewController {
         let colorSchemeChanged = self.colorScheme != colorScheme
         
         // Update state properties
+        // When updating text to empty during send, do it immediately without animation
+        if textChanged && text.isEmpty {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true) // Disable implicit animations
+            self.text.wrappedValue = text
+            CATransaction.commit()
+        } else {
+            self.text.wrappedValue = text
+        }
+        
         self.colorScheme = colorScheme
         self.themeColor = themeColor
         self.isDisabled = isDisabled
         self.debugOutlineMode = debugOutlineMode
         
-        // Only update SwiftUI view if content actually changed to avoid flickering
-        if textChanged || themeColorChanged || disabledStateChanged || debugModeChanged || colorSchemeChanged {
-            // Update SwiftUI view with new content
+        // Only update SwiftUI view if visual properties changed to avoid flickering
+        if themeColorChanged || disabledStateChanged || debugModeChanged || colorSchemeChanged {
+            // We don't need to update the entire view when only text changes
+            // This avoids unnecessary layout thrashing
             inputHostView.rootView = createTextInputView()
             
             // Force layout to update immediately
             updateSwiftUIViewPosition()
             
-            if inputViewLayoutDebug && (textChanged || themeColorChanged || disabledStateChanged) {
+            if inputViewLayoutDebug {
                 print("📏 Updating TextInputView content with new properties")
             }
         }
