@@ -737,8 +737,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             return ""
         }
         
-        // Ensure we have a description
-        if let locationDescription = await MainActor.run(body: { locationManager.locationDescription }) {
+        // Get location description asynchronously
+        if let locationDescription = await locationManager.getLocationDescription() {
             print("📍 getLocationContext - Using location description: \(locationDescription)")
             return """
             USER LOCATION:
