@@ -642,17 +642,31 @@ class KeyboardObservingViewController: UIViewController {
         isDisabled: Bool,
         debugOutlineMode: DebugOutlineMode
     ) {
+        // Store previous properties to check for changes
+        let textChanged = self.text.wrappedValue != text
+        let themeColorChanged = self.themeColor != themeColor
+        let disabledStateChanged = self.isDisabled != isDisabled
+        let debugModeChanged = self.debugOutlineMode != debugOutlineMode
+        let colorSchemeChanged = self.colorScheme != colorScheme
+        
         // Update state properties
         self.colorScheme = colorScheme
         self.themeColor = themeColor
         self.isDisabled = isDisabled
-        
-        // Only update debug borders if the mode changed to avoid unnecessary redrawing
-        let debugModeChanged = self.debugOutlineMode != debugOutlineMode
         self.debugOutlineMode = debugOutlineMode
         
-        // Update SwiftUI view
-        inputHostView.rootView = createTextInputView()
+        // Only update SwiftUI view if content actually changed to avoid flickering
+        if textChanged || themeColorChanged || disabledStateChanged || debugModeChanged || colorSchemeChanged {
+            // Update SwiftUI view with new content
+            inputHostView.rootView = createTextInputView()
+            
+            // Force layout to update immediately
+            updateSwiftUIViewPosition()
+            
+            if inputViewLayoutDebug && (textChanged || themeColorChanged || disabledStateChanged) {
+                print("📏 Updating TextInputView content with new properties")
+            }
+        }
         
         // Update debug visualization if needed
         if debugModeChanged {
@@ -729,7 +743,8 @@ class KeyboardObservingViewController: UIViewController {
     
     @objc func keyboardWillChangeFrame(_ notification: Notification) {
         guard let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
-              let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else {
+              let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
+              let curve = notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber else {
             return
         }
         
@@ -746,14 +761,35 @@ class KeyboardObservingViewController: UIViewController {
             print("📏 Keyboard frame: \(keyboardFrame), visible: \(isVisible)")
         }
         
-        // Animate layout changes
-        UIView.animate(withDuration: duration) {
+        // Extract animation curve to match keyboard precisely
+        let curveValue = curve.uintValue
+        let animationOptions = UIView.AnimationOptions(rawValue: curveValue << 16)
+        
+        // Apply more precise animation with curves matching keyboard exactly
+        UIView.animate(withDuration: duration, delay: 0, options: [animationOptions, .beginFromCurrentState]) {
+            // Layout UIKit views to match keyboard movement
             self.view.layoutIfNeeded()
+            
+            // Force SwiftUI view to update by directly setting frame
+            // This helps sync the SwiftUI TextField with the container
+            self.updateSwiftUIViewPosition()
+        }
+    }
+    
+    private func updateSwiftUIViewPosition() {
+        // Force SwiftUI layout to update immediately
+        inputHostView.view.setNeedsLayout()
+        inputHostView.view.layoutIfNeeded()
+        
+        // Log the updated position for debugging
+        if inputViewLayoutDebug {
+            print("📏 InputHostView updated position: \(self.inputHostView.view.frame.origin)")
         }
     }
     
     @objc func keyboardWillHide(_ notification: Notification) {
-        guard let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else {
+        guard let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double,
+              let curve = notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber else {
             return
         }
         
@@ -765,9 +801,17 @@ class KeyboardObservingViewController: UIViewController {
             print("📏 KeyboardAttachedView (keyboard hiding) position: \(self.view.frame.origin), size: \(self.view.frame.size)")
         }
         
-        // Animate layout changes
-        UIView.animate(withDuration: duration) {
+        // Extract animation curve to match keyboard precisely
+        let curveValue = curve.uintValue
+        let animationOptions = UIView.AnimationOptions(rawValue: curveValue << 16)
+        
+        // Apply more precise animation with curves matching keyboard exactly
+        UIView.animate(withDuration: duration, delay: 0, options: [animationOptions, .beginFromCurrentState]) {
+            // Layout UIKit views to match keyboard movement
             self.view.layoutIfNeeded()
+            
+            // Force SwiftUI view to update by directly setting frame
+            self.updateSwiftUIViewPosition()
         }
     }
     
@@ -781,6 +825,9 @@ class KeyboardObservingViewController: UIViewController {
             print("📏 KeyboardTrackingView position: \(self.keyboardTrackingView.frame.origin), size: \(self.keyboardTrackingView.frame.size)")
         }
         
+        // Force SwiftUI view to update layout to match UIKit container
+        updateSwiftUIViewPosition()
+        
         // Only handle interactive keyboard dismissal when no animation is in progress
         guard let window = view.window, UIView.inheritedAnimationDuration == 0 else { return }
         
@@ -790,7 +837,6 @@ class KeyboardObservingViewController: UIViewController {
     
     private func updateKeyboardPositionDuringInteractiveGesture(in window: UIWindow) {
         // Get keyboard position in window coordinates
-        // Use view.keyboardLayoutGuide directly for position tracking instead of the keyboardTrackingView
         let keyboardFrame = view.keyboardLayoutGuide.layoutFrame
         let screenHeight = window.frame.height
         
@@ -808,12 +854,26 @@ class KeyboardObservingViewController: UIViewController {
             print("📏 Keyboard frame in window: \(keyboardFrameInWindow), visible: \(isVisible), height: \(keyboardHeight)")
         }
         
-        // Only update if visibility changed during interactive dismissal
-        if keyboardState.isKeyboardVisible != isVisible {
+        // Update on every frame during interactive dismissal to ensure smooth tracking
+        // This helps sync the TextField with the container movement
+        let heightDifference = abs(keyboardState.keyboardOffset - (isVisible ? keyboardHeight : 0))
+        let shouldUpdate = heightDifference > 1.0 || keyboardState.isKeyboardVisible != isVisible
+        
+        if shouldUpdate {
+            // Update keyboard state with new height
             keyboardState.setKeyboardVisible(isVisible, height: isVisible ? keyboardHeight : 0)
             
+            // Force immediate layout update for smooth interactive tracking
+            view.layoutIfNeeded()
+            
+            // Force SwiftUI view to update by directly setting frame 
+            updateSwiftUIViewPosition()
+            
             if inputViewLayoutDebug {
-                print("📏 Keyboard visibility changed to: \(isVisible)")
+                print("📏 Interactive gesture keyboard height: \(keyboardHeight)")
+                if keyboardState.isKeyboardVisible != isVisible {
+                    print("📏 Keyboard visibility changed to: \(isVisible)")
+                }
             }
         }
     }
