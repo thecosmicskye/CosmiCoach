@@ -53,22 +53,27 @@ struct ContentView: View {
         NavigationStack {
             GeometryReader { geometry in
                 ZStack(alignment: .bottom) {
-                    // Debug border around entire ZStack (only shown when in debug mode)
+                    // Debug border around entire ZStack
                     if debugOutlineMode == .zStack {
                         Color.clear.border(Color.blue, width: 4)
                     }
-                    // Calculate available scroll height by subtracting input height from total height
-                    let inputHeight: CGFloat = 54
-                    let availableHeight = geometry.size.height - inputHeight
                     
+                    // Constants for layout management
+                    let inputBaseHeight: CGFloat = 54
+                    let safeAreaBottomPadding: CGFloat = 20
+                    
+                    // Content VStack
                     VStack(spacing: 0) {
+                        // Main scrollable content area with message list
                         ScrollView {
-                            // Debug border to visualize ScrollView content area
+                            // Debug border for ScrollView
                             if debugOutlineMode == .scrollView {
                                 Color.clear
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     .border(Color.green, width: 3)
                             }
+                            
+                            // Message content - either empty state or message list
                             if chatManager.messages.isEmpty {
                                 EmptyStateView()
                                     .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
@@ -84,31 +89,32 @@ struct ContentView: View {
                         .scrollClipDisabled()
                         .border(debugOutlineMode == .scrollView ? Color.green : Color.clear, width: 2)
                         
-                        // Add bottom padding that adjusts with keyboard height
-                        // This ensures the scroll area stops above the input+keyboard
+                        // Dynamic spacer that adjusts based on keyboard presence
                         Spacer()
-                            .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 10 : 54)
+                            .frame(height: keyboardState.getInputViewPadding(
+                                baseHeight: inputBaseHeight,
+                                safeAreaPadding: safeAreaBottomPadding
+                            ))
                             .border(debugOutlineMode == .spacer ? Color.yellow : Color.clear, width: 2)
                     }
                     .frame(height: geometry.size.height)
                     .border(debugOutlineMode == .vStack ? Color.orange : Color.clear, width: 2)
                     
-                    // Keyboard attached input that sits at the bottom
-                    VStack {
-                        Spacer()
-                        KeyboardAttachedView(
-                            keyboardState: keyboardState,
-                            text: $inputText,
-                            onSend: sendMessage,
-                            colorScheme: colorScheme,
-                            themeColor: themeManager.accentColor(for: colorScheme),
-                            isDisabled: chatManager.isProcessing,
-                            debugOutlineMode: debugOutlineMode
-                        )
-                        .frame(height: keyboardState.isKeyboardVisible ? keyboardState.keyboardOffset + 22 : 54)
-                        .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, width: 2)
-                    }
-                    .border(debugOutlineMode == .keyboardAttachedView ? Color.cyan : Color.clear, width: 2)
+                    // Keyboard attached input view
+                    KeyboardAttachedView(
+                        keyboardState: keyboardState,
+                        text: $inputText,
+                        onSend: sendMessage,
+                        colorScheme: colorScheme,
+                        themeColor: themeManager.accentColor(for: colorScheme),
+                        isDisabled: chatManager.isProcessing,
+                        debugOutlineMode: debugOutlineMode
+                    )
+                    .frame(height: keyboardState.getInputViewPadding(
+                        baseHeight: inputBaseHeight,
+                        safeAreaPadding: safeAreaBottomPadding + 2 // Small extra padding for visual consistency
+                    ))
+                    .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, width: 2)
                 }
             }
             .ignoresSafeArea(.keyboard)
@@ -355,57 +361,75 @@ struct MessageListView: View {
 
 // MARK: - KeyboardState
 class KeyboardState: ObservableObject {
+    /// Current keyboard height when visible, or 0 when hidden
     @Published var keyboardOffset: CGFloat = 0
+    
+    /// Whether the keyboard is currently visible
     @Published var isKeyboardVisible: Bool = false
     
-    // Add timestamp for state changes to help with debugging
-    private var lastStateChangeTime: Date = Date()
-    private var stateChangeCount: Int = 0
-    
-    func setKeyboardVisible(_ visible: Bool, height: CGFloat, source: String) {
-        // Only log if state actually changed 
-        if isKeyboardVisible != visible {
-            stateChangeCount += 1
-            let now = Date()
-            let timeSinceLastChange = now.timeIntervalSince(lastStateChangeTime)
-            
-            print("⌨️ KeyboardState CHANGE #\(stateChangeCount) - \(isKeyboardVisible ? "VISIBLE" : "HIDDEN") → \(visible ? "VISIBLE" : "HIDDEN")")
-            print("⌨️ KeyboardState source: \(source), height: \(height), time since last change: \(timeSinceLastChange)s")
-            
-            // Update state
-            lastStateChangeTime = now
+    /// Updates keyboard state if there's an actual change to prevent unnecessary view updates
+    /// - Parameters:
+    ///   - visible: Whether keyboard is visible
+    ///   - height: Height of keyboard in points
+    func setKeyboardVisible(_ visible: Bool, height: CGFloat) {
+        // Track both visibility changes and height changes
+        let heightChanged = visible && keyboardOffset != height
+        let visibilityChanged = isKeyboardVisible != visible
+        
+        // Only trigger updates when there's an actual change
+        if visibilityChanged || heightChanged {
             isKeyboardVisible = visible
-            keyboardOffset = height
+            keyboardOffset = visible ? height : 0
         }
+    }
+    
+    /// Returns the appropriate padding for the input view based on current keyboard state
+    /// - Parameters:
+    ///   - baseHeight: Default height to use when keyboard is hidden
+    ///   - safeAreaPadding: Additional padding to account for safe area
+    /// - Returns: The calculated padding value
+    func getInputViewPadding(baseHeight: CGFloat, safeAreaPadding: CGFloat) -> CGFloat {
+        return isKeyboardVisible ? keyboardOffset + safeAreaPadding : baseHeight
     }
 }
 
 // MARK: - TextInputView
 struct TextInputView: View {
+    // Input properties
     @Binding var text: String
     var onSend: () -> Void
+    
+    // Visual properties
     var colorScheme: ColorScheme
     var themeColor: Color
     var isDisabled: Bool
     var debugOutlineMode: DebugOutlineMode
     
+    // Computed properties
+    private var isButtonDisabled: Bool {
+        isDisabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    
+    private var buttonColor: Color {
+        isButtonDisabled ? .gray : themeColor
+    }
+    
     var body: some View {
         HStack {
+            // Text input field
             TextField("Message", text: $text)
                 .padding(.horizontal, 15)
                 .padding(.vertical, 8)
-                .background(
-                    colorScheme == .dark ? Color(UIColor.secondarySystemBackground) : Color(UIColor.secondarySystemBackground)
-                )
                 .cornerRadius(18)
                 .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, width: 1)
             
+            // Send button
             Button(action: onSend) {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 30, weight: .semibold))
-                    .foregroundColor(isDisabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .gray : themeColor)
+                    .foregroundColor(buttonColor)
             }
-            .disabled(isDisabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(isButtonDisabled)
         }
         .padding(.horizontal)
         .border(debugOutlineMode == .textInput ? Color.mint : Color.clear, width: 2)
@@ -435,8 +459,8 @@ struct KeyboardAttachedView: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: KeyboardObservingViewController, context: Context) {
-        uiViewController.updateText(text)
-        uiViewController.updateAppearance(
+        uiViewController.updateContent(
+            text: text,
             colorScheme: colorScheme,
             themeColor: themeColor,
             isDisabled: isDisabled,
@@ -447,8 +471,15 @@ struct KeyboardAttachedView: UIViewControllerRepresentable {
 
 // MARK: - KeyboardObservingViewController
 class KeyboardObservingViewController: UIViewController {
-    private var emptyView = UIView()
+    // Core views
+    private var keyboardTrackingView = UIView()
     private var inputHostView: UIHostingController<TextInputView>!
+    
+    // Constants
+    private let inputViewHeight: CGFloat = 54
+    private let keyboardVisibilityThreshold: CGFloat = 100
+    
+    // State and properties
     private var keyboardState: KeyboardState
     private var bottomConstraint: NSLayoutConstraint?
     private var text: Binding<String>
@@ -458,16 +489,8 @@ class KeyboardObservingViewController: UIViewController {
     private var isDisabled: Bool
     private var debugOutlineMode: DebugOutlineMode
     
-    // Experiment: Track view controller lifecycle
-    private var viewAppearanceCounter = 0
-    private var debugTimer: Timer?
-    
     deinit {
-        // Clean up all observers and timers
         NotificationCenter.default.removeObserver(self)
-        debugTimer?.invalidate()
-        debugTimer = nil
-        print("⌨️ KeyboardVC lifecycle: deinit")
     }
     
     init(
@@ -495,67 +518,59 @@ class KeyboardObservingViewController: UIViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        print("⌨️ KeyboardVC lifecycle: viewDidLoad")
+        setupViews()
+        setupKeyboardObservers()
+    }
+    
+    private func setupViews() {
+        // Setup keyboard tracking view using UIKit's keyboardLayoutGuide
+        setupKeyboardTrackingView()
         
-        // Add an empty view to track keyboard position
-        emptyView.translatesAutoresizingMaskIntoConstraints = false
-        emptyView.backgroundColor = UIColor.systemBackground
-        updateDebugBorders()
-        view.addSubview(emptyView)
-        
-        // Constrain empty view to keyboard layout guide edges
-        NSLayoutConstraint.activate([
-            emptyView.leadingAnchor.constraint(equalTo: view.keyboardLayoutGuide.leadingAnchor),
-            emptyView.trailingAnchor.constraint(equalTo: view.keyboardLayoutGuide.trailingAnchor),
-            emptyView.topAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
-            emptyView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.bottomAnchor)
-        ])
-        
-        // Setup the text input view
+        // Setup text input SwiftUI view
         setupTextInputView()
         
-        // Add direct keyboard observation in addition to layout guide
-        setupKeyboardObservers()
+        // Apply debug styling if enabled
+        updateDebugBorders()
+    }
+    
+    private func setupKeyboardTrackingView() {
+        keyboardTrackingView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(keyboardTrackingView)
         
-        // Start debug timer to periodically check keyboard status
-        startDebugTimer()
+        // Track the keyboard using the keyboard layout guide
+        NSLayoutConstraint.activate([
+            keyboardTrackingView.leadingAnchor.constraint(equalTo: view.keyboardLayoutGuide.leadingAnchor),
+            keyboardTrackingView.trailingAnchor.constraint(equalTo: view.keyboardLayoutGuide.trailingAnchor),
+            keyboardTrackingView.topAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
+            keyboardTrackingView.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.bottomAnchor)
+        ])
     }
     
     private func setupTextInputView() {
-        // Create the SwiftUI text input view
-        let textView = TextInputView(
-            text: text,
-            onSend: onSend,
-            colorScheme: colorScheme,
-            themeColor: themeColor,
-            isDisabled: isDisabled,
-            debugOutlineMode: debugOutlineMode
-        )
+        // Create the SwiftUI view
+        let textView = createTextInputView()
         inputHostView = UIHostingController(rootView: textView)
         
-        // Add it to the view hierarchy
+        // Add the hosting controller as a child
         addChild(inputHostView)
         inputHostView.view.translatesAutoresizingMaskIntoConstraints = false
-        // Debug borders set in updateDebugBorders()
         view.addSubview(inputHostView.view)
         inputHostView.didMove(toParent: self)
         
-        // Debug borders are set in updateDebugBorders()
-        
-        // Constrain the text input view
+        // Set up constraints for the input view
         NSLayoutConstraint.activate([
             inputHostView.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             inputHostView.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            inputHostView.view.heightAnchor.constraint(equalToConstant: 54)
+            inputHostView.view.heightAnchor.constraint(equalToConstant: inputViewHeight)
         ])
         
-        // Create the bottom constraint that will be updated as the keyboard moves
+        // Attach the input view to the keyboard
         bottomConstraint = inputHostView.view.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
         bottomConstraint?.isActive = true
     }
     
-    func updateText(_ newText: String) {
-        inputHostView.rootView = TextInputView(
+    private func createTextInputView() -> TextInputView {
+        return TextInputView(
             text: text,
             onSend: onSend,
             colorScheme: colorScheme,
@@ -565,118 +580,48 @@ class KeyboardObservingViewController: UIViewController {
         )
     }
     
-    // Helper method to update all debug borders based on current debug mode
-    private func updateDebugBorders() {
-        // Only apply borders if in appropriate debug mode
-        emptyView.layer.borderWidth = debugOutlineMode == .keyboardAttachedView ? 4 : 0
-        emptyView.layer.borderColor = UIColor.magenta.cgColor
-        
-        view.layer.borderWidth = debugOutlineMode == .keyboardAttachedView ? 2 : 0
-        view.layer.borderColor = UIColor.systemTeal.cgColor
-        
-        if let hostView = inputHostView?.view {
-            hostView.layer.borderWidth = debugOutlineMode == .textInput ? 3 : 0
-            hostView.layer.borderColor = UIColor.systemIndigo.cgColor
-        }
-    }
-    
-    func updateAppearance(colorScheme: ColorScheme, themeColor: Color, isDisabled: Bool, debugOutlineMode: DebugOutlineMode) {
+    func updateContent(
+        text: String,
+        colorScheme: ColorScheme,
+        themeColor: Color,
+        isDisabled: Bool,
+        debugOutlineMode: DebugOutlineMode
+    ) {
+        // Update state properties
         self.colorScheme = colorScheme
         self.themeColor = themeColor
         self.isDisabled = isDisabled
         self.debugOutlineMode = debugOutlineMode
         
-        // Update the debug borders
+        // Update SwiftUI view
+        inputHostView.rootView = createTextInputView()
+        
+        // Update debug visualization if needed
         updateDebugBorders()
+    }
+    
+    private func updateDebugBorders() {
+        let isKeyboardAttachedDebug = debugOutlineMode == .keyboardAttachedView
+        let isTextInputDebug = debugOutlineMode == .textInput
         
-        inputHostView.rootView = TextInputView(
-            text: text,
-            onSend: onSend,
-            colorScheme: colorScheme,
-            themeColor: themeColor,
-            isDisabled: isDisabled,
-            debugOutlineMode: debugOutlineMode
-        )
-    }
-    
-    override func viewWillAppear(_ animated: Bool) {
-        super.viewWillAppear(animated)
-        viewAppearanceCounter += 1
-        print("⌨️ KeyboardVC lifecycle: viewWillAppear (count: \(viewAppearanceCounter))")
-    }
-    
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        print("⌨️ KeyboardVC lifecycle: viewDidAppear")
+        keyboardTrackingView.layer.borderWidth = isKeyboardAttachedDebug ? 2 : 0
+        keyboardTrackingView.layer.borderColor = UIColor.white.cgColor
         
-        // Experiment: Force a keyboard status check after view appears
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.checkKeyboardStatus()
-        }
-    }
-    
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        print("⌨️ KeyboardVC lifecycle: viewWillDisappear")
-    }
-    
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        print("⌨️ KeyboardVC lifecycle: viewDidDisappear")
-    }
-    
-    private func startDebugTimer() {
-        // Stop any existing timer
-        debugTimer?.invalidate()
+        view.layer.borderWidth = isKeyboardAttachedDebug ? 1 : 0
+        view.layer.borderColor = UIColor.systemTeal.cgColor
         
-        // Create a new timer that fires every 2 seconds
-        debugTimer = Timer.scheduledTimer(
-            withTimeInterval: 2.0,
-            repeats: true
-        ) { [weak self] _ in
-            self?.checkKeyboardStatus()
-        }
-    }
-    
-    private func checkKeyboardStatus() {
-        // Perform a manual check of keyboard status
-        if let window = view.window {
-            let keyboardFrameInWindow = emptyView.convert(emptyView.bounds, to: window)
-            let screenHeight = window.frame.height
-            let keyboardTop = keyboardFrameInWindow.minY
-            let keyboardHeight = screenHeight - keyboardTop
-            
-            // Log the current status
-            print("⌨️ TIMER CHECK - emptyView bounds: \(emptyView.bounds), frame: \(emptyView.frame)")
-            print("⌨️ TIMER CHECK - Window frame: \(window.frame), safeArea: \(window.safeAreaInsets)")
-            print("⌨️ TIMER CHECK - Keyboard top: \(keyboardTop), height: \(keyboardHeight)")
-            print("⌨️ TIMER CHECK - Keyboard visible in state: \(keyboardState.isKeyboardVisible)")
-            
-            // Detect keyboard state from UI position
-            let isVisible = keyboardTop < screenHeight && keyboardHeight > 200
-            
-            // If there's a mismatch between our state and reality, update it
-            if isVisible != keyboardState.isKeyboardVisible {
-                print("⌨️ TIMER CHECK - MISMATCH DETECTED: State says keyboard is \(keyboardState.isKeyboardVisible ? "VISIBLE" : "HIDDEN") but it appears to be \(isVisible ? "VISIBLE" : "HIDDEN")")
-                
-                // Update the state to match reality
-                self.keyboardState.setKeyboardVisible(isVisible, height: isVisible ? keyboardHeight : 0, source: "timerCheck-correction")
-            }
+        if let hostView = inputHostView?.view {
+            hostView.layer.borderWidth = isTextInputDebug ? 2 : 0
+            hostView.layer.borderColor = UIColor.systemIndigo.cgColor
         }
     }
     
     private func setupKeyboardObservers() {
+        // Add observers for keyboard notifications
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(keyboardWillShow),
-            name: UIResponder.keyboardWillShowNotification,
-            object: nil
-        )
-        
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(keyboardDidShow),
-            name: UIResponder.keyboardDidShowNotification,
+            selector: #selector(keyboardWillChangeFrame),
+            name: UIResponder.keyboardWillChangeFrameNotification,
             object: nil
         )
         
@@ -686,94 +631,63 @@ class KeyboardObservingViewController: UIViewController {
             name: UIResponder.keyboardWillHideNotification,
             object: nil
         )
-        
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(keyboardDidHide),
-            name: UIResponder.keyboardDidHideNotification,
-            object: nil
-        )
     }
     
-    @objc func keyboardWillShow(_ notification: Notification) {
-        print("⌨️ NOTIFICATION: keyboardWillShow received")
-        if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
-           let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double {
-            let keyboardHeight = keyboardFrame.height
-            print("⌨️ NOTIFICATION: Keyboard will show - Height: \(keyboardHeight), Duration: \(duration)")
-            
-            // Update keyboard state using our new method
-            self.keyboardState.setKeyboardVisible(true, height: keyboardHeight, source: "keyboardWillShow")
-            
-            // Animate changes
-            UIView.animate(withDuration: duration) {
-                self.view.layoutIfNeeded()
-            }
+    @objc func keyboardWillChangeFrame(_ notification: Notification) {
+        guard let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+              let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else {
+            return
         }
-    }
-    
-    @objc func keyboardDidShow(_ notification: Notification) {
-        print("⌨️ NOTIFICATION: keyboardDidShow received")
-        if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
-            let keyboardHeight = keyboardFrame.height
-            print("⌨️ NOTIFICATION: Keyboard did show - Height: \(keyboardHeight)")
-            
-            // Update keyboard state using our new method
-            self.keyboardState.setKeyboardVisible(true, height: keyboardHeight, source: "keyboardDidShow")
+        
+        // Determine if keyboard is visible based on its position
+        let isVisible = keyboardFrame.minY < UIScreen.main.bounds.height
+        
+        // Update keyboard state
+        keyboardState.setKeyboardVisible(isVisible, height: keyboardFrame.height)
+        
+        // Animate layout changes
+        UIView.animate(withDuration: duration) {
+            self.view.layoutIfNeeded()
         }
     }
     
     @objc func keyboardWillHide(_ notification: Notification) {
-        print("⌨️ NOTIFICATION: keyboardWillHide received")
-        if let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double {
-            print("⌨️ NOTIFICATION: Keyboard will hide - Duration: \(duration)")
-            
-            // Update keyboard state using our new method
-            self.keyboardState.setKeyboardVisible(false, height: 0, source: "keyboardWillHide")
-            
-            // Animate changes
-            UIView.animate(withDuration: duration) {
-                self.view.layoutIfNeeded()
-            }
+        guard let duration = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double else {
+            return
         }
-    }
-    
-    @objc func keyboardDidHide(_ notification: Notification) {
-        print("⌨️ NOTIFICATION: keyboardDidHide received")
         
-        // Update keyboard state using our new method
-        self.keyboardState.setKeyboardVisible(false, height: 0, source: "keyboardDidHide")
+        // Update keyboard state
+        keyboardState.setKeyboardVisible(false, height: 0)
+        
+        // Animate layout changes
+        UIView.animate(withDuration: duration) {
+            self.view.layoutIfNeeded()
+        }
     }
     
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
         
-        if let window = view.window {
-            // Get keyboard frame in window coordinates
-            let keyboardFrameInWindow = emptyView.convert(emptyView.bounds, to: window)
-            let screenHeight = window.frame.height
-            let keyboardTop = keyboardFrameInWindow.minY
-            
-            // Get the duration of the current animation (if any)
-            let duration = UIView.inheritedAnimationDuration
-            
-            // Calculate keyboard height
-            let keyboardHeight = screenHeight - keyboardTop
-            
-            // Check if this is a realistic keyboard height - iOS keyboards are typically > 200pts
-            // This prevents false positives during app initialization
-            let isVisible = keyboardTop < screenHeight && keyboardHeight > 200
-            
-            // Log for debugging (separate from state changes)
-            print("⌨️ Layout check - emptyView frame: \(emptyView.frame), inWindow: \(keyboardFrameInWindow)")
-            print("⌨️ Keyboard metrics - Top: \(keyboardTop), Screen: \(screenHeight), Height: \(keyboardHeight)")
-            print("⌨️ Duration: \(duration), SafeArea: \(String(describing: window.safeAreaInsets))")
-            
-            // Only update state from layout if we don't have an active notification-based update
-            if duration == 0 {
-                // This might be interactive keyboard dismissal which doesn't trigger notifications
-                self.view.layoutIfNeeded()
-            }
+        // Only handle interactive keyboard dismissal when no animation is in progress
+        guard let window = view.window, UIView.inheritedAnimationDuration == 0 else { return }
+        
+        // Track keyboard position during interactive gestures
+        updateKeyboardPositionDuringInteractiveGesture(in: window)
+    }
+    
+    private func updateKeyboardPositionDuringInteractiveGesture(in window: UIWindow) {
+        // Get keyboard position in window coordinates
+        let keyboardFrameInWindow = keyboardTrackingView.convert(keyboardTrackingView.bounds, to: window)
+        let screenHeight = window.frame.height
+        let keyboardTop = keyboardFrameInWindow.minY
+        
+        // Calculate keyboard height and determine visibility
+        let keyboardHeight = screenHeight - keyboardTop
+        let isVisible = keyboardTop < screenHeight && keyboardHeight > keyboardVisibilityThreshold
+        
+        // Only update if visibility changed during interactive dismissal
+        if keyboardState.isKeyboardVisible != isVisible {
+            keyboardState.setKeyboardVisible(isVisible, height: isVisible ? keyboardHeight : 0)
         }
     }
 }
