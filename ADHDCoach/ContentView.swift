@@ -16,7 +16,7 @@ enum DebugOutlineMode: String, CaseIterable {
 }
 
 // Flag to enable/disable input view layout debugging logs
-var inputViewLayoutDebug = true
+var inputViewLayoutDebug = false
 
 struct ContentView: View {
     @EnvironmentObject private var chatManager: ChatManager
