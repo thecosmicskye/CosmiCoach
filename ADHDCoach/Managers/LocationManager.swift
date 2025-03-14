@@ -8,25 +8,17 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var currentLocation: CLLocation?
     @Published var lastLocationUpdate: Date?
     
-    // Provide a formatted description of the current location
-    var locationDescription: String? {
+    // Provide a formatted description of the current location asynchronously
+    func getLocationDescription() async -> String? {
         guard let location = currentLocation else { return nil }
         
         // Using reverse geocoding to get a human-readable address
         let geocoder = CLGeocoder()
-        var result: String?
         
-        let semaphore = DispatchSemaphore(value: 0)
-        geocoder.reverseGeocodeLocation(location) { placemarks, error in
-            defer { semaphore.signal() }
+        do {
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
             
-            if let error = error {
-                print("Reverse geocoding error: \(error.localizedDescription)")
-                result = "Location: \(location.coordinate.latitude), \(location.coordinate.longitude)"
-                return
-            }
-            
-            if let placemark = placemarks?.first {
+            if let placemark = placemarks.first {
                 var components: [String] = []
                 
                 if let name = placemark.name {
@@ -47,15 +39,21 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
                     components.append(administrativeArea)
                 }
                 
-                result = components.joined(separator: ", ")
+                return components.joined(separator: ", ")
             } else {
-                result = "Location: \(location.coordinate.latitude), \(location.coordinate.longitude)"
+                return "Location: \(location.coordinate.latitude), \(location.coordinate.longitude)"
             }
+        } catch {
+            print("Reverse geocoding error: \(error.localizedDescription)")
+            return "Location: \(location.coordinate.latitude), \(location.coordinate.longitude)"
         }
-        
-        // Wait with a timeout for geocoding to complete
-        _ = semaphore.wait(timeout: .now() + 2.0)
-        return result
+    }
+    
+    // Legacy synchronous property for backward compatibility
+    // Note: This will be deprecated in future versions
+    var locationDescription: String? {
+        guard let location = currentLocation else { return nil }
+        return "Location: \(location.coordinate.latitude), \(location.coordinate.longitude)"
     }
     
     override init() {
