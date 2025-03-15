@@ -1,6 +1,68 @@
 import SwiftUI
 import Markdown
 
+/// A property wrapper that delays initialization until the value is first accessed
+@propertyWrapper
+struct LazyProcessed<Value> {
+    private var initializer: () -> Value
+    private var storage: Value?
+    
+    init(wrappedValue: @autoclosure @escaping () -> Value) {
+        self.initializer = wrappedValue
+    }
+    
+    var wrappedValue: Value {
+        mutating get {
+            if storage == nil {
+                storage = initializer()
+            }
+            return storage!
+        }
+        set {
+            storage = newValue
+        }
+    }
+}
+
+/// A shared cache for processed markdown to avoid reprocessing the same content
+class MarkdownCache {
+    static let shared = MarkdownCache()
+    private var cache: [String: AttributedString] = [:]
+    private var processingQueue = DispatchQueue(label: "com.cosmiccoach.markdown.cache", attributes: .concurrent)
+    
+    func getAttributedString(for markdown: String, processor: MarkdownProcessor) async -> AttributedString {
+        // Check cache first
+        if let cached = getFromCache(markdown) {
+            return cached
+        }
+        
+        // Process and cache
+        let processed = await processor.processMarkdown(markdown)
+        addToCache(markdown, attributedString: processed)
+        return processed
+    }
+    
+    func getFromCache(_ key: String) -> AttributedString? {
+        var result: AttributedString?
+        processingQueue.sync {
+            result = cache[key]
+        }
+        return result
+    }
+    
+    private func addToCache(_ key: String, attributedString: AttributedString) {
+        processingQueue.async(flags: .barrier) {
+            self.cache[key] = attributedString
+        }
+    }
+    
+    func clearCache() {
+        processingQueue.async(flags: .barrier) {
+            self.cache.removeAll()
+        }
+    }
+}
+
 // Rename our view to avoid conflict with Markdown.Text
 struct MarkdownTextView: View {
     let markdown: String
@@ -10,24 +72,38 @@ struct MarkdownTextView: View {
     @State private var processingTask: Task<Void, Never>? = nil
     @State private var retryCount: Int = 0
     @State private var lastProcessedMarkdown: String = ""
+    @State private var isLoading: Bool = true
     
     var body: some View {
-        Text(attributedString)
-            .onAppear {
-                processMarkdown()
+        ZStack {
+            if isLoading {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+                    .scaleEffect(0.7)
+                
+                Text(markdown)
+                    .opacity(0.01) // Almost invisible but preserves layout
             }
-            .onChange(of: markdown) { _ in
-                // Cancel previous task if it's still running
-                processingTask?.cancel()
-                processMarkdown()
-            }
-            .onDisappear {
-                // Clean up task if view disappears
-                processingTask?.cancel()
-            }
-            // Adding an id based on markdown length ensures the view refreshes
-            // when content changes, even if SwiftUI doesn't detect it
-            .id("markdown-\(markdown.count)-\(retryCount)")
+            
+            Text(attributedString)
+                .opacity(isLoading ? 0 : 1)
+        }
+        .onAppear {
+            processMarkdown()
+        }
+        .onChange(of: markdown) { _ in
+            // Cancel previous task if it's still running
+            processingTask?.cancel()
+            isLoading = true
+            processMarkdown()
+        }
+        .onDisappear {
+            // Clean up task if view disappears
+            processingTask?.cancel()
+        }
+        // Adding an id based on markdown length ensures the view refreshes
+        // when content changes, even if SwiftUI doesn't detect it
+        .id("markdown-\(markdown.count)-\(retryCount)")
     }
     
     private func processMarkdown() {
@@ -36,6 +112,7 @@ struct MarkdownTextView: View {
         
         // Skip processing if the content is identical and we already processed it
         if currentMarkdown == lastProcessedMarkdown && !attributedString.characters.isEmpty {
+            isLoading = false
             return
         }
         
@@ -45,16 +122,23 @@ struct MarkdownTextView: View {
                 // Check for cancellation before processing
                 try Task.checkCancellation()
                 
-                // Process markdown on a background thread
-                let processed = await markdownProcessor.processMarkdown(currentMarkdown)
+                // Use the cache to avoid reprocessing
+                let processed = await MarkdownCache.shared.getAttributedString(
+                    for: currentMarkdown,
+                    processor: markdownProcessor
+                )
                 
                 // Check for cancellation before updating UI
                 try Task.checkCancellation()
+                
+                // Short delay to allow UI to finish layout calculations
+                try await Task.sleep(nanoseconds: 50_000_000) // 50ms
                 
                 // Update the UI on the main thread
                 await MainActor.run {
                     self.attributedString = processed
                     self.lastProcessedMarkdown = currentMarkdown
+                    self.isLoading = false
                     
                     // If processing produced empty or minimal results for non-empty markdown,
                     // retry up to 3 times with a delay
@@ -66,6 +150,7 @@ struct MarkdownTextView: View {
                         Task {
                             try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
                             if !Task.isCancelled {
+                                isLoading = true
                                 processMarkdown()
                             }
                         }
@@ -88,6 +173,12 @@ struct MarkdownTextView: View {
                     try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
                     if !Task.isCancelled {
                         processMarkdown()
+                    }
+                } else {
+                    // If all retries failed, just show the plain text
+                    await MainActor.run {
+                        self.attributedString = AttributedString(currentMarkdown)
+                        self.isLoading = false
                     }
                 }
             }

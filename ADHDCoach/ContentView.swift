@@ -108,7 +108,17 @@ struct ContentView: View {
     /// Creates the message content view
     @ViewBuilder
     private func messageContentView() -> some View {
-        if chatManager.messages.isEmpty {
+        if !chatManager.initialLoadComplete {
+            // Display loading indicator during initial load
+            VStack {
+                Spacer()
+                ProgressView("Loading...")
+                    .progressViewStyle(CircularProgressViewStyle())
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
+        } else if chatManager.messages.isEmpty {
             EmptyStateView()
                 .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
         } else {
@@ -374,7 +384,7 @@ struct MessageListView: View {
     var body: some View {
         LazyVStack(spacing: 12) {
             ForEach(messages) { message in
-                VStack(spacing: 4) {
+                LazyVStack(spacing: 4) {
                     MessageBubbleView(message: message)
                         .padding(.horizontal)
                     
@@ -386,6 +396,8 @@ struct MessageListView: View {
                         }
                     }
                 }
+                // Using LazyVStack and ID avoids rendering all messages at once
+                .id("message-container-\(message.id)")
             }
         }
         .padding(.top, 8)

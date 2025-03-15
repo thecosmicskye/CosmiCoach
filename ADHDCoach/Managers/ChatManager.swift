@@ -32,6 +32,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
     /// Maps message IDs to their operation status messages
     @Published var operationStatusMessages: [UUID: [OperationStatusMessage]] = [:]
     
+    /// Flag indicating if initial message loading is complete
+    @Published var initialLoadComplete: Bool = false
+    
     /// Static reference to shared instance (for @Sendable closures)
     private static weak var sharedInstance: ChatManager?
     
@@ -87,6 +90,41 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         print("⏱️ ChatManager initializing")
         // Store reference to self for use in static methods
         ChatManager.sharedInstance = self
+        
+        // Load messages asynchronously to avoid blocking UI
+        Task {
+            // Load messages asynchronously from persistence
+            let (loadedMessages, loadedIsProcessing, loadedStreamingId) = await persistenceManager.loadMessagesAsync()
+            
+            // Update on the main thread
+            await MainActor.run {
+                messages = loadedMessages
+                isProcessing = loadedIsProcessing
+                currentStreamingMessageId = loadedStreamingId
+                
+                // Set this flag after messages are loaded but before markdown processing
+                initialLoadComplete = true
+                
+                // Preload markdown in the background to improve perceived performance
+                Task(priority: .background) {
+                    // Process AI messages only since user messages don't use markdown
+                    let processor = MarkdownProcessor()
+                    
+                    for message in loadedMessages where !message.isUser {
+                        // Skip if already in cache
+                        if MarkdownCache.shared.getFromCache(message.content) != nil {
+                            continue
+                        }
+                        
+                        // Process in background with lowest priority
+                        _ = await processor.processMarkdown(message.content)
+                        
+                        // Small delay to avoid blocking the thread completely
+                        try? await Task.sleep(nanoseconds: 5_000_000) // 5ms between messages
+                    }
+                }
+            }
+        }
         
         // Set up tool handler callback
         toolHandler.processToolUseCallback = { [weak self] toolName, toolId, toolInput, messageId, chatManager in
