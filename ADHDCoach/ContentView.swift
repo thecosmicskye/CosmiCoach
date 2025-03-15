@@ -539,12 +539,17 @@ struct TextInputView: View {
                     isSending = false
                 }
             } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundColor(buttonColor)
+                ZStack {
+                    Circle()
+                        .foregroundColor(buttonColor)
+                        .frame(width: 30, height: 30)
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundColor(isButtonDisabled ? Color(.systemBackground) : .white)
+                }
             }
             .disabled(isButtonDisabled)
-            .animation(.default, value: isButtonDisabled)
+            .animation(.easeInOut(duration: 0.1), value: isButtonDisabled)
         }
         .padding(.horizontal)
         .border(debugOutlineMode == .textInput ? Color.mint : Color.clear, width: 2)
