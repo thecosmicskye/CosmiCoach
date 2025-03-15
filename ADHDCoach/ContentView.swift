@@ -122,10 +122,25 @@ struct ContentView: View {
             EmptyStateView()
                 .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
         } else {
-            MessageListView(
-                messages: chatManager.messages,
-                statusMessagesProvider: chatManager.combinedStatusMessagesForMessage
-            )
+            // Direct implementation instead of using MessageListView
+            VStack(spacing: 12) {
+                ForEach(chatManager.messages) { message in
+                    VStack(spacing: 4) {
+                        MessageBubbleView(message: message)
+                            .padding(.horizontal)
+                        
+                        // Show operation status messages after AI messages
+                        if !message.isUser && message.isComplete {
+                            ForEach(chatManager.combinedStatusMessagesForMessage(message)) { statusMessage in
+                                OperationStatusView(statusMessage: statusMessage)
+                                    .padding(.horizontal)
+                            }
+                        }
+                    }
+                    .id("message-\(message.id)")
+                }
+            }
+            .padding(.top, 8)
             .border(debugOutlineMode == .messageList ? Color.purple : Color.clear, width: 2)
         }
     }
@@ -172,9 +187,10 @@ struct ContentView: View {
 
     /// Creates the scrollable message area
     private func createScrollView(scrollView: ScrollViewProxy) -> some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: true) {
             // Message content - either empty state or message list
             messageContentView()
+                .id("message-content") // Stable identifier for content
             
             // Debug border for ScrollView
             scrollViewDebugDecoration()
@@ -184,24 +200,28 @@ struct ContentView: View {
                 .frame(height: 1)
                 .id("messageBottom")
         }
-        .onChange(of: chatManager.messages.count) { _, _ in
-            // Scroll to bottom when messages count changes
-            withAnimation {
-                scrollView.scrollTo("messageBottom", anchor: .bottom)
+        .scrollDisabled(false) // Ensure scrolling is enabled
+        .scrollDismissesKeyboard(.interactively)
+        .onChange(of: chatManager.messages.count) { oldCount, newCount in
+            // Only auto-scroll when adding messages (not when scrolling up through history)
+            if newCount > oldCount {
+                DispatchQueue.main.async {
+                    scrollView.scrollTo("messageBottom", anchor: .bottom)
+                }
             }
         }
         .onChange(of: chatManager.messages.last?.content) { _, _ in
-            // Scroll when the content of the last message changes (for streaming responses)
-            withAnimation {
+            // Only auto-scroll for new content when we're near the bottom
+            DispatchQueue.main.async {
                 scrollView.scrollTo("messageBottom", anchor: .bottom)
             }
         }
         .onAppear {
             // Scroll to bottom when view appears
-            scrollView.scrollTo("messageBottom", anchor: .bottom)
+            DispatchQueue.main.async {
+                scrollView.scrollTo("messageBottom", anchor: .bottom)
+            }
         }
-        .scrollDismissesKeyboard(.interactively)
-        .scrollClipDisabled()
         .border(debugOutlineMode == .scrollView ? Color.green : Color.clear, width: 2)
     }
     
@@ -343,6 +363,20 @@ struct ContentView: View {
             // Small delay for animation
             try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
             
+            // Safety timeout to prevent permanent UI locking
+            let timeoutTask = Task {
+                // Wait for 30 seconds maximum
+                try await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                
+                // If we're still processing after 30 seconds, reset the state
+                await MainActor.run {
+                    if chatManager.isProcessing {
+                        print("⚠️ Message processing timed out after 30 seconds - resetting isProcessing state")
+                        chatManager.isProcessing = false
+                    }
+                }
+            }
+            
             // Get context data
             let calendarEvents = eventKitManager.fetchUpcomingEvents(days: 7)
             let reminders = await eventKitManager.fetchReminders()
@@ -353,6 +387,9 @@ struct ContentView: View {
                 calendarEvents: calendarEvents,
                 reminders: reminders
             )
+            
+            // Cancel the timeout task if we finish normally
+            timeoutTask.cancel()
         }
     }
 }
@@ -376,31 +413,14 @@ struct EmptyStateView: View {
     }
 }
 
-/// Displays the list of chat messages
-struct MessageListView: View {
-    let messages: [ChatMessage]
-    let statusMessagesProvider: (ChatMessage) -> [OperationStatusMessage]
+// Removed MessageHeightCache class as it's no longer needed
+
+// Preference key to capture message heights
+struct MessageHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
     
-    var body: some View {
-        LazyVStack(spacing: 12) {
-            ForEach(messages) { message in
-                LazyVStack(spacing: 4) {
-                    MessageBubbleView(message: message)
-                        .padding(.horizontal)
-                    
-                    // Show operation status messages after AI messages
-                    if !message.isUser && message.isComplete {
-                        ForEach(statusMessagesProvider(message)) { statusMessage in
-                            OperationStatusView(statusMessage: statusMessage)
-                                .padding(.horizontal)
-                        }
-                    }
-                }
-                // Using LazyVStack and ID avoids rendering all messages at once
-                .id("message-container-\(message.id)")
-            }
-        }
-        .padding(.top, 8)
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
@@ -418,13 +438,13 @@ struct MessageListView: View {
 
 #Preview("Message Components") {
     VStack {
-        MessageListView(
-            messages: [
-                ChatMessage(id: UUID(), content: "Hello there!", timestamp: Date(), isUser: true, isComplete: true),
-                ChatMessage(id: UUID(), content: "Hi! How can I help you today?", timestamp: Date(), isUser: false, isComplete: true)
-            ],
-            statusMessagesProvider: { _ in [] }
-        )
+        VStack(spacing: 12) {
+            MessageBubbleView(message: ChatMessage(id: UUID(), content: "Hello there!", timestamp: Date(), isUser: true, isComplete: true))
+                .padding(.horizontal)
+            
+            MessageBubbleView(message: ChatMessage(id: UUID(), content: "Hi! How can I help you today?", timestamp: Date(), isUser: false, isComplete: true))
+                .padding(.horizontal)
+        }
         .frame(height: 300)
         
         Divider()
@@ -433,6 +453,7 @@ struct MessageListView: View {
             .frame(height: 300)
     }
     .padding(.horizontal)
+    .environmentObject(ThemeManager())
 }
 
 
