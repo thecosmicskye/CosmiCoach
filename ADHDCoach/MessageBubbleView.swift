@@ -4,9 +4,7 @@ struct MessageBubbleView: View {
     let message: ChatMessage
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var themeManager: ThemeManager
-    
-    // State to force refresh when message completion changes
-    @State private var refreshTrigger = UUID()
+    @EnvironmentObject private var chatManager: ChatManager
     
     var body: some View {
         HStack {
@@ -34,26 +32,46 @@ struct MessageBubbleView: View {
                         }
                 } else {
                     // Claude message with markdown support
-                    MarkdownTextView(markdown: message.content)
-                        .lineSpacing(1.5)
-                        .padding(EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2))
-                        .background(Color.clear)
-                        .cornerRadius(16)
-                        .textSelection(.enabled)  // Enable text selection for copying
-                        .id(message.isComplete ? "complete-\(refreshTrigger)" : "streaming-\(message.id)")
-                        .onChange(of: message.isComplete) { isComplete in
-                            if isComplete {
-                                // Force refresh when message completes
-                                refreshTrigger = UUID()
+                    Group {
+                        if !message.isComplete {
+                            // For streaming responses, use a plain text view that updates more frequently
+                            Text(try! AttributedString(markdown: message.content, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+                                .lineSpacing(1.5)
+                                .padding(EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2))
+                                .background(Color.clear)
+                                .cornerRadius(16)
+                                .textSelection(.enabled)
+                                .id("streaming-\(message.id)-\(message.content.count)")
+                        } else {
+                            // For completed messages, use the cached markdown view
+                            MarkdownTextView(
+                                markdown: message.content,
+                                isComplete: true
+                            )
+                            .lineSpacing(1.5)
+                            .padding(EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2))
+                            .background(Color.clear)
+                            .cornerRadius(16)
+                            .textSelection(.enabled)
+                            .id("complete-\(message.id)")
+                            .onAppear {
+                                // Safety check: if message is complete but chatManager still shows processing
+                                if message.isComplete && chatManager.isProcessing {
+                                    print("⚠️ Found complete message while ChatManager still processing - resetting state")
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                        chatManager.isProcessing = false
+                                    }
+                                }
                             }
                         }
-                        .contextMenu {
-                            Button(action: {
-                                UIPasteboard.general.string = message.content
-                            }) {
-                                Label("Copy", systemImage: "doc.on.doc")
-                            }
+                    }
+                    .contextMenu {
+                        Button(action: {
+                            UIPasteboard.general.string = message.content
+                        }) {
+                            Label("Copy", systemImage: "doc.on.doc")
                         }
+                    }
                 }
                 
                 if message.isUser || (!message.isComplete && !message.isUser) {
