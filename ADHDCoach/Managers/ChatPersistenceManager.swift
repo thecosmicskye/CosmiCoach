@@ -46,6 +46,43 @@ class ChatPersistenceManager {
     }
     
     /**
+     * Loads chat messages and related state from UserDefaults asynchronously.
+     * This async version prevents blocking the main thread during app launch.
+     *
+     * @return A tuple containing messages, streaming ID, and processing state
+     */
+    func loadMessagesAsync() async -> (messages: [ChatMessage], isProcessing: Bool, currentStreamingMessageId: UUID?) {
+        return await withCheckedContinuation { continuation in
+            // Run on a background thread
+            DispatchQueue.global(qos: .userInitiated).async {
+                var messages: [ChatMessage] = []
+                var currentStreamingMessageId: UUID? = nil
+                var isProcessing = false
+                
+                // Load messages from UserDefaults
+                if let data = UserDefaults.standard.data(forKey: "chat_messages"),
+                   let decoded = try? JSONDecoder().decode([ChatMessage].self, from: data) {
+                    messages = decoded
+                    
+                    // Load saved streaming state (if any)
+                    if let savedStreamingIdString = UserDefaults.standard.string(forKey: "streaming_message_id"),
+                       let savedStreamingId = UUID(uuidString: savedStreamingIdString) {
+                        // Only set if the message actually exists
+                        if messages.contains(where: { $0.id == savedStreamingId }) {
+                            currentStreamingMessageId = savedStreamingId
+                        }
+                    }
+                    
+                    // Load processing state
+                    isProcessing = UserDefaults.standard.bool(forKey: "chat_processing_state")
+                }
+                
+                continuation.resume(returning: (messages, isProcessing, currentStreamingMessageId))
+            }
+        }
+    }
+    
+    /**
      * Saves chat messages and related state to UserDefaults.
      *
      * @param messages Array of chat messages to save
