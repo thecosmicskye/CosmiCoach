@@ -235,7 +235,8 @@ class MarkdownCache {
                 // This is needed because SwiftUI Text view sometimes collapses multiple consecutive newlines
                 let paragraphStyle = NSMutableParagraphStyle()
                 paragraphStyle.lineSpacing = 1.2
-                paragraphStyle.paragraphSpacing = 10
+                paragraphStyle.paragraphSpacing = 12  // Increased paragraph spacing
+                paragraphStyle.paragraphSpacingBefore = 4  // Space before paragraphs
                 paragraphStyle.headIndent = 0
                 paragraphStyle.firstLineHeadIndent = 0
                 
@@ -712,6 +713,7 @@ fileprivate struct BulletListView: View {
             }
         }
         .padding(.vertical, 4)
+        .padding(.bottom, 10) // Extra padding at the bottom to ensure paragraph break
     }
 }
 
@@ -770,6 +772,7 @@ fileprivate struct NumberedListView: View {
             }
         }
         .padding(.vertical, 4)
+        .padding(.bottom, 10) // Extra padding at the bottom to ensure paragraph break
     }
 }
 
@@ -782,7 +785,7 @@ struct CustomMarkdownContentParser: View {
         // Parse the content into different sections
         let sections = parseMarkdownSections(text)
         
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ForEach(sections) { section in
                 Group {
                     switch section.type {
@@ -790,15 +793,19 @@ struct CustomMarkdownContentParser: View {
                         // Use nested items when available, fall back to flat list
                         if !section.nestedListItems.isEmpty {
                             BulletListView(items: section.listItems, nestedItems: section.nestedListItems)
+                                .padding(.bottom, 6) // Add extra space after lists
                         } else {
                             BulletListView(items: section.listItems)
+                                .padding(.bottom, 6) // Add extra space after lists
                         }
                     case .numberedList:
                         // Use nested items when available, fall back to flat list
                         if !section.nestedListItems.isEmpty {
                             NumberedListView(items: section.listItems, nestedItems: section.nestedListItems)
+                                .padding(.bottom, 6) // Add extra space after lists
                         } else {
                             NumberedListView(items: section.listItems)
+                                .padding(.bottom, 6) // Add extra space after lists
                         }
                     case .horizontalLine:
                         HorizontalLineView()
@@ -827,6 +834,7 @@ struct CustomMarkdownContentParser: View {
                             .padding(.vertical, 4)
                     case .paragraph:
                         renderRegularText(section.content)
+                            .padding(.bottom, 6) // Add consistent spacing after paragraphs
                     }
                 }
             }
@@ -1448,7 +1456,8 @@ class MarkdownViewModel: ObservableObject {
                         // Apply paragraph styles to preserve line breaks even for streaming content
                         let paragraphStyle = NSMutableParagraphStyle()
                         paragraphStyle.lineSpacing = 1.2
-                        paragraphStyle.paragraphSpacing = 10
+                        paragraphStyle.paragraphSpacing = 12  // Increased paragraph spacing
+                        paragraphStyle.paragraphSpacingBefore = 4  // Space before paragraphs
                         paragraphStyle.headIndent = 0
                         paragraphStyle.firstLineHeadIndent = 0
                         
