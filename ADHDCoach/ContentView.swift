@@ -134,6 +134,7 @@ struct ContentView: View {
                             ForEach(chatManager.combinedStatusMessagesForMessage(message)) { statusMessage in
                                 OperationStatusView(statusMessage: statusMessage)
                                     .padding(.horizontal)
+                                    .id("status-\(statusMessage.id)")
                             }
                         }
                     }
@@ -216,15 +217,35 @@ struct ContentView: View {
             }
         }
         .onChange(of: chatManager.messages.last?.content) { _, _ in
-            // Only auto-scroll for new content when we're near the bottom
+            // Auto-scroll for new content
             DispatchQueue.main.async {
-                scrollView.scrollTo("messageBottom", anchor: .bottom)
+                withAnimation(.easeOut(duration: 0.2)) {
+                    scrollView.scrollTo("messageBottom", anchor: .bottom)
+                }
+            }
+        }
+        .onChange(of: chatManager.streamingUpdateCount) { _, _ in
+            // Ensure scrolling happens on each streaming update
+            DispatchQueue.main.async {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    scrollView.scrollTo("messageBottom", anchor: .bottom)
+                }
+            }
+        }
+        .onChange(of: chatManager.operationStatusUpdateCount) { _, _ in
+            // Scroll when new operation status messages are added
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    scrollView.scrollTo("messageBottom", anchor: .bottom)
+                }
             }
         }
         .onAppear {
-            // Scroll to bottom when view appears
-            DispatchQueue.main.async {
-                scrollView.scrollTo("messageBottom", anchor: .bottom)
+            // Scroll to bottom when view appears with a slight delay to ensure layout is complete
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    scrollView.scrollTo("messageBottom", anchor: .bottom)
+                }
             }
         }
         .border(debugOutlineMode == .scrollView ? Color.green : Color.clear, width: 2)

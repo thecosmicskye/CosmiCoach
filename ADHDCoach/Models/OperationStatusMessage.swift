@@ -44,7 +44,7 @@ enum OperationItemType: String, Codable {
     }
 }
 
-enum OperationType: String, Codable {
+enum OperationType: String, Codable, Equatable {
     // Calendar operations
     case addCalendarEvent = "Adding Calendar Event"
     case updateCalendarEvent = "Updating Calendar Event" 
@@ -133,7 +133,16 @@ enum OperationType: String, Codable {
     }
 }
 
-struct OperationStatusMessage: Identifiable, Codable {
+struct OperationStatusMessage: Identifiable, Codable, Equatable {
+    // Conformance to Equatable
+    static func == (lhs: OperationStatusMessage, rhs: OperationStatusMessage) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.operationType == rhs.operationType &&
+               lhs.status == rhs.status &&
+               lhs.timestamp == rhs.timestamp &&
+               lhs.details == rhs.details &&
+               lhs.count == rhs.count
+    }
     let id: UUID
     let operationType: OperationType
     var status: OperationStatus

@@ -43,7 +43,16 @@ struct MessageBubbleView: View {
                         .background(Color.clear)
                         .cornerRadius(16)
                         .textSelection(.enabled)
+                        // Ensure view updates when content changes or completes
                         .id(message.isComplete ? "complete-\(message.id)" : "streaming-\(message.id)-\(message.content.count)")
+                        // Ensure stable layout after completion
+                        .fixedSize(horizontal: false, vertical: true)
+                        // Wait for changes to complete before finalizing layout
+                        .transaction { transaction in
+                            if !message.isComplete {
+                                transaction.animation = nil
+                            }
+                        }
                         .onAppear {
                             // Safety check: if message is complete but chatManager still shows processing
                             if message.isComplete && chatManager.isProcessing {

@@ -496,6 +496,12 @@ struct MarkdownTextView: View {
         CachedMarkdownContent(markdown: markdown, isCompleteMessage: isComplete)
             // This helps with layout stability
             .animation(nil, value: markdown.count)
+            // Use fixedSize vertically to ensure the view expands to its content immediately
+            .fixedSize(horizontal: false, vertical: true)
+            // Minimize layout shift with transition
+            .transition(.opacity)
+            // Ensure measurements are preserved
+            .layoutPriority(1)
     }
 }
 
@@ -538,7 +544,7 @@ struct CachedMarkdownContent: View {
                 .font(.body)
                 .padding(.vertical, 4)
         }
-        .fixedSize(horizontal: false, vertical: true)
+        // Don't use fixedSize here since it's already in MarkdownTextView
         .onChange(of: markdown) { newContent in
             // For streaming messages, we need to update as content changes
             if !isCompleteMessage {

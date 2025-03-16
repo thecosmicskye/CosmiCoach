@@ -32,6 +32,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
     /// Maps message IDs to their operation status messages
     @Published var operationStatusMessages: [UUID: [OperationStatusMessage]] = [:]
     
+    /// Counter to track when operation status messages change (for scrolling updates)
+    @Published var operationStatusUpdateCount: Int = 0
+    
     /// Flag indicating if initial message loading is complete
     @Published var initialLoadComplete: Bool = false
     
@@ -356,6 +359,17 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             currentStreamingMessageId = nil
             // Trigger one final update for scrolling
             streamingUpdateCount += 1
+            
+            // Add a delayed second update to ensure scrolling after final rendering
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.streamingUpdateCount += 1
+            }
+            
+            // Another update when everything has had time to render
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                self?.streamingUpdateCount += 1
+            }
+            
             // Save messages to persist the finalized state
             persistenceManager.saveMessages(messages: messages, isProcessing: isProcessing, currentStreamingMessageId: currentStreamingMessageId)
         }
@@ -416,6 +430,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         }
         operationStatusMessages[messageId]?.append(statusMessage)
         
+        // Increment counter to trigger scroll updates
+        operationStatusUpdateCount += 1
+        
         return statusMessage
     }
     
@@ -449,6 +466,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 statusMessages[index].count = count
             }
             operationStatusMessages[messageId] = statusMessages
+            
+            // Increment counter to trigger scroll updates
+            operationStatusUpdateCount += 1
         }
     }
     
