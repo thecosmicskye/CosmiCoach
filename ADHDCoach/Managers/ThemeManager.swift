@@ -1,6 +1,9 @@
 import SwiftUI
 
 class ThemeManager: ObservableObject {
+    // Shared instance for use in places where @EnvironmentObject isn't available
+    static let shared = ThemeManager()
+    
     @Published var currentTheme: Theme
     @AppStorage("selected_theme_id") private var selectedThemeId: String = "pink"
     

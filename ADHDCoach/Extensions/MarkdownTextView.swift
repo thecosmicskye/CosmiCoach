@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// A shared cache for processed markdown to avoid reprocessing the same content
 class MarkdownCache {
@@ -529,315 +530,14 @@ struct CachedMarkdownContent: View {
         }
     }
     
-    // Process text with line breaks and markdown formatting
-    private func formatWithLineBreaks(_ text: String) -> Text {
-        // First detect if we're dealing with a multiline code block - handle differently
-        if text.contains("```") {
-            return handleCodeBlocks(text)
-        }
-        
-        // Split by lines and create a text view with explicit line breaks
-        let lines = text.components(separatedBy: "\n")
-        var result = Text("")
-        
-        // Handle special case of lists
-        var inList = false
-        var currentList: [String] = []
-        
-        for (index, line) in lines.enumerated() {
-            // For empty lines, use a space to ensure the line break is preserved
-            let lineText = line.isEmpty ? " " : line
-            
-            // Check if line is a heading (# Heading)
-            let trimmed = lineText.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("# ") || trimmed.hasPrefix("## ") || 
-               trimmed.hasPrefix("### ") || trimmed.hasPrefix("#### ") {
-                // Process heading
-                let headingText = formatHeading(trimmed)
-                result = result + headingText
-                
-                // Add line break after heading
-                if index < lines.count - 1 {
-                    result = result + Text("\n")
-                }
-                continue
-            }
-            
-            // Check if line is a list item
-            let isBulletPoint = trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ")
-            let isNumberedItem = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) != nil
-            
-            if isBulletPoint || isNumberedItem {
-                // Either continue or start a list
-                inList = true
-                currentList.append(lineText)
-                
-                // If this is the last line or next line is not a list item, process the list
-                if index == lines.count - 1 || 
-                   !(lines[index + 1].trimmingCharacters(in: .whitespaces).hasPrefix("- ") || 
-                     lines[index + 1].trimmingCharacters(in: .whitespaces).hasPrefix("* ") ||
-                     lines[index + 1].trimmingCharacters(in: .whitespaces).hasPrefix("• ") ||
-                     lines[index + 1].trimmingCharacters(in: .whitespaces).range(of: "^\\d+\\. ", options: .regularExpression) != nil) {
-                    
-                    // Process and add the list
-                    let listText = processListItems(currentList)
-                    result = result + listText
-                    
-                    // Reset list tracking
-                    inList = false
-                    currentList = []
-                    
-                    // Add line break if needed
-                    if index < lines.count - 1 {
-                        result = result + Text("\n")
-                    }
-                }
-                
-                // Skip to next iteration since we've handled this line as part of a list
-                continue
-            } else if inList {
-                // This line is not a list item but we were in a list - process the list before continuing
-                let listText = processListItems(currentList)
-                result = result + listText
-                
-                // Reset list tracking
-                inList = false
-                currentList = []
-                
-                // Add line break
-                result = result + Text("\n")
-            }
-            
-            // Parse markdown for each line individually for non-list items
-            let markdownText: Text
-            if lineText.contains("**") || lineText.contains("*") || lineText.contains("`") || 
-               lineText.contains("[") || lineText.contains("#") {
-                // Try to apply markdown to this line
-                do {
-                    let options = AttributedString.MarkdownParsingOptions(
-                        allowsExtendedAttributes: true,
-                        interpretedSyntax: .inlineOnly,
-                        failurePolicy: .returnPartiallyParsedIfPossible
-                    )
-                    var attrs = try AttributedString(markdown: lineText, options: options)
-                    
-                    // Check for code blocks and apply monospaced font
-                    if lineText.contains("`") {
-                        let nsString = NSMutableAttributedString(attrs)
-                        let font = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-                        let pattern = "`[^`]+`"
-                        if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
-                            let range = NSRange(location: 0, length: nsString.length)
-                            regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
-                                if let matchRange = match?.range {
-                                    nsString.addAttribute(.font, value: font, range: matchRange)
-                                    nsString.addAttribute(.backgroundColor, value: UIColor(white: 0.95, alpha: 1.0), range: matchRange)
-                                }
-                            }
-                        }
-                        attrs = try AttributedString(nsString)
-                    }
-                    
-                    markdownText = Text(attrs)
-                } catch {
-                    markdownText = Text(lineText)
-                }
-            } else {
-                markdownText = Text(lineText)
-            }
-            
-            // Add this line to the result
-            result = result + markdownText
-            
-            // Add line break after each line except the last one
-            if index < lines.count - 1 {
-                result = result + Text("\n")
-            }
-        }
-        
-        // Process any remaining list items
-        if inList && !currentList.isEmpty {
-            let listText = processListItems(currentList)
-            result = result + listText
-        }
-        
-        return result
-    }
-    
-    // Format headings with appropriate styles
-    private func formatHeading(_ text: String) -> Text {
-        if text.hasPrefix("# ") {
-            // Heading 1
-            let headingContent = text.dropFirst(2)
-            return Text(String(headingContent))
-                .font(.system(size: 28, weight: .bold))
-                .foregroundColor(.primary)
-        } else if text.hasPrefix("## ") {
-            // Heading 2
-            let headingContent = text.dropFirst(3)
-            return Text(String(headingContent))
-                .font(.system(size: 24, weight: .bold))
-                .foregroundColor(.primary)
-        } else if text.hasPrefix("### ") {
-            // Heading 3
-            let headingContent = text.dropFirst(4)
-            return Text(String(headingContent))
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.primary)
-        } else if text.hasPrefix("#### ") {
-            // Heading 4
-            let headingContent = text.dropFirst(5)
-            return Text(String(headingContent))
-                .font(.system(size: 18, weight: .medium))
-                .foregroundColor(.primary)
-        } else {
-            // Fallback
-            return Text(text)
-        }
-    }
-    
-    // Process a list of items with proper formatting
-    private func processListItems(_ items: [String]) -> Text {
-        var result = Text("")
-        
-        for (index, item) in items.enumerated() {
-            let trimmed = item.trimmingCharacters(in: .whitespaces)
-            var itemContent = trimmed
-            
-            // Extract the content without the bullet/number
-            if trimmed.hasPrefix("- ") {
-                itemContent = String(trimmed.dropFirst(2))
-            } else if trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ") {
-                itemContent = String(trimmed.dropFirst(2))
-            } else if let range = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) {
-                itemContent = String(trimmed[range.upperBound...])
-            }
-            
-            // Format the list item with bullet point
-            let bulletPoint = Text("• ").fontWeight(.bold)
-            
-            // Format the content with markdown if needed
-            let contentText: Text
-            do {
-                let options = AttributedString.MarkdownParsingOptions(
-                    allowsExtendedAttributes: true,
-                    interpretedSyntax: .inlineOnly,
-                    failurePolicy: .returnPartiallyParsedIfPossible
-                )
-                
-                let attrs = try AttributedString(markdown: itemContent, options: options)
-                contentText = Text(attrs)
-            } catch {
-                contentText = Text(itemContent)
-            }
-            
-            // Add bullet and content
-            let listItemText = bulletPoint + contentText
-            
-            // Add to result with padding
-            result = result + listItemText
-            
-            // Add line break after each item except the last one
-            if index < items.count - 1 {
-                result = result + Text("\n")
-            }
-        }
-        
-        return result
-    }
-    
-    // Handle multiline code blocks
-    private func handleCodeBlocks(_ text: String) -> Text {
-        let lines = text.components(separatedBy: "\n")
-        var result = Text("")
-        var inCodeBlock = false
-        var codeBlockContent = ""
-        
-        for (index, line) in lines.enumerated() {
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                inCodeBlock = !inCodeBlock
-                
-                if !inCodeBlock && !codeBlockContent.isEmpty {
-                    // End of code block - render the collected content
-                    // We need to use plain Text without styling since we're concatenating
-                    let codeText = Text(codeBlockContent)
-                        .font(.system(.body, design: .monospaced))
-                    
-                    // Can't apply view modifiers when concatenating Text objects
-                    result = result + codeText
-                    codeBlockContent = ""
-                }
-                
-                // Skip the ``` line itself
-                if index < lines.count - 1 {
-                    result = result + Text("\n")
-                }
-                continue
-            }
-            
-            if inCodeBlock {
-                // Collect code block content
-                codeBlockContent += line + (index < lines.count - 1 ? "\n" : "")
-            } else {
-                // Regular line - process with markdown
-                let lineText = line.isEmpty ? " " : line
-                
-                // Check if line is a heading (# Heading)
-                let trimmed = lineText.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("# ") || trimmed.hasPrefix("## ") || 
-                   trimmed.hasPrefix("### ") || trimmed.hasPrefix("#### ") {
-                    // Process heading
-                    let headingText = formatHeading(trimmed)
-                    result = result + headingText
-                    
-                    // Add line break after heading
-                    if index < lines.count - 1 {
-                        result = result + Text("\n")
-                    }
-                    continue
-                }
-                
-                // Use the same markdown processing as before for non-headings
-                let markdownText: Text
-                if lineText.contains("**") || lineText.contains("*") || lineText.contains("`") || 
-                   lineText.contains("[") || lineText.contains("#") {
-                    do {
-                        let options = AttributedString.MarkdownParsingOptions(
-                            allowsExtendedAttributes: true,
-                            interpretedSyntax: .inlineOnly,
-                            failurePolicy: .returnPartiallyParsedIfPossible
-                        )
-                        let attrs = try AttributedString(markdown: lineText, options: options)
-                        markdownText = Text(attrs)
-                    } catch {
-                        markdownText = Text(lineText)
-                    }
-                } else {
-                    markdownText = Text(lineText)
-                }
-                
-                result = result + markdownText
-                
-                // Add line break after each line except the last one
-                if index < lines.count - 1 {
-                    result = result + Text("\n")
-                }
-            }
-        }
-        
-        return result
-    }
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Use a VStack to apply styling to the formatted text
-            formatWithLineBreaks(markdown)
+            // Use our custom markdown parser for rendering
+            CustomMarkdownContentParser(text: markdown)
+                .environmentObject(ThemeManager.shared)
                 .font(.body)
-                .textSelection(.enabled)
-                // Add code block styling
                 .padding(.vertical, 4)
         }
-        .lineSpacing(8)
         .fixedSize(horizontal: false, vertical: true)
         .onChange(of: markdown) { newContent in
             // For streaming messages, we need to update as content changes
@@ -845,45 +545,426 @@ struct CachedMarkdownContent: View {
                 // Only process if content actually changed
                 if lastProcessedContent != newContent {
                     lastProcessedContent = newContent
-                    // Process in background without blocking UI
-                    Task {
-                        await viewModel.processMarkdown(newContent, useCache: false)
-                    }
                 }
             }
         }
         .task {
-            // First check if we already have it in global cache (only for complete messages)
-            if let cached = fetchGlobalContent() {
-                renderedContent = cached
-            } else {
-                // Start processing immediately without blocking
-                lastProcessedContent = markdown
-                
-                // Always show something immediately
-                if viewModel.attributedString.characters.isEmpty {
-                    // Just initialize with plain text to avoid blank UI
-                    viewModel.attributedString = AttributedString(markdown)
-                }
-                
-                // Process in background
-                Task {
-                    let processedContent = await viewModel.processMarkdown(
-                        markdown, 
-                        useCache: isCompleteMessage
-                    )
-                    
-                    // Only store in global cache for complete messages
-                    if isCompleteMessage {
-                        storeGlobalContent(processedContent)
+            // Process content immediately
+            lastProcessedContent = markdown
+        }
+    }
+}
+
+// Define custom renderer components directly within this file to avoid import issues
+
+// MARK: - Custom Renderers
+// Bullet List Item
+fileprivate struct BulletListItemView: View {
+    let content: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            // Bullet column
+            Text("•")
+                .fontWeight(.bold)
+                .frame(width: 16, alignment: .leading)
+            
+            // Content column - using direct AttributedString handling
+            contentView
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+    }
+    
+    private var contentView: some View {
+        let attributedString: AttributedString
+        do {
+            attributedString = try AttributedString(markdown: content, options: .init(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                failurePolicy: .returnPartiallyParsedIfPossible
+            ))
+        } catch {
+            attributedString = AttributedString(content)
+        }
+        
+        return Text(attributedString)
+            .textSelection(.enabled)
+    }
+}
+
+// Numbered List Item
+fileprivate struct NumberedListItemView: View {
+    let number: Int
+    let content: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            // Number column
+            Text("\(number).")
+                .fontWeight(.medium)
+                .frame(width: 25, alignment: .leading)
+            
+            // Content column - using direct AttributedString handling
+            contentView
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 2)
+    }
+    
+    private var contentView: some View {
+        let attributedString: AttributedString
+        do {
+            attributedString = try AttributedString(markdown: content, options: .init(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                failurePolicy: .returnPartiallyParsedIfPossible
+            ))
+        } catch {
+            attributedString = AttributedString(content)
+        }
+        
+        return Text(attributedString)
+            .textSelection(.enabled)
+    }
+}
+
+// Horizontal Line
+fileprivate struct HorizontalLineView: View {
+    @EnvironmentObject private var themeManager: ThemeManager
+    
+    var body: some View {
+        Rectangle()
+            .fill(themeManager.currentTheme.accentColor.opacity(0.5))
+            .frame(height: 1)
+            .padding(.vertical, 10)
+    }
+}
+
+// Bullet List
+fileprivate struct BulletListView: View {
+    let items: [String]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(items.indices, id: \.self) { index in
+                BulletListItemView(content: items[index])
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// Numbered List
+fileprivate struct NumberedListView: View {
+    let items: [String]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(items.indices, id: \.self) { index in
+                NumberedListItemView(number: index + 1, content: items[index])
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// Custom parser that generates appropriate SwiftUI views for markdown elements
+struct CustomMarkdownContentParser: View {
+    let text: String
+    @EnvironmentObject private var themeManager: ThemeManager
+    
+    var body: some View {
+        // Parse the content into different sections
+        let sections = parseMarkdownSections(text)
+        
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(sections) { section in
+                Group {
+                    switch section.type {
+                    case .bulletList:
+                        BulletListView(items: section.listItems)
+                    case .numberedList:
+                        NumberedListView(items: section.listItems)
+                    case .horizontalLine:
+                        HorizontalLineView()
+                    case .heading1:
+                        Text(section.content.dropFirst(2))
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(.primary)
+                            .padding(.vertical, 4)
+                    case .heading2:
+                        Text(section.content.dropFirst(3))
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.primary)
+                            .padding(.vertical, 3)
+                    case .heading3:
+                        Text(section.content.dropFirst(4))
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .padding(.vertical, 2)
+                    case .heading4:
+                        Text(section.content.dropFirst(5))
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(.primary)
+                            .padding(.vertical, 1)
+                    case .codeBlock:
+                        renderCodeBlock(section.content)
+                            .padding(.vertical, 4)
+                    case .paragraph:
+                        renderRegularText(section.content)
                     }
-                    
-                    // Update our view state
-                    renderedContent = processedContent
                 }
             }
         }
     }
+    
+    // Render a code block
+    private func renderCodeBlock(_ content: String) -> some View {
+        // Extract code content by removing the starting and ending ```
+        let lines = content.components(separatedBy: "\n")
+        var codeLines: [String] = []
+        var inCodeBlock = false
+        var language = ""
+        
+        for line in lines {
+            if line.hasPrefix("```") {
+                if !inCodeBlock {
+                    inCodeBlock = true
+                    // Extract language if specified (e.g., ```swift)
+                    let remainder = line.dropFirst(3).trimmingCharacters(in: .whitespaces)
+                    if !remainder.isEmpty {
+                        language = remainder
+                    }
+                } else {
+                    inCodeBlock = false
+                }
+            } else if inCodeBlock {
+                codeLines.append(line)
+            }
+        }
+        
+        let codeContent = codeLines.joined(separator: "\n")
+        
+        return Text(codeContent)
+            .font(.system(.body, design: .monospaced))
+            .padding(10)
+            .background(Color(UIColor.systemGray6))
+            .cornerRadius(5)
+            .textSelection(.enabled)
+    }
+    
+    // Render regular markdown text
+    private func renderRegularText(_ content: String) -> some View {
+        // Process with basic markdown formatting
+        let attributedString: AttributedString
+        do {
+            attributedString = try AttributedString(markdown: content, options: .init(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                failurePolicy: .returnPartiallyParsedIfPossible
+            ))
+        } catch {
+            attributedString = AttributedString(content)
+        }
+        
+        return Text(attributedString)
+            .textSelection(.enabled)
+    }
+    
+    // Parse markdown into sections
+    private func parseMarkdownSections(_ text: String) -> [MarkdownSection] {
+        let lines = text.components(separatedBy: "\n")
+        var sections: [MarkdownSection] = []
+        var currentSectionType: MarkdownSectionType = .paragraph
+        var currentSectionContent: [String] = []
+        var currentListItems: [String] = []
+        var inCodeBlock = false
+        var codeBlockContent: [String] = []
+        
+        // Helper to finalize the current section and start a new one
+        func finalizeCurrentSection() {
+            guard !currentSectionContent.isEmpty || !currentListItems.isEmpty || !codeBlockContent.isEmpty else { return }
+            
+            switch currentSectionType {
+            case .bulletList, .numberedList:
+                if !currentListItems.isEmpty {
+                    sections.append(MarkdownSection(
+                        id: UUID().uuidString,
+                        type: currentSectionType,
+                        content: "",
+                        listItems: currentListItems
+                    ))
+                    currentListItems = []
+                }
+            case .codeBlock:
+                if !codeBlockContent.isEmpty {
+                    sections.append(MarkdownSection(
+                        id: UUID().uuidString,
+                        type: .codeBlock,
+                        content: codeBlockContent.joined(separator: "\n"),
+                        listItems: []
+                    ))
+                    codeBlockContent = []
+                }
+            default:
+                if !currentSectionContent.isEmpty {
+                    sections.append(MarkdownSection(
+                        id: UUID().uuidString,
+                        type: currentSectionType,
+                        content: currentSectionContent.joined(separator: "\n"),
+                        listItems: []
+                    ))
+                    currentSectionContent = []
+                }
+            }
+        }
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            
+            // Handle code blocks first
+            if trimmed.hasPrefix("```") {
+                if !inCodeBlock {
+                    // Start of a code block
+                    finalizeCurrentSection()
+                    inCodeBlock = true
+                    currentSectionType = .codeBlock
+                    codeBlockContent.append(line)
+                } else {
+                    // End of a code block
+                    codeBlockContent.append(line)
+                    finalizeCurrentSection()
+                    inCodeBlock = false
+                    currentSectionType = .paragraph
+                }
+                continue
+            }
+            
+            if inCodeBlock {
+                codeBlockContent.append(line)
+                continue
+            }
+            
+            // Handle horizontal line
+            if trimmed == "---" || trimmed == "***" || trimmed == "___" {
+                finalizeCurrentSection()
+                sections.append(MarkdownSection(
+                    id: UUID().uuidString,
+                    type: .horizontalLine,
+                    content: "",
+                    listItems: []
+                ))
+                currentSectionType = .paragraph
+                continue
+            }
+            
+            // Handle headings
+            if trimmed.hasPrefix("# ") {
+                finalizeCurrentSection()
+                currentSectionType = .heading1
+                currentSectionContent.append(line)
+                finalizeCurrentSection()
+                currentSectionType = .paragraph
+                continue
+            } else if trimmed.hasPrefix("## ") {
+                finalizeCurrentSection()
+                currentSectionType = .heading2
+                currentSectionContent.append(line)
+                finalizeCurrentSection()
+                currentSectionType = .paragraph
+                continue
+            } else if trimmed.hasPrefix("### ") {
+                finalizeCurrentSection()
+                currentSectionType = .heading3
+                currentSectionContent.append(line)
+                finalizeCurrentSection()
+                currentSectionType = .paragraph
+                continue
+            } else if trimmed.hasPrefix("#### ") {
+                finalizeCurrentSection()
+                currentSectionType = .heading4
+                currentSectionContent.append(line)
+                finalizeCurrentSection()
+                currentSectionType = .paragraph
+                continue
+            }
+            
+            // Handle bullet lists
+            let isBulletPoint = trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ")
+            if isBulletPoint {
+                if currentSectionType != .bulletList {
+                    finalizeCurrentSection()
+                    currentSectionType = .bulletList
+                }
+                
+                // Extract the content without the bullet marker
+                var itemContent = trimmed
+                if trimmed.hasPrefix("- ") {
+                    itemContent = String(trimmed.dropFirst(2))
+                } else if trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ") {
+                    itemContent = String(trimmed.dropFirst(2))
+                }
+                
+                currentListItems.append(itemContent.trimmingCharacters(in: .whitespaces))
+                continue
+            }
+            
+            // Handle numbered lists
+            let isNumberedItem = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) != nil
+            if isNumberedItem {
+                if currentSectionType != .numberedList {
+                    finalizeCurrentSection()
+                    currentSectionType = .numberedList
+                }
+                
+                // Extract the content without the number marker
+                if let range = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) {
+                    let itemContent = String(trimmed[range.upperBound...])
+                    currentListItems.append(itemContent.trimmingCharacters(in: .whitespaces))
+                }
+                continue
+            }
+            
+            // If we were in a list and now we're not, finalize the list
+            if (currentSectionType == .bulletList || currentSectionType == .numberedList) && 
+               !isBulletPoint && !isNumberedItem {
+                finalizeCurrentSection()
+                currentSectionType = .paragraph
+            }
+            
+            // Regular paragraph content
+            if currentSectionType != .paragraph {
+                finalizeCurrentSection()
+                currentSectionType = .paragraph
+            }
+            
+            currentSectionContent.append(line)
+        }
+        
+        // Make sure to finalize the last section
+        finalizeCurrentSection()
+        
+        return sections
+    }
+}
+
+// Define the different types of markdown sections
+enum MarkdownSectionType {
+    case paragraph
+    case heading1
+    case heading2
+    case heading3
+    case heading4
+    case bulletList
+    case numberedList
+    case codeBlock
+    case horizontalLine
+}
+
+// Define a structure for markdown sections
+struct MarkdownSection: Identifiable {
+    let id: String
+    let type: MarkdownSectionType
+    let content: String
+    let listItems: [String]
 }
 
 // ViewModel to handle markdown processing and caching
@@ -1058,22 +1139,34 @@ class MarkdownViewModel: ObservableObject {
         MarkdownTextView(markdown: """
         # Heading 1
         ## Heading 2
+        ### Heading 3
+        #### Heading 4
         
         This is a paragraph with **bold** and *italic* text.
         
-        * List item 1
-        * List item 2
+        Here's a horizontal line:
         
-        1. Ordered item 1
-        2. Ordered item 2
+        ---
         
-        > This is a blockquote
+        ## Bullet List with Hanging Indentation
         
-        `code snippet`
+        * This is a bullet item with longer text that should wrap to the next line while maintaining proper hanging indentation
+        * Another bullet item with **bold** and *italic* formatting
+        * A third item with `inline code`
         
-        ```
+        ## Numbered List with Hanging Indentation
+        
+        1. This is a numbered item with longer text that should wrap to the next line while maintaining proper hanging indentation
+        2. Another numbered item with **bold** and *italic* formatting
+        3. A third item with `inline code`
+        
+        ## Code Block Example
+        
+        ```swift
         func example() {
             print("Hello world")
+            // This is a comment
+            let x = 10
         }
         ```
         
@@ -1081,4 +1174,5 @@ class MarkdownViewModel: ObservableObject {
         """)
     }
     .padding()
+    .environmentObject(ThemeManager())
 }
