@@ -29,6 +29,7 @@ struct OperationStatusView: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .id("status-view-\(statusMessage.id)")
     }
 }
 
