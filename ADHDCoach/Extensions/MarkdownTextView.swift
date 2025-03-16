@@ -1278,7 +1278,7 @@ class MarkdownViewModel: ObservableObject {
                         // Apply paragraph styles to preserve line breaks even for streaming content
                         let paragraphStyle = NSMutableParagraphStyle()
                         paragraphStyle.lineSpacing = 1.2
-                        paragraphStyle.paragraphSpacing = 8 // Slightly less spacing for streaming updates
+                        paragraphStyle.paragraphSpacing = 10
                         paragraphStyle.headIndent = 0
                         paragraphStyle.firstLineHeadIndent = 0
                         

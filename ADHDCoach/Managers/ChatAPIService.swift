@@ -82,9 +82,8 @@ class ChatAPIService {
 
     Markdown Formatting:
     - Your responses will be displayed with a markdown renderer.
-    - Utilize bold text liberally to highlight key information.
-    - Keep your style conversational and less like a document.
-    
+    - ALWAYS incorporate bold text to highlight key information in your response.
+    - DO NOT use header tags for normal messages; instead, opt for bold text.
 
     You have access to the user's memory which contains information about them that persists between conversations. This information is organized into categories:
     - Personal Information: Basic information about the user

@@ -17,7 +17,7 @@ struct MessageBubbleView: View {
                 if message.isUser {
                     Text(message.content)
                         .font(.body)
-                        .lineSpacing(1.5)
+                        .lineSpacing(1.2)
                         .padding(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
                         .background(themeManager.accentColor(for: colorScheme))
                         .foregroundColor(.white)
@@ -38,8 +38,8 @@ struct MessageBubbleView: View {
                             markdown: message.content,
                             isComplete: message.isComplete
                         )
-                        .lineSpacing(8) // Increase line spacing to improve readability and line break visibility
-                        .padding(EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2))
+                        .lineSpacing(1.2) // Increase line spacing to improve readability and line break visibility
+                        .padding(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
                         .background(Color.clear)
                         .cornerRadius(16)
                         .textSelection(.enabled)
