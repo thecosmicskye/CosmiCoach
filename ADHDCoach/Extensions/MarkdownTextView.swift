@@ -728,18 +728,34 @@ fileprivate struct NumberedListView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if !nestedItems.isEmpty {
-                // Render nested list items
+                // Helper function to extract numbers from original text
+                let extractNumber = { (item: MarkdownListItem) -> Int? in
+                    // Look for numbered pattern at start of the original source
+                    if let originalText = item.originalText,
+                       let match = originalText.range(of: "^\\d+", options: .regularExpression) {
+                        let numberStr = String(originalText[match])
+                        return Int(numberStr)
+                    }
+                    return nil
+                }
+                
+                // Render nested list items with proper numbering
                 ForEach(Array(nestedItems.enumerated()), id: \.element.id) { i, item in
-                    NumberedListItemView(number: i + 1, content: item.content, level: item.level)
+                    // Use extracted number or fallback to position-based
+                    let itemNumber = extractNumber(item) ?? (i + 1)
+                    
+                    NumberedListItemView(number: itemNumber, content: item.content, level: item.level)
                     
                     // Render children recursively if they exist
                     if !item.children.isEmpty {
                         ForEach(Array(item.children.enumerated()), id: \.element.id) { j, child in
+                            // For children always use position-based numbering
                             NumberedListItemView(number: j + 1, content: child.content, level: child.level)
                             
                             // Render grandchildren if they exist (up to 3 levels)
                             if !child.children.isEmpty {
                                 ForEach(Array(child.children.enumerated()), id: \.element.id) { k, grandchild in
+                                    // For grandchildren always use position-based numbering
                                     NumberedListItemView(number: k + 1, content: grandchild.content, level: grandchild.level)
                                 }
                             }
@@ -871,7 +887,10 @@ struct CustomMarkdownContentParser: View {
     
     // Parse markdown into sections with support for nested lists
     private func parseMarkdownSections(_ text: String) -> [MarkdownSection] {
-        let lines = text.components(separatedBy: "\n")
+        // Preprocess the text to combine list sections that are separated by empty lines
+        let preprocessedText = preprocessListSections(text)
+        
+        let lines = preprocessedText.components(separatedBy: "\n")
         var sections: [MarkdownSection] = []
         var currentSectionType: MarkdownSectionType = .paragraph
         var currentSectionContent: [String] = []
@@ -1046,8 +1065,9 @@ struct CustomMarkdownContentParser: View {
                 // Add to the flat list for backward compatibility
                 currentListItems.append(cleanedContent)
                 
-                // Create a new list item with the appropriate level
-                let newItem = MarkdownListItem(content: cleanedContent, level: originalIndent)
+                // Create a new list item with the appropriate level, preserving original text
+                var newItem = MarkdownListItem(content: cleanedContent, level: originalIndent)
+                newItem.originalText = trimmed
                 
                 if originalIndent == 0 {
                     // Top level item
@@ -1088,8 +1108,9 @@ struct CustomMarkdownContentParser: View {
                     // Add to flat list for backward compatibility
                     currentListItems.append(cleanedContent)
                     
-                    // Create a new list item with the appropriate level
-                    let newItem = MarkdownListItem(content: cleanedContent, level: originalIndent)
+                    // Create a new list item with the appropriate level, preserving original text for numbering
+                    var newItem = MarkdownListItem(content: cleanedContent, level: originalIndent)
+                    newItem.originalText = trimmed
                     
                     if originalIndent == 0 {
                         // Top level item
@@ -1114,15 +1135,68 @@ struct CustomMarkdownContentParser: View {
                 continue
             }
             
-            // If we were in a list and now we're not, finalize the list
+            // Check if this is an empty line (might be separating list items)
+            let isEmptyLine = trimmed.isEmpty
+            
+            // Special handling: For lists, never switch between bullet and numbered list types
+            // Maintain the same list type even when switching between bullet and numbered items
+            // This handles cases like: 1. item → bullet subitem → continue with 2. item
+            if (currentSectionType == .bulletList && isNumberedItem) || 
+               (currentSectionType == .numberedList && isBulletPoint) {
+                // Don't change the list type - keep both bullet and numbered items in the same list
+                if currentSectionType == .numberedList {
+                    // Add the bullet point as if it were a numbered item
+                    var itemContent = trimmed
+                    if trimmed.hasPrefix("- ") {
+                        itemContent = String(trimmed.dropFirst(2))
+                    } else if trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ") {
+                        itemContent = String(trimmed.dropFirst(2))
+                    }
+                    
+                    let cleanedContent = itemContent.trimmingCharacters(in: .whitespaces)
+                    currentListItems.append(cleanedContent)
+                    
+                    // Create nested list item
+                    let newItem = MarkdownListItem(content: cleanedContent, level: originalIndent > 0 ? originalIndent : 1)
+                    
+                    // Add as child to the last item
+                    if !currentNestedListItems.isEmpty {
+                        if let parentIndex = currentNestedListItems.count > 0 ? currentNestedListItems.count - 1 : nil {
+                            currentNestedListItems[parentIndex].children.append(newItem)
+                        }
+                    }
+                    
+                    continue
+                } else if currentSectionType == .bulletList && isNumberedItem {
+                    // Add the numbered item as if it were a bullet item
+                    if let range = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) {
+                        let itemContent = String(trimmed[range.upperBound...])
+                        let cleanedContent = itemContent.trimmingCharacters(in: .whitespaces)
+                        
+                        currentListItems.append(cleanedContent)
+                        
+                        // Create nested list item
+                        let newItem = MarkdownListItem(content: cleanedContent, level: originalIndent > 0 ? originalIndent : 0)
+                        currentNestedListItems.append(newItem)
+                        
+                        continue
+                    }
+                }
+            }
+            
+            // If we were in a list and now we're not, check if it's just an empty line
+            // Only finalize the list if it's not an empty line separating list items
             if (currentSectionType == .bulletList || currentSectionType == .numberedList) && 
-               !isBulletPoint && !isNumberedItem {
+               !isBulletPoint && !isNumberedItem && !isEmptyLine {
                 finalizeCurrentSection()
                 currentSectionType = .paragraph
             }
             
-            // Regular paragraph content
-            if currentSectionType != .paragraph {
+            // Regular paragraph content - skip empty lines within lists
+            if isEmptyLine && (currentSectionType == .bulletList || currentSectionType == .numberedList) {
+                // Skip adding empty lines to lists - they're just separators
+                continue
+            } else if currentSectionType != .paragraph {
                 finalizeCurrentSection()
                 currentSectionType = .paragraph
             }
@@ -1134,6 +1208,95 @@ struct CustomMarkdownContentParser: View {
         finalizeCurrentSection()
         
         return sections
+    }
+    
+    // Preprocess text to maintain list continuity across empty lines and nested lists of different types
+    private func preprocessListSections(_ text: String) -> String {
+        let lines = text.components(separatedBy: "\n")
+        var processedLines: [String] = []
+        
+        // Track list state
+        var inList = false
+        var lastListItemIndex = -1
+        var consecutiveEmptyLineCount = 0
+        var listType: MarkdownSectionType? = nil
+        
+        // Process each line
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            
+            // Check if this is a list item
+            let isBulletItem = trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ")
+            let isNumberedItem = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) != nil
+            let isListItem = isBulletItem || isNumberedItem
+            
+            // Check if this is an empty line
+            let isEmptyLine = trimmed.isEmpty
+            
+            if isListItem {
+                // Starting or continuing a list
+                if !inList {
+                    // Starting a new list
+                    inList = true
+                    listType = isBulletItem ? .bulletList : .numberedList
+                }
+                
+                // Reset empty line counter
+                consecutiveEmptyLineCount = 0
+                lastListItemIndex = processedLines.count
+                processedLines.append(line)
+            } else if isEmptyLine && inList {
+                // Keep track of empty lines in a list
+                consecutiveEmptyLineCount += 1
+                
+                // Only add the first empty line as a marker, but don't add more
+                if consecutiveEmptyLineCount == 1 {
+                    processedLines.append(line)
+                }
+                
+                // If we have too many empty lines in a row, end the list
+                if consecutiveEmptyLineCount > 2 {
+                    inList = false
+                    listType = nil
+                }
+            } else if inList {
+                // Check if this could be content that belongs to a list item
+                if trimmed.isEmpty {
+                    // An empty line after a list item - could be separating list items
+                    // We already handled consecutive empty lines above
+                    processedLines.append(line)
+                } else if index < lines.count - 1 {
+                    // Check if the next line is a list item
+                    let nextLine = lines[index + 1].trimmingCharacters(in: .whitespaces)
+                    let nextIsBulletItem = nextLine.hasPrefix("- ") || nextLine.hasPrefix("* ") || nextLine.hasPrefix("• ")
+                    let nextIsNumberedItem = nextLine.range(of: "^\\d+\\. ", options: .regularExpression) != nil
+                    
+                    if nextIsBulletItem || nextIsNumberedItem {
+                        // This might be regular content between list items - keep in list
+                        processedLines.append(line)
+                    } else {
+                        // This is not part of the list
+                        inList = false
+                        listType = nil
+                        processedLines.append(line)
+                    }
+                } else {
+                    // Last line, not a list item - end the list
+                    inList = false
+                    listType = nil
+                    processedLines.append(line)
+                }
+                
+                // Reset counter since this wasn't an empty line
+                consecutiveEmptyLineCount = 0
+            } else {
+                // Regular content, not in a list
+                processedLines.append(line)
+                consecutiveEmptyLineCount = 0
+            }
+        }
+        
+        return processedLines.joined(separator: "\n")
     }
 }
 
@@ -1156,6 +1319,7 @@ struct MarkdownListItem: Identifiable {
     let content: String
     let level: Int // Nesting level: 0 for top level, 1 for first indent, etc.
     var children: [MarkdownListItem] = []
+    var originalText: String? = nil // Original line text before processing, useful for preserving numbering
 }
 
 // Define a structure for markdown sections
