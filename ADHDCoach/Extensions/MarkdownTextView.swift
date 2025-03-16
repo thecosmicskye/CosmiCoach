@@ -896,7 +896,36 @@ struct CustomMarkdownContentParser: View {
     // Parse markdown into sections with support for nested lists
     private func parseMarkdownSections(_ text: String) -> [MarkdownSection] {
         // Preprocess the text to combine list sections that are separated by empty lines
-        let preprocessedText = preprocessListSections(text)
+        var preprocessedText = preprocessListSections(text)
+        
+        // Fix spacing between paragraphs and lists
+        // Handle cases where paragraphs and lists have excessive newlines between them
+        // This is the key fix to ensure consistent list rendering
+        
+        // First, normalize newlines to find paragraphs followed by lists
+        let paragraphFollowedByListPattern = "([^\\n])(\\n{2,})(- |\\* |• |\\d+\\. )"
+        if let regex = try? NSRegularExpression(pattern: paragraphFollowedByListPattern, options: []) {
+            let range = NSRange(location: 0, length: preprocessedText.count)
+            // Normalize to exactly one newline between paragraph and list
+            preprocessedText = regex.stringByReplacingMatches(
+                in: preprocessedText,
+                options: [],
+                range: range,
+                withTemplate: "$1\n$3"
+            )
+        }
+        
+        // Also fix cases where there's a line with just whitespace between paragraph and list
+        let whitespaceLinePattern = "([^\\n])(\\n\\s+\\n)(- |\\* |• |\\d+\\. )"
+        if let regex = try? NSRegularExpression(pattern: whitespaceLinePattern, options: []) {
+            let range = NSRange(location: 0, length: preprocessedText.count)
+            preprocessedText = regex.stringByReplacingMatches(
+                in: preprocessedText,
+                options: [],
+                range: range,
+                withTemplate: "$1\n$3"
+            )
+        }
         
         let lines = preprocessedText.components(separatedBy: "\n")
         var sections: [MarkdownSection] = []
@@ -1262,8 +1291,21 @@ struct CustomMarkdownContentParser: View {
                     processedLines.append(line)
                 }
                 
-                // If we have too many empty lines in a row, end the list
-                if consecutiveEmptyLineCount > 2 {
+                // Look ahead to see if another list item is coming after empty lines
+                var foundListItem = false
+                for lookAheadIndex in (index + 1)..<min(index + 4, lines.count) {
+                    let lookAheadLine = lines[lookAheadIndex].trimmingCharacters(in: .whitespaces)
+                    let isLookAheadBulletItem = lookAheadLine.hasPrefix("- ") || lookAheadLine.hasPrefix("* ") || lookAheadLine.hasPrefix("• ")
+                    let isLookAheadNumberedItem = lookAheadLine.range(of: "^\\d+\\. ", options: .regularExpression) != nil
+                    
+                    if isLookAheadBulletItem || isLookAheadNumberedItem {
+                        foundListItem = true
+                        break
+                    }
+                }
+                
+                // If we have too many empty lines in a row and no list item ahead, end the list
+                if consecutiveEmptyLineCount > 2 && !foundListItem {
                     inList = false
                     listType = nil
                 }
@@ -1274,12 +1316,20 @@ struct CustomMarkdownContentParser: View {
                     // We already handled consecutive empty lines above
                     processedLines.append(line)
                 } else if index < lines.count - 1 {
-                    // Check if the next line is a list item
-                    let nextLine = lines[index + 1].trimmingCharacters(in: .whitespaces)
-                    let nextIsBulletItem = nextLine.hasPrefix("- ") || nextLine.hasPrefix("* ") || nextLine.hasPrefix("• ")
-                    let nextIsNumberedItem = nextLine.range(of: "^\\d+\\. ", options: .regularExpression) != nil
+                    // Check if any upcoming line (within a few lines) is a list item
+                    var foundListItem = false
+                    for lookAheadIndex in (index + 1)..<min(index + 4, lines.count) {
+                        let lookAheadLine = lines[lookAheadIndex].trimmingCharacters(in: .whitespaces)
+                        let isLookAheadBulletItem = lookAheadLine.hasPrefix("- ") || lookAheadLine.hasPrefix("* ") || lookAheadLine.hasPrefix("• ")
+                        let isLookAheadNumberedItem = lookAheadLine.range(of: "^\\d+\\. ", options: .regularExpression) != nil
+                        
+                        if isLookAheadBulletItem || isLookAheadNumberedItem {
+                            foundListItem = true
+                            break
+                        }
+                    }
                     
-                    if nextIsBulletItem || nextIsNumberedItem {
+                    if foundListItem {
                         // This might be regular content between list items - keep in list
                         processedLines.append(line)
                     } else {
