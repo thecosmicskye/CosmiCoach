@@ -108,16 +108,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 // Preload markdown in the background to improve perceived performance
                 Task(priority: .background) {
                     // Process AI messages only since user messages don't use markdown
-                    let processor = MarkdownProcessor()
-                    
                     for message in loadedMessages where !message.isUser {
-                        // Skip if already in cache
-                        if MarkdownCache.shared.getFromCache(message.content) != nil {
-                            continue
-                        }
-                        
                         // Process in background with lowest priority
-                        _ = await processor.processMarkdown(message.content)
+                        _ = await MarkdownCache.shared.getAttributedString(for: message.content)
                         
                         // Small delay to avoid blocking the thread completely
                         try? await Task.sleep(nanoseconds: 5_000_000) // 5ms between messages

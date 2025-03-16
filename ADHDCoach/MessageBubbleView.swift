@@ -33,34 +33,23 @@ struct MessageBubbleView: View {
                 } else {
                     // Claude message with markdown support
                     Group {
-                        if !message.isComplete {
-                            // For streaming responses, use a plain text view that updates more frequently
-                            Text(try! AttributedString(markdown: message.content, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-                                .lineSpacing(1.5)
-                                .padding(EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2))
-                                .background(Color.clear)
-                                .cornerRadius(16)
-                                .textSelection(.enabled)
-                                .id("streaming-\(message.id)-\(message.content.count)")
-                        } else {
-                            // For completed messages, use the cached markdown view
-                            MarkdownTextView(
-                                markdown: message.content,
-                                isComplete: true
-                            )
-                            .lineSpacing(1.5)
-                            .padding(EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2))
-                            .background(Color.clear)
-                            .cornerRadius(16)
-                            .textSelection(.enabled)
-                            .id("complete-\(message.id)")
-                            .onAppear {
-                                // Safety check: if message is complete but chatManager still shows processing
-                                if message.isComplete && chatManager.isProcessing {
-                                    print("⚠️ Found complete message while ChatManager still processing - resetting state")
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                        chatManager.isProcessing = false
-                                    }
+                        // Our custom renderer handles both markdown and line breaks
+                        MarkdownTextView(
+                            markdown: message.content,
+                            isComplete: message.isComplete
+                        )
+                        .lineSpacing(8) // Increase line spacing to improve readability and line break visibility
+                        .padding(EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2))
+                        .background(Color.clear)
+                        .cornerRadius(16)
+                        .textSelection(.enabled)
+                        .id(message.isComplete ? "complete-\(message.id)" : "streaming-\(message.id)-\(message.content.count)")
+                        .onAppear {
+                            // Safety check: if message is complete but chatManager still shows processing
+                            if message.isComplete && chatManager.isProcessing {
+                                print("⚠️ Found complete message while ChatManager still processing - resetting state")
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                    chatManager.isProcessing = false
                                 }
                             }
                         }

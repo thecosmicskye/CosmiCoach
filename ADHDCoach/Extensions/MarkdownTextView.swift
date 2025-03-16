@@ -1,244 +1,4 @@
 import SwiftUI
-import Markdown
-
-// Forward declaration of MarkdownProcessor
-class MarkdownProcessor {
-    func processMarkdown(_ text: String) async -> AttributedString {
-        // This will run on a background thread thanks to the async function
-        do {
-            // Add error handling to prevent crashes
-            let document = Document(parsing: text)
-            return createAttributedString(from: document)
-        } catch {
-            print("Error parsing markdown: \(error)")
-            // Return the plain text if markdown parsing fails
-            return AttributedString(text)
-        }
-    }
-    
-    private func createAttributedString(from document: Document) -> AttributedString {
-        // Convert the Markdown document to NSAttributedString
-        var attributedString = AttributedString("")
-        
-        do {
-            for child in document.children {
-                attributedString.append(renderBlock(child))
-            }
-            return attributedString
-        } catch {
-            print("Error creating attributed string: \(error)")
-            // Return a simple attributed string with the document's plain text
-            return AttributedString(document.format())
-        }
-    }
-    
-    private func renderBlock(_ block: Markup) -> AttributedString {
-        do {
-            switch block {
-            case let paragraph as Paragraph:
-                var content = AttributedString("")
-                for child in paragraph.children {
-                    content.append(renderInline(child))
-                }
-                content.append(AttributedString("\n\n"))
-                return content
-            
-            case let heading as Heading:
-                var content = AttributedString("")
-                for child in heading.children {
-                    content.append(renderInline(child))
-                }
-                
-                // Set heading level style
-                var headingAttributes: AttributeContainer = AttributeContainer()
-                switch heading.level {
-                case 1:
-                    headingAttributes.font = .system(size: 28, weight: .bold)
-                case 2:
-                    headingAttributes.font = .system(size: 24, weight: .bold)
-                case 3:
-                    headingAttributes.font = .system(size: 20, weight: .bold)
-                case 4:
-                    headingAttributes.font = .system(size: 18, weight: .semibold)
-                case 5:
-                    headingAttributes.font = .system(size: 16, weight: .semibold)
-                case 6:
-                    headingAttributes.font = .system(size: 14, weight: .semibold)
-                default:
-                    headingAttributes.font = .system(size: 16, weight: .regular)
-                }
-                
-                content.mergeAttributes(headingAttributes)
-                content.append(AttributedString("\n\n"))
-                return content
-                
-            case let blockQuote as BlockQuote:
-                var content = AttributedString("")
-                for child in blockQuote.children {
-                    content.append(renderBlock(child))
-                }
-                
-                var attributes = AttributeContainer()
-                attributes.foregroundColor = .secondary
-                attributes.backgroundColor = Color(.systemGray6)
-                
-                content.mergeAttributes(attributes)
-                return content
-                
-            case let list as UnorderedList:
-                var content = AttributedString("")
-                for item in list.listItems {
-                    content.append(AttributedString("• "))
-                    for child in item.children {
-                        content.append(renderBlock(child))
-                    }
-                }
-                return content
-                
-            case let list as OrderedList:
-                var content = AttributedString("")
-                for (index, item) in list.listItems.enumerated() {
-                    content.append(AttributedString("\(index + 1). "))
-                    for child in item.children {
-                        content.append(renderBlock(child))
-                    }
-                }
-                return content
-                
-            case let codeBlock as CodeBlock:
-                var content = AttributedString(codeBlock.code)
-                var attributes = AttributeContainer()
-                attributes.font = .system(.body, design: .monospaced)
-                attributes.backgroundColor = Color(.systemGray6)
-                content.mergeAttributes(attributes)
-                content.append(AttributedString("\n\n"))
-                return content
-                
-            case let image as Markdown.Image:
-                // We can't directly display images in AttributedString
-                // but we can indicate that an image would be here
-                let altText = image.plainText
-                var content = AttributedString("[Image: \(altText)]")
-                var attributes = AttributeContainer()
-                attributes.foregroundColor = .blue
-                content.mergeAttributes(attributes)
-                return content
-                
-            case let html as HTMLBlock:
-                // For HTML blocks, just display them as plain text
-                var content = AttributedString(html.rawHTML)
-                var attributes = AttributeContainer()
-                attributes.font = .system(.body, design: .monospaced)
-                content.mergeAttributes(attributes)
-                return content
-                
-            case let thematicBreak as ThematicBreak:
-                return AttributedString("---\n\n")
-                
-            default:
-                // Default fallback for other block types
-                return AttributedString(block.format() + "\n\n")
-            }
-        } catch {
-            print("Error rendering block: \(error)")
-            // Return a simple block with the content
-            return AttributedString(block.format() + "\n\n")
-        }
-    }
-    
-    private func renderInline(_ inline: Markup) -> AttributedString {
-        do {
-            switch inline {
-            case let text as Markdown.Text:
-                return AttributedString(text.string)
-                
-            case let emphasis as Emphasis:
-                var content = AttributedString("")
-                for child in emphasis.children {
-                    content.append(renderInline(child))
-                }
-                
-                var attributes = AttributeContainer()
-                attributes.font = .italicSystemFont(ofSize: 16)
-                content.mergeAttributes(attributes)
-                return content
-                
-            case let strong as Strong:
-                var content = AttributedString("")
-                for child in strong.children {
-                    content.append(renderInline(child))
-                }
-                
-                var attributes = AttributeContainer()
-                attributes.font = .boldSystemFont(ofSize: 16)
-                content.mergeAttributes(attributes)
-                return content
-                
-            case let code as InlineCode:
-                var content = AttributedString(code.code)
-                var attributes = AttributeContainer()
-                attributes.font = .system(.body, design: .monospaced)
-                attributes.backgroundColor = Color(.systemGray6)
-                content.mergeAttributes(attributes)
-                return content
-                
-            case let link as Markdown.Link:
-                var content = AttributedString("")
-                for child in link.children {
-                    content.append(renderInline(child))
-                }
-                
-                var attributes = AttributeContainer()
-                attributes.foregroundColor = .blue
-                attributes.underlineStyle = .single
-                if let url = URL(string: link.destination ?? "") {
-                    attributes.link = url
-                }
-                content.mergeAttributes(attributes)
-                return content
-                
-            case let image as Markdown.Image:
-                // Simplified image handling
-                var content = AttributedString("[Image]")
-                var attributes = AttributeContainer()
-                attributes.foregroundColor = .blue
-                content.mergeAttributes(attributes)
-                return content
-                
-            default:
-                // Default fallback
-                return AttributedString(inline.format())
-            }
-        } catch {
-            print("Error rendering inline: \(error)")
-            // Return a simple string with the inline content
-            return AttributedString(inline.format())
-        }
-    }
-}
-
-/// A property wrapper that delays initialization until the value is first accessed
-@propertyWrapper
-struct LazyProcessed<Value> {
-    private var initializer: () -> Value
-    private var storage: Value?
-    
-    init(wrappedValue: @autoclosure @escaping () -> Value) {
-        self.initializer = wrappedValue
-    }
-    
-    var wrappedValue: Value {
-        mutating get {
-            if storage == nil {
-                storage = initializer()
-            }
-            return storage!
-        }
-        set {
-            storage = newValue
-        }
-    }
-}
 
 /// A shared cache for processed markdown to avoid reprocessing the same content
 class MarkdownCache {
@@ -297,7 +57,7 @@ class MarkdownCache {
         }
     }
     
-    func getAttributedString(for markdown: String, processor: MarkdownProcessor) async -> AttributedString {
+    func getAttributedString(for markdown: String) async -> AttributedString {
         // Generate a unique key for the markdown content
         let key = generateCacheKey(for: markdown)
         
@@ -318,7 +78,7 @@ class MarkdownCache {
         }
         
         // Process, cache, and persist
-        let processed = await processor.processMarkdown(markdown)
+        let processed = await processMarkdown(markdown)
         addToCache(key, attributedString: processed)
         saveAttributedStringToDisk(key: key, attributedString: processed)
         
@@ -330,6 +90,236 @@ class MarkdownCache {
         
         return processed
     }
+    
+    // Simplified preprocessing for streaming content
+    func preprocessMarkdownForStreaming(_ text: String) -> String {
+        // Use the same approach as regular preprocessing for consistency
+        // Replace all line breaks with special marker sequences before parsing
+        let processedText = text
+            .replacingOccurrences(of: "\n\n", with: "\n\u{00A0}\n")  // Double newlines preserved with non-breaking space
+            .replacingOccurrences(of: "\n\n\n", with: "\n\u{00A0}\n\u{00A0}\n")  // Triple newlines
+        
+        // Process lines separately to ensure proper spacing
+        var lines = processedText.components(separatedBy: .newlines)
+        var processedLines: [String] = []
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            
+            // Add extra spacing before and after headings for better visual separation
+            if trimmed.hasPrefix("# ") || trimmed.hasPrefix("## ") || 
+               trimmed.hasPrefix("### ") || trimmed.hasPrefix("#### ") {
+                // If not at the beginning of the text, add a space before the heading
+                if !processedLines.isEmpty && !processedLines.last!.isEmpty {
+                    processedLines.append("\u{00A0}")
+                }
+                
+                // Add the heading
+                processedLines.append(line)
+                
+                // Add extra space after heading unless we're at the end
+                if lines.last != line {
+                    processedLines.append("\u{00A0}")
+                }
+                continue
+            }
+            
+            // Always add the line, replacing empty lines with non-breaking space
+            if trimmed.isEmpty {
+                processedLines.append("\u{00A0}")  // Non-breaking space to preserve empty lines
+            } else {
+                processedLines.append(line)
+            }
+        }
+        
+        return processedLines.joined(separator: "\n")
+    }
+    
+    private func processMarkdown(_ text: String) async -> AttributedString {
+        // Preprocess the markdown to better handle code blocks
+        let preprocessedText = self.preprocessMarkdown(text)
+        
+        // Create the markdown options
+        let options = AttributedString.MarkdownParsingOptions(
+            allowsExtendedAttributes: true,
+            interpretedSyntax: .full,
+            failurePolicy: .returnPartiallyParsedIfPossible,
+            languageCode: nil
+        )
+        
+        // Process the markdown on a background thread
+        return await Task.detached(priority: .userInitiated) {
+            do {
+                // Process with full markdown support
+                var attributedString = try AttributedString(markdown: preprocessedText, options: options)
+                
+                // Style code blocks with a monospaced font and background color
+                // We'll use a simpler approach to style code spans
+                var codeFont = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+                
+                // Apply styling manually by scanning for patterns
+                // For inline code blocks with backticks
+                do {
+                    // NSAttributedString constructor is not optional, so we need a do-catch
+                    let nsString = NSMutableAttributedString(attributedString)
+                    
+                    // Apply monospaced font to code spans with backticks
+                    let pattern = "`[^`]+`"
+                    if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                        let range = NSRange(location: 0, length: nsString.length)
+                        regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                            if let matchRange = match?.range {
+                                nsString.addAttribute(.font, value: codeFont, range: matchRange)
+                                nsString.addAttribute(.backgroundColor, value: UIColor(white: 0.95, alpha: 1.0), range: matchRange)
+                            }
+                        }
+                    }
+                    
+                    // Apply custom styling to headings
+                    // H1 headings
+                    let h1Pattern = "^# [^\n]+"
+                    if let regex = try? NSRegularExpression(pattern: h1Pattern, options: [.anchorsMatchLines]) {
+                        let range = NSRange(location: 0, length: nsString.length)
+                        regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                            if let matchRange = match?.range {
+                                let font = UIFont.systemFont(ofSize: 28, weight: .bold)
+                                nsString.addAttribute(.font, value: font, range: matchRange)
+                            }
+                        }
+                    }
+                    
+                    // H2 headings
+                    let h2Pattern = "^## [^\n]+"
+                    if let regex = try? NSRegularExpression(pattern: h2Pattern, options: [.anchorsMatchLines]) {
+                        let range = NSRange(location: 0, length: nsString.length)
+                        regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                            if let matchRange = match?.range {
+                                let font = UIFont.systemFont(ofSize: 24, weight: .bold)
+                                nsString.addAttribute(.font, value: font, range: matchRange)
+                            }
+                        }
+                    }
+                    
+                    // H3 headings
+                    let h3Pattern = "^### [^\n]+"
+                    if let regex = try? NSRegularExpression(pattern: h3Pattern, options: [.anchorsMatchLines]) {
+                        let range = NSRange(location: 0, length: nsString.length)
+                        regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                            if let matchRange = match?.range {
+                                let font = UIFont.systemFont(ofSize: 20, weight: .semibold)
+                                nsString.addAttribute(.font, value: font, range: matchRange)
+                            }
+                        }
+                    }
+                    
+                    // H4 headings
+                    let h4Pattern = "^#### [^\n]+"
+                    if let regex = try? NSRegularExpression(pattern: h4Pattern, options: [.anchorsMatchLines]) {
+                        let range = NSRange(location: 0, length: nsString.length)
+                        regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                            if let matchRange = match?.range {
+                                let font = UIFont.systemFont(ofSize: 18, weight: .medium)
+                                nsString.addAttribute(.font, value: font, range: matchRange)
+                            }
+                        }
+                    }
+                    
+                    // Try to convert back to AttributedString
+                    attributedString = try AttributedString(nsString)
+                } catch {
+                    print("Error applying code block styling: \(error)")
+                }
+                
+                // Ensure proper line breaks are preserved
+                // This is needed because SwiftUI Text view sometimes collapses multiple consecutive newlines
+                let paragraphStyle = NSMutableParagraphStyle()
+                paragraphStyle.lineSpacing = 1.2
+                paragraphStyle.paragraphSpacing = 10
+                paragraphStyle.headIndent = 0
+                paragraphStyle.firstLineHeadIndent = 0
+                
+                // We need to force paragraph style to preserve line breaks
+                do {
+                    let nsString = NSMutableAttributedString(attributedString)
+                    // Apply paragraph style to entire string
+                    nsString.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: nsString.length))
+                    // Try to convert back to AttributedString
+                    attributedString = try AttributedString(nsString)
+                } catch {
+                    // If conversion fails, fall back to attribute container approach
+                    var container = AttributeContainer()
+                    container.paragraphStyle = paragraphStyle
+                    attributedString.mergeAttributes(container)
+                }
+                
+                return attributedString
+            } catch {
+                print("Error parsing markdown: \(error)")
+                // Return the plain text if markdown parsing fails
+                return AttributedString(text)
+            }
+        }.value
+    }
+    
+    // Preprocess markdown to better handle code blocks, line breaks, and headings
+    func preprocessMarkdown(_ text: String) -> String {
+        // Replace all line breaks with special marker sequences before parsing
+        // This approach is more direct and ensures line breaks aren't collapsed
+        let processedText = text
+            .replacingOccurrences(of: "\n\n", with: "\n\u{00A0}\n")  // Double newlines preserved with non-breaking space
+            .replacingOccurrences(of: "\n\n\n", with: "\n\u{00A0}\n\u{00A0}\n")  // Triple newlines
+        
+        // Process code blocks and headings separately to ensure they have proper padding
+        var lines = processedText.components(separatedBy: .newlines)
+        var processedLines: [String] = []
+        var inCodeBlock = false
+        
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            
+            // Special handling for headings - add extra space before and after
+            if !inCodeBlock && (trimmed.hasPrefix("# ") || trimmed.hasPrefix("## ") || 
+                               trimmed.hasPrefix("### ") || trimmed.hasPrefix("#### ")) {
+                // If this isn't the first line and the previous line isn't empty, add an empty line before
+                if index > 0 && !processedLines.last!.isEmpty && !processedLines.last!.contains("\u{00A0}") {
+                    processedLines.append("\u{00A0}")
+                }
+                
+                // Add the heading
+                processedLines.append(line)
+                
+                // If this isn't the last line and the next line isn't empty, add an empty line after
+                if index < lines.count - 1 && !lines[index + 1].trimmingCharacters(in: .whitespaces).isEmpty {
+                    processedLines.append("\u{00A0}")
+                }
+                continue
+            }
+            
+            if trimmed.hasPrefix("```") {
+                inCodeBlock = !inCodeBlock
+                // Add extra spacing for code blocks
+                if inCodeBlock {
+                    // Start of code block - add a line with non-breaking space before it
+                    processedLines.append("\u{00A0}")
+                } else {
+                    // End of code block - add a line with non-breaking space after it
+                    processedLines.append(line)
+                    processedLines.append("\u{00A0}")
+                    continue
+                }
+            }
+            
+            // Always add the line, replacing empty lines with non-breaking space
+            if trimmed.isEmpty && !inCodeBlock {
+                processedLines.append("\u{00A0}")  // Non-breaking space to preserve empty lines
+            } else {
+                processedLines.append(line)
+            }
+        }
+        
+        return processedLines.joined(separator: "\n")
+    }
+    
     
     // Generate a deterministic cache key from markdown content
     private func generateCacheKey(for markdown: String) -> String {
@@ -491,14 +481,14 @@ class MarkdownCache {
     }
 }
 
-// Rename our view to avoid conflict with Markdown.Text
+// Global dictionary for storing rendered AttributedStrings (only for completed messages)
+fileprivate var globalRenderedContent: [String: AttributedString] = [:]
+fileprivate let renderingQueue = DispatchQueue(label: "com.cosmiccoach.markdown.rendering", attributes: .concurrent)
+
 struct MarkdownTextView: View {
     let markdown: String
-    // Default isComplete to false, MessageBubbleView can pass this from the message
     var isComplete: Bool = false
     
-    // By adding the @EnvironmentObject here but not reinitializing it,
-    // we ensure the view is stable across re-renders
     @EnvironmentObject private var themeManager: ThemeManager
     
     var body: some View {
@@ -508,27 +498,19 @@ struct MarkdownTextView: View {
     }
 }
 
-// Global dictionary for storing rendered AttributedStrings (only for completed messages)
-fileprivate var globalRenderedContent: [String: AttributedString] = [:]
-fileprivate let renderingQueue = DispatchQueue(label: "com.cosmiccoach.markdown.rendering", attributes: .concurrent)
-
 // A separate component that handles the actual markdown rendering and caching
 struct CachedMarkdownContent: View {
     let markdown: String
-    // Check if this is a complete message or still streaming
     let isCompleteMessage: Bool
     
-    // Use StateObject to maintain view state
     @StateObject private var viewModel = MarkdownViewModel()
     
-    // Access global rendered content
     @State private var renderedContent: AttributedString?
-    @State private var isLoading: Bool = true
+    @State private var isLoading: Bool = false
     @State private var lastProcessedContent: String = ""
     
     // Fetch from global cache
     private func fetchGlobalContent() -> AttributedString? {
-        // Only use cache for complete messages
         guard isCompleteMessage else { return nil }
         
         var result: AttributedString?
@@ -540,7 +522,6 @@ struct CachedMarkdownContent: View {
     
     // Store to global cache
     private func storeGlobalContent(_ content: AttributedString) {
-        // Only cache complete messages
         guard isCompleteMessage else { return }
         
         renderingQueue.async(flags: .barrier) {
@@ -548,21 +529,316 @@ struct CachedMarkdownContent: View {
         }
     }
     
-    var body: some View {
-        Group {
-            // Just render the content directly without ZStack loading states
-            // This prevents UI blocking while ensuring content is visible immediately
-            if let cachedContent = renderedContent {
-                // Use cached content if we have it
-                Text(cachedContent)
-            } else if !viewModel.attributedString.characters.isEmpty {
-                // Use processed content if we have it
-                Text(viewModel.attributedString)
+    // Process text with line breaks and markdown formatting
+    private func formatWithLineBreaks(_ text: String) -> Text {
+        // First detect if we're dealing with a multiline code block - handle differently
+        if text.contains("```") {
+            return handleCodeBlocks(text)
+        }
+        
+        // Split by lines and create a text view with explicit line breaks
+        let lines = text.components(separatedBy: "\n")
+        var result = Text("")
+        
+        // Handle special case of lists
+        var inList = false
+        var currentList: [String] = []
+        
+        for (index, line) in lines.enumerated() {
+            // For empty lines, use a space to ensure the line break is preserved
+            let lineText = line.isEmpty ? " " : line
+            
+            // Check if line is a heading (# Heading)
+            let trimmed = lineText.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("# ") || trimmed.hasPrefix("## ") || 
+               trimmed.hasPrefix("### ") || trimmed.hasPrefix("#### ") {
+                // Process heading
+                let headingText = formatHeading(trimmed)
+                result = result + headingText
+                
+                // Add line break after heading
+                if index < lines.count - 1 {
+                    result = result + Text("\n")
+                }
+                continue
+            }
+            
+            // Check if line is a list item
+            let isBulletPoint = trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ")
+            let isNumberedItem = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) != nil
+            
+            if isBulletPoint || isNumberedItem {
+                // Either continue or start a list
+                inList = true
+                currentList.append(lineText)
+                
+                // If this is the last line or next line is not a list item, process the list
+                if index == lines.count - 1 || 
+                   !(lines[index + 1].trimmingCharacters(in: .whitespaces).hasPrefix("- ") || 
+                     lines[index + 1].trimmingCharacters(in: .whitespaces).hasPrefix("* ") ||
+                     lines[index + 1].trimmingCharacters(in: .whitespaces).hasPrefix("• ") ||
+                     lines[index + 1].trimmingCharacters(in: .whitespaces).range(of: "^\\d+\\. ", options: .regularExpression) != nil) {
+                    
+                    // Process and add the list
+                    let listText = processListItems(currentList)
+                    result = result + listText
+                    
+                    // Reset list tracking
+                    inList = false
+                    currentList = []
+                    
+                    // Add line break if needed
+                    if index < lines.count - 1 {
+                        result = result + Text("\n")
+                    }
+                }
+                
+                // Skip to next iteration since we've handled this line as part of a list
+                continue
+            } else if inList {
+                // This line is not a list item but we were in a list - process the list before continuing
+                let listText = processListItems(currentList)
+                result = result + listText
+                
+                // Reset list tracking
+                inList = false
+                currentList = []
+                
+                // Add line break
+                result = result + Text("\n")
+            }
+            
+            // Parse markdown for each line individually for non-list items
+            let markdownText: Text
+            if lineText.contains("**") || lineText.contains("*") || lineText.contains("`") || 
+               lineText.contains("[") || lineText.contains("#") {
+                // Try to apply markdown to this line
+                do {
+                    let options = AttributedString.MarkdownParsingOptions(
+                        allowsExtendedAttributes: true,
+                        interpretedSyntax: .inlineOnly,
+                        failurePolicy: .returnPartiallyParsedIfPossible
+                    )
+                    var attrs = try AttributedString(markdown: lineText, options: options)
+                    
+                    // Check for code blocks and apply monospaced font
+                    if lineText.contains("`") {
+                        let nsString = NSMutableAttributedString(attrs)
+                        let font = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+                        let pattern = "`[^`]+`"
+                        if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                            let range = NSRange(location: 0, length: nsString.length)
+                            regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                                if let matchRange = match?.range {
+                                    nsString.addAttribute(.font, value: font, range: matchRange)
+                                    nsString.addAttribute(.backgroundColor, value: UIColor(white: 0.95, alpha: 1.0), range: matchRange)
+                                }
+                            }
+                        }
+                        attrs = try AttributedString(nsString)
+                    }
+                    
+                    markdownText = Text(attrs)
+                } catch {
+                    markdownText = Text(lineText)
+                }
             } else {
-                // Show plain text initially while rendering in background
-                Text(markdown)
+                markdownText = Text(lineText)
+            }
+            
+            // Add this line to the result
+            result = result + markdownText
+            
+            // Add line break after each line except the last one
+            if index < lines.count - 1 {
+                result = result + Text("\n")
             }
         }
+        
+        // Process any remaining list items
+        if inList && !currentList.isEmpty {
+            let listText = processListItems(currentList)
+            result = result + listText
+        }
+        
+        return result
+    }
+    
+    // Format headings with appropriate styles
+    private func formatHeading(_ text: String) -> Text {
+        if text.hasPrefix("# ") {
+            // Heading 1
+            let headingContent = text.dropFirst(2)
+            return Text(String(headingContent))
+                .font(.system(size: 28, weight: .bold))
+                .foregroundColor(.primary)
+        } else if text.hasPrefix("## ") {
+            // Heading 2
+            let headingContent = text.dropFirst(3)
+            return Text(String(headingContent))
+                .font(.system(size: 24, weight: .bold))
+                .foregroundColor(.primary)
+        } else if text.hasPrefix("### ") {
+            // Heading 3
+            let headingContent = text.dropFirst(4)
+            return Text(String(headingContent))
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.primary)
+        } else if text.hasPrefix("#### ") {
+            // Heading 4
+            let headingContent = text.dropFirst(5)
+            return Text(String(headingContent))
+                .font(.system(size: 18, weight: .medium))
+                .foregroundColor(.primary)
+        } else {
+            // Fallback
+            return Text(text)
+        }
+    }
+    
+    // Process a list of items with proper formatting
+    private func processListItems(_ items: [String]) -> Text {
+        var result = Text("")
+        
+        for (index, item) in items.enumerated() {
+            let trimmed = item.trimmingCharacters(in: .whitespaces)
+            var itemContent = trimmed
+            
+            // Extract the content without the bullet/number
+            if trimmed.hasPrefix("- ") {
+                itemContent = String(trimmed.dropFirst(2))
+            } else if trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ") {
+                itemContent = String(trimmed.dropFirst(2))
+            } else if let range = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) {
+                itemContent = String(trimmed[range.upperBound...])
+            }
+            
+            // Format the list item with bullet point
+            let bulletPoint = Text("• ").fontWeight(.bold)
+            
+            // Format the content with markdown if needed
+            let contentText: Text
+            do {
+                let options = AttributedString.MarkdownParsingOptions(
+                    allowsExtendedAttributes: true,
+                    interpretedSyntax: .inlineOnly,
+                    failurePolicy: .returnPartiallyParsedIfPossible
+                )
+                
+                let attrs = try AttributedString(markdown: itemContent, options: options)
+                contentText = Text(attrs)
+            } catch {
+                contentText = Text(itemContent)
+            }
+            
+            // Add bullet and content
+            let listItemText = bulletPoint + contentText
+            
+            // Add to result with padding
+            result = result + listItemText
+            
+            // Add line break after each item except the last one
+            if index < items.count - 1 {
+                result = result + Text("\n")
+            }
+        }
+        
+        return result
+    }
+    
+    // Handle multiline code blocks
+    private func handleCodeBlocks(_ text: String) -> Text {
+        let lines = text.components(separatedBy: "\n")
+        var result = Text("")
+        var inCodeBlock = false
+        var codeBlockContent = ""
+        
+        for (index, line) in lines.enumerated() {
+            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                inCodeBlock = !inCodeBlock
+                
+                if !inCodeBlock && !codeBlockContent.isEmpty {
+                    // End of code block - render the collected content
+                    // We need to use plain Text without styling since we're concatenating
+                    let codeText = Text(codeBlockContent)
+                        .font(.system(.body, design: .monospaced))
+                    
+                    // Can't apply view modifiers when concatenating Text objects
+                    result = result + codeText
+                    codeBlockContent = ""
+                }
+                
+                // Skip the ``` line itself
+                if index < lines.count - 1 {
+                    result = result + Text("\n")
+                }
+                continue
+            }
+            
+            if inCodeBlock {
+                // Collect code block content
+                codeBlockContent += line + (index < lines.count - 1 ? "\n" : "")
+            } else {
+                // Regular line - process with markdown
+                let lineText = line.isEmpty ? " " : line
+                
+                // Check if line is a heading (# Heading)
+                let trimmed = lineText.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("# ") || trimmed.hasPrefix("## ") || 
+                   trimmed.hasPrefix("### ") || trimmed.hasPrefix("#### ") {
+                    // Process heading
+                    let headingText = formatHeading(trimmed)
+                    result = result + headingText
+                    
+                    // Add line break after heading
+                    if index < lines.count - 1 {
+                        result = result + Text("\n")
+                    }
+                    continue
+                }
+                
+                // Use the same markdown processing as before for non-headings
+                let markdownText: Text
+                if lineText.contains("**") || lineText.contains("*") || lineText.contains("`") || 
+                   lineText.contains("[") || lineText.contains("#") {
+                    do {
+                        let options = AttributedString.MarkdownParsingOptions(
+                            allowsExtendedAttributes: true,
+                            interpretedSyntax: .inlineOnly,
+                            failurePolicy: .returnPartiallyParsedIfPossible
+                        )
+                        let attrs = try AttributedString(markdown: lineText, options: options)
+                        markdownText = Text(attrs)
+                    } catch {
+                        markdownText = Text(lineText)
+                    }
+                } else {
+                    markdownText = Text(lineText)
+                }
+                
+                result = result + markdownText
+                
+                // Add line break after each line except the last one
+                if index < lines.count - 1 {
+                    result = result + Text("\n")
+                }
+            }
+        }
+        
+        return result
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Use a VStack to apply styling to the formatted text
+            formatWithLineBreaks(markdown)
+                .font(.body)
+                .textSelection(.enabled)
+                // Add code block styling
+                .padding(.vertical, 4)
+        }
+        .lineSpacing(8)
+        .fixedSize(horizontal: false, vertical: true)
         .onChange(of: markdown) { newContent in
             // For streaming messages, we need to update as content changes
             if !isCompleteMessage {
@@ -571,7 +847,7 @@ struct CachedMarkdownContent: View {
                     lastProcessedContent = newContent
                     // Process in background without blocking UI
                     Task {
-                        viewModel.processIfNeeded(markdown: newContent, isStreaming: true)
+                        await viewModel.processMarkdown(newContent, useCache: false)
                     }
                 }
             }
@@ -580,7 +856,6 @@ struct CachedMarkdownContent: View {
             // First check if we already have it in global cache (only for complete messages)
             if let cached = fetchGlobalContent() {
                 renderedContent = cached
-                isLoading = false
             } else {
                 // Start processing immediately without blocking
                 lastProcessedContent = markdown
@@ -593,30 +868,28 @@ struct CachedMarkdownContent: View {
                 
                 // Process in background
                 Task {
-                    await viewModel.processIfNeededAsync(
-                        markdown: markdown, 
-                        isStreaming: !isCompleteMessage
-                    ) { processedContent in
-                        // Only store in global cache for complete messages
-                        if isCompleteMessage {
-                            storeGlobalContent(processedContent)
-                        }
-                        // Update our view state
-                        renderedContent = processedContent
-                        isLoading = false
+                    let processedContent = await viewModel.processMarkdown(
+                        markdown, 
+                        useCache: isCompleteMessage
+                    )
+                    
+                    // Only store in global cache for complete messages
+                    if isCompleteMessage {
+                        storeGlobalContent(processedContent)
                     }
+                    
+                    // Update our view state
+                    renderedContent = processedContent
                 }
             }
         }
     }
-    }
+}
 
 // ViewModel to handle markdown processing and caching
 class MarkdownViewModel: ObservableObject {
-    private let markdownProcessor = MarkdownProcessor()
-    
     @Published var attributedString: AttributedString = AttributedString("")
-    @Published var isLoading: Bool = false // Default to not loading for immediate display
+    @Published var isLoading: Bool = false
     
     private var processingTask: Task<Void, Never>? = nil
     
@@ -624,119 +897,158 @@ class MarkdownViewModel: ObservableObject {
         processingTask?.cancel()
     }
     
-    // Non-async version for backward compatibility and simpler cases
-    func processIfNeeded(markdown: String, isStreaming: Bool = false, completion: ((AttributedString) -> Void)? = nil) {
-        // Default to plaintext immediately 
-        if attributedString.characters.isEmpty {
-            attributedString = AttributedString(markdown)
-        }
-        
-        // For streaming content, always process to show latest updates
-        if isStreaming {
-            isLoading = false // Don't show loading indicator for streaming updates
-            processMarkdown(markdown, useCache: false, completion: completion)
-            return
-        }
-        
-        // For complete messages, we can use caching logic
-        if !attributedString.characters.isEmpty {
-            isLoading = false
-            completion?(attributedString)
-            return
-        }
-        
-        // Need to process this markdown
-        isLoading = true
-        
+    // Single entry point for all markdown processing
+    func processMarkdown(_ markdown: String, useCache: Bool = true) async -> AttributedString {
         // Cancel any previous task
         cancelProcessing()
-        processMarkdown(markdown, useCache: true, completion: completion)
-    }
-    
-    // Async version for proper task handling
-    func processIfNeededAsync(markdown: String, isStreaming: Bool = false, completion: ((AttributedString) -> Void)? = nil) async {
-        // Default to plaintext immediately
-        await MainActor.run {
-            if attributedString.characters.isEmpty {
-                attributedString = AttributedString(markdown)
-            }
-        }
         
         do {
-            // Process directly so not to block UI
             let processed: AttributedString
-            if isStreaming {
-                // Always process fresh content for streaming
-                processed = await markdownProcessor.processMarkdown(markdown)
+            
+            // Use the cache for complete messages, skip for streaming
+            if useCache {
+                processed = await MarkdownCache.shared.getAttributedString(for: markdown)
             } else {
-                // Use cache for complete messages
-                processed = await MarkdownCache.shared.getAttributedString(
-                    for: markdown,
-                    processor: markdownProcessor
+                // Create the markdown options for streaming (faster, simpler)
+                let options = AttributedString.MarkdownParsingOptions(
+                    allowsExtendedAttributes: true,
+                    interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                    failurePolicy: .returnPartiallyParsedIfPossible
                 )
+                
+                // Process directly for streaming updates with lighter parsing
+                processed = try await Task.detached {
+                    do {
+                        // For streaming we use a simpler preprocessing
+                        // For streaming we use preprocessMarkdownForStreaming
+                        let preprocessedText = MarkdownCache.shared.preprocessMarkdownForStreaming(markdown)
+                        var attributedString = try AttributedString(markdown: preprocessedText, options: options)
+                        
+                        // Style code blocks with a monospaced font
+                        // Similar approach to the non-streaming version but simplified
+                        var codeFont = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
+                        
+                        // Apply styling manually by scanning for patterns
+                        do {
+                            // NSAttributedString constructor is not optional, so we need a do-catch
+                            let nsString = NSMutableAttributedString(attributedString)
+                            
+                            // Apply monospaced font to code spans with backticks
+                            let codePattern = "`[^`]+`"
+                            if let regex = try? NSRegularExpression(pattern: codePattern, options: []) {
+                                let range = NSRange(location: 0, length: nsString.length)
+                                regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                                    if let matchRange = match?.range {
+                                        nsString.addAttribute(.font, value: codeFont, range: matchRange)
+                                        nsString.addAttribute(.backgroundColor, value: UIColor(white: 0.95, alpha: 1.0), range: matchRange)
+                                    }
+                                }
+                            }
+                            
+                            // Apply custom styling to headings
+                            // H1 headings
+                            let h1Pattern = "^# [^\n]+"
+                            if let regex = try? NSRegularExpression(pattern: h1Pattern, options: [.anchorsMatchLines]) {
+                                let range = NSRange(location: 0, length: nsString.length)
+                                regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                                    if let matchRange = match?.range {
+                                        let font = UIFont.systemFont(ofSize: 28, weight: .bold)
+                                        nsString.addAttribute(.font, value: font, range: matchRange)
+                                    }
+                                }
+                            }
+                            
+                            // H2 headings
+                            let h2Pattern = "^## [^\n]+"
+                            if let regex = try? NSRegularExpression(pattern: h2Pattern, options: [.anchorsMatchLines]) {
+                                let range = NSRange(location: 0, length: nsString.length)
+                                regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                                    if let matchRange = match?.range {
+                                        let font = UIFont.systemFont(ofSize: 24, weight: .bold)
+                                        nsString.addAttribute(.font, value: font, range: matchRange)
+                                    }
+                                }
+                            }
+                            
+                            // H3 headings
+                            let h3Pattern = "^### [^\n]+"
+                            if let regex = try? NSRegularExpression(pattern: h3Pattern, options: [.anchorsMatchLines]) {
+                                let range = NSRange(location: 0, length: nsString.length)
+                                regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                                    if let matchRange = match?.range {
+                                        let font = UIFont.systemFont(ofSize: 20, weight: .semibold)
+                                        nsString.addAttribute(.font, value: font, range: matchRange)
+                                    }
+                                }
+                            }
+                            
+                            // H4 headings
+                            let h4Pattern = "^#### [^\n]+"
+                            if let regex = try? NSRegularExpression(pattern: h4Pattern, options: [.anchorsMatchLines]) {
+                                let range = NSRange(location: 0, length: nsString.length)
+                                regex.enumerateMatches(in: nsString.string, options: [], range: range) { match, _, _ in
+                                    if let matchRange = match?.range {
+                                        let font = UIFont.systemFont(ofSize: 18, weight: .medium)
+                                        nsString.addAttribute(.font, value: font, range: matchRange)
+                                    }
+                                }
+                            }
+                            
+                            // Try to convert back to AttributedString
+                            attributedString = try AttributedString(nsString)
+                        } catch {
+                            print("Error applying code block styling (streaming): \(error)")
+                        }
+                        
+                        // Apply paragraph styles to preserve line breaks even for streaming content
+                        let paragraphStyle = NSMutableParagraphStyle()
+                        paragraphStyle.lineSpacing = 1.2
+                        paragraphStyle.paragraphSpacing = 8 // Slightly less spacing for streaming updates
+                        paragraphStyle.headIndent = 0
+                        paragraphStyle.firstLineHeadIndent = 0
+                        
+                        // We need to force paragraph style to preserve line breaks
+                        do {
+                            let nsString = NSMutableAttributedString(attributedString)
+                            // Apply paragraph style to entire string
+                            nsString.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: nsString.length))
+                            // Try to convert back to AttributedString
+                            attributedString = try AttributedString(nsString)
+                        } catch {
+                            // If conversion fails, fall back to attribute container approach
+                            var container = AttributeContainer()
+                            container.paragraphStyle = paragraphStyle
+                            attributedString.mergeAttributes(container)
+                        }
+                        
+                        return attributedString
+                    } catch {
+                        print("Error parsing markdown (streaming): \(error)")
+                        return AttributedString(markdown)
+                    }
+                }.value
             }
             
-            // Update UI on main thread
+            // Update the UI on the main thread
             await MainActor.run {
                 self.attributedString = processed
                 self.isLoading = false
-                completion?(processed)
             }
-        } catch {
-            print("Async markdown processing failed: \(error)")
             
-            // Fallback to plain text
+            return processed
+            
+        } catch {
+            // Task was cancelled or failed
+            print("Markdown processing failed: \(error)")
+            
+            // If processing failed, just show the plain text
             let fallback = AttributedString(markdown)
             await MainActor.run {
                 self.attributedString = fallback
                 self.isLoading = false
-                completion?(fallback)
             }
-        }
-    }
-    
-    private func processMarkdown(_ markdown: String, useCache: Bool = true, completion: ((AttributedString) -> Void)? = nil) {
-        // Create a new task and store the reference
-        processingTask = Task {
-            do {
-                // Check for cancellation before processing
-                try Task.checkCancellation()
-                
-                // Use the cache for complete messages, skip for streaming
-                let processed: AttributedString
-                if useCache {
-                    processed = await MarkdownCache.shared.getAttributedString(
-                        for: markdown,
-                        processor: markdownProcessor
-                    )
-                } else {
-                    // Process directly for streaming updates
-                    processed = await markdownProcessor.processMarkdown(markdown)
-                }
-                
-                // Check for cancellation before updating UI
-                try Task.checkCancellation()
-                
-                // Update the UI on the main thread
-                await MainActor.run {
-                    self.attributedString = processed
-                    self.isLoading = false
-                    // Call the completion handler with processed content
-                    completion?(processed)
-                }
-            } catch {
-                // Task was cancelled or failed
-                print("Markdown processing cancelled or failed: \(error)")
-                
-                // If processing failed, just show the plain text
-                let fallback = AttributedString(markdown)
-                await MainActor.run {
-                    self.attributedString = fallback
-                    self.isLoading = false
-                    // Call completion with fallback content
-                    completion?(fallback)
-                }
-            }
+            
+            return fallback
         }
     }
 }
