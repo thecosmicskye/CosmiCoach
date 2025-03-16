@@ -188,6 +188,11 @@ struct ContentView: View {
     /// Creates the scrollable message area
     private func createScrollView(scrollView: ScrollViewProxy) -> some View {
         ScrollView(.vertical, showsIndicators: true) {
+            // Add spacer for navigation bar to prevent content from pushing under it
+            Spacer()
+                .frame(height: 1)
+                .id("navigationBarSpacer")
+                
             // Message content - either empty state or message list
             messageContentView()
                 .id("message-content") // Stable identifier for content
@@ -275,6 +280,12 @@ struct ContentView: View {
                         safeAreaBottomPadding: safeAreaBottomPadding
                     )
                 }
+            }
+            .safeAreaInset(edge: .top) {
+                // Empty view to preserve consistent space for the navigation bar
+                Color.clear
+                    .frame(height: 0)
+                    .allowsHitTesting(false)
             }
             .ignoresSafeArea(.keyboard)
             .navigationTitle("Cosmic Coach")
