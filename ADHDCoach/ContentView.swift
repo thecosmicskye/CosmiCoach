@@ -303,9 +303,9 @@ struct ContentView: View {
                 }
             }
             .safeAreaInset(edge: .top) {
-                // Empty view to preserve consistent space for the navigation bar
+                // Preserve consistent space for the navigation bar
                 Color.clear
-                    .frame(height: 0)
+                    .frame(height: 1)
                     .allowsHitTesting(false)
             }
             .ignoresSafeArea(.keyboard)
