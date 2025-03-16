@@ -72,19 +72,11 @@ struct MessageBubbleView: View {
                     }
                 }
                 
-                if message.isUser || (!message.isComplete && !message.isUser) {
+                if (!message.isComplete && !message.isUser) {
                     HStack {
-                        if message.isUser {
-                            Text(message.formattedTimestamp)
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        if !message.isComplete && !message.isUser {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .gray))
-                                .scaleEffect(0.7)
-                        }
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .gray))
+                            .scaleEffect(0.7)
                     }
                     .padding(.horizontal, 4)
                 }
