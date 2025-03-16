@@ -1503,7 +1503,9 @@ class ProcessToolUseService {
             // Refresh context with the updated memories
             await chatManager.refreshContextData()
             
-            return "Processed \\(memoriesArray.count) memories: \\(successCount) added successfully, \\(failureCount) failed"
+            let result = "Processed \(memoriesArray.count) memories: \(successCount) added successfully, \(failureCount) failed"
+            print("📝 Memory batch addition result: \(result)")
+            return result
             
         case "remove_memory":
             // Extract parameters
@@ -1622,7 +1624,9 @@ class ProcessToolUseService {
             // Refresh context with the updated memories
             await chatManager.refreshContextData()
             
-            return "Processed \\(contents.count) memories: \\(successCount) removed successfully, \\(failureCount) failed"
+            let result = "Processed \(contents.count) memories: \(successCount) removed successfully, \(failureCount) failed"
+            print("📝 Memory batch removal result: \(result)")
+            return result
             
         case "update_memory":
             // Extract parameters
@@ -1829,10 +1833,12 @@ class ProcessToolUseService {
             // Refresh context with the updated memories
             await chatManager.refreshContextData()
             
-            return "Processed \\(memoriesArray.count) memories: \\(successCount) updated successfully, \\(failureCount) failed"
+            let result = "Processed \(memoriesArray.count) memories: \(successCount) updated successfully, \(failureCount) failed"
+            print("📝 Memory batch update result: \(result)")
+            return result
             
         default:
-            return "Error: Unknown tool \\(toolName)"
+            return "Error: Unknown tool \(toolName)"
         }
     }
 }
