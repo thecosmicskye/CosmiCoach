@@ -47,7 +47,7 @@ struct MessageBubbleView: View {
                                 isComplete: message.isComplete
                             )
                             .lineSpacing(1.2) // Increase line spacing to improve readability and line break visibility
-                            .padding(EdgeInsets(top: 12, leading: 0, bottom: 12, trailing: 0))
+                            .padding(EdgeInsets(top: 12, leading: 2, bottom: 12, trailing: 2))
                             .background(Color.clear)
                             .cornerRadius(16)
                             .textSelection(.enabled)
