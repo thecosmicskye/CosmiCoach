@@ -561,19 +561,33 @@ struct CachedMarkdownContent: View {
 // Bullet List Item
 fileprivate struct BulletListItemView: View {
     let content: String
+    let level: Int
     
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            // Bullet column
-            Text("•")
-                .fontWeight(.bold)
-                .frame(width: 16, alignment: .leading)
+            // Bullet column with proper indentation based on level
+            HStack(spacing: 0) {
+                if level > 0 {
+                    Spacer()
+                        .frame(width: CGFloat(level * 20))
+                }
+                
+                Text(bulletForLevel(level))
+                    .fontWeight(.bold)
+                    .frame(width: 16, alignment: .leading)
+            }
+            .frame(width: 16 + CGFloat(level * 20), alignment: .trailing)
             
             // Content column - using direct AttributedString handling
             contentView
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 2)
+    }
+    
+    // Use the same bullet style regardless of level
+    private func bulletForLevel(_ level: Int) -> String {
+        return "•"
     }
     
     private var contentView: some View {
@@ -596,19 +610,33 @@ fileprivate struct BulletListItemView: View {
 fileprivate struct NumberedListItemView: View {
     let number: Int
     let content: String
+    let level: Int
     
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            // Number column
-            Text("\(number).")
-                .fontWeight(.medium)
-                .frame(width: 25, alignment: .leading)
+            // Number column with proper indentation based on level
+            HStack(spacing: 0) {
+                if level > 0 {
+                    Spacer()
+                        .frame(width: CGFloat(level * 20))
+                }
+                
+                Text(numberMarkerForLevel(level, number: number))
+                    .fontWeight(.medium)
+                    .frame(width: 25, alignment: .leading)
+            }
+            .frame(width: 25 + CGFloat(level * 20), alignment: .trailing)
             
             // Content column - using direct AttributedString handling
             contentView
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 2)
+    }
+    
+    // Use the same number style regardless of level
+    private func numberMarkerForLevel(_ level: Int, number: Int) -> String {
+        return "\(number)."
     }
     
     private var contentView: some View {
@@ -642,11 +670,39 @@ fileprivate struct HorizontalLineView: View {
 // Bullet List
 fileprivate struct BulletListView: View {
     let items: [String]
+    let nestedItems: [MarkdownListItem]
+    
+    init(items: [String], nestedItems: [MarkdownListItem] = []) {
+        self.items = items
+        self.nestedItems = nestedItems
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(items.indices, id: \.self) { index in
-                BulletListItemView(content: items[index])
+            if !nestedItems.isEmpty {
+                // Render nested list items
+                ForEach(nestedItems) { item in
+                    BulletListItemView(content: item.content, level: item.level)
+                    
+                    // Render children recursively if they exist
+                    if !item.children.isEmpty {
+                        ForEach(item.children) { child in
+                            BulletListItemView(content: child.content, level: child.level)
+                            
+                            // Render grandchildren if they exist (up to 3 levels)
+                            if !child.children.isEmpty {
+                                ForEach(child.children) { grandchild in
+                                    BulletListItemView(content: grandchild.content, level: grandchild.level)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Fallback to flat list if no nested items
+                ForEach(items.indices, id: \.self) { index in
+                    BulletListItemView(content: items[index], level: 0)
+                }
             }
         }
         .padding(.vertical, 4)
@@ -656,11 +712,39 @@ fileprivate struct BulletListView: View {
 // Numbered List
 fileprivate struct NumberedListView: View {
     let items: [String]
+    let nestedItems: [MarkdownListItem]
+    
+    init(items: [String], nestedItems: [MarkdownListItem] = []) {
+        self.items = items
+        self.nestedItems = nestedItems
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(items.indices, id: \.self) { index in
-                NumberedListItemView(number: index + 1, content: items[index])
+            if !nestedItems.isEmpty {
+                // Render nested list items
+                ForEach(Array(nestedItems.enumerated()), id: \.element.id) { i, item in
+                    NumberedListItemView(number: i + 1, content: item.content, level: item.level)
+                    
+                    // Render children recursively if they exist
+                    if !item.children.isEmpty {
+                        ForEach(Array(item.children.enumerated()), id: \.element.id) { j, child in
+                            NumberedListItemView(number: j + 1, content: child.content, level: child.level)
+                            
+                            // Render grandchildren if they exist (up to 3 levels)
+                            if !child.children.isEmpty {
+                                ForEach(Array(child.children.enumerated()), id: \.element.id) { k, grandchild in
+                                    NumberedListItemView(number: k + 1, content: grandchild.content, level: grandchild.level)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                // Fallback to flat list if no nested items
+                ForEach(items.indices, id: \.self) { index in
+                    NumberedListItemView(number: index + 1, content: items[index], level: 0)
+                }
             }
         }
         .padding(.vertical, 4)
@@ -681,9 +765,19 @@ struct CustomMarkdownContentParser: View {
                 Group {
                     switch section.type {
                     case .bulletList:
-                        BulletListView(items: section.listItems)
+                        // Use nested items when available, fall back to flat list
+                        if !section.nestedListItems.isEmpty {
+                            BulletListView(items: section.listItems, nestedItems: section.nestedListItems)
+                        } else {
+                            BulletListView(items: section.listItems)
+                        }
                     case .numberedList:
-                        NumberedListView(items: section.listItems)
+                        // Use nested items when available, fall back to flat list
+                        if !section.nestedListItems.isEmpty {
+                            NumberedListView(items: section.listItems, nestedItems: section.nestedListItems)
+                        } else {
+                            NumberedListView(items: section.listItems)
+                        }
                     case .horizontalLine:
                         HorizontalLineView()
                     case .heading1:
@@ -769,30 +863,45 @@ struct CustomMarkdownContentParser: View {
             .textSelection(.enabled)
     }
     
-    // Parse markdown into sections
+    // Parse markdown into sections with support for nested lists
     private func parseMarkdownSections(_ text: String) -> [MarkdownSection] {
         let lines = text.components(separatedBy: "\n")
         var sections: [MarkdownSection] = []
         var currentSectionType: MarkdownSectionType = .paragraph
         var currentSectionContent: [String] = []
         var currentListItems: [String] = []
+        var currentNestedListItems: [MarkdownListItem] = []
         var inCodeBlock = false
         var codeBlockContent: [String] = []
         
         // Helper to finalize the current section and start a new one
         func finalizeCurrentSection() {
-            guard !currentSectionContent.isEmpty || !currentListItems.isEmpty || !codeBlockContent.isEmpty else { return }
+            guard !currentSectionContent.isEmpty || !currentListItems.isEmpty || !currentNestedListItems.isEmpty || !codeBlockContent.isEmpty else { return }
             
             switch currentSectionType {
-            case .bulletList, .numberedList:
-                if !currentListItems.isEmpty {
+            case .bulletList:
+                if !currentListItems.isEmpty || !currentNestedListItems.isEmpty {
                     sections.append(MarkdownSection(
                         id: UUID().uuidString,
                         type: currentSectionType,
                         content: "",
-                        listItems: currentListItems
+                        listItems: currentListItems,
+                        nestedListItems: currentNestedListItems
                     ))
                     currentListItems = []
+                    currentNestedListItems = []
+                }
+            case .numberedList:
+                if !currentListItems.isEmpty || !currentNestedListItems.isEmpty {
+                    sections.append(MarkdownSection(
+                        id: UUID().uuidString,
+                        type: currentSectionType,
+                        content: "",
+                        listItems: currentListItems,
+                        nestedListItems: currentNestedListItems
+                    ))
+                    currentListItems = []
+                    currentNestedListItems = []
                 }
             case .codeBlock:
                 if !codeBlockContent.isEmpty {
@@ -817,8 +926,31 @@ struct CustomMarkdownContentParser: View {
             }
         }
         
+        // Determine the indentation level of a line
+        func getIndentationLevel(_ line: String) -> Int {
+            let leadingSpaces = line.prefix(while: { $0 == " " }).count
+            return leadingSpaces / 2 // Every 2 spaces = 1 level
+        }
+        
+        // A helper function to find the parent item for the current indentation level
+        func findParentItem(for itemLevel: Int, in items: [MarkdownListItem]) -> MarkdownListItem? {
+            if itemLevel == 0 || items.isEmpty {
+                return nil
+            }
+            
+            // Go backwards through the list to find the most recent item with a lower level
+            for i in (0..<items.count).reversed() {
+                if items[i].level < itemLevel {
+                    return items[i]
+                }
+            }
+            
+            return nil
+        }
+        
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let originalIndent = getIndentationLevel(line)
             
             // Handle code blocks first
             if trimmed.hasPrefix("```") {
@@ -887,7 +1019,7 @@ struct CustomMarkdownContentParser: View {
                 continue
             }
             
-            // Handle bullet lists
+            // Handle bullet lists with indentation
             let isBulletPoint = trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ")
             if isBulletPoint {
                 if currentSectionType != .bulletList {
@@ -903,11 +1035,38 @@ struct CustomMarkdownContentParser: View {
                     itemContent = String(trimmed.dropFirst(2))
                 }
                 
-                currentListItems.append(itemContent.trimmingCharacters(in: .whitespaces))
+                let cleanedContent = itemContent.trimmingCharacters(in: .whitespaces)
+                
+                // Add to the flat list for backward compatibility
+                currentListItems.append(cleanedContent)
+                
+                // Create a new list item with the appropriate level
+                let newItem = MarkdownListItem(content: cleanedContent, level: originalIndent)
+                
+                if originalIndent == 0 {
+                    // Top level item
+                    currentNestedListItems.append(newItem)
+                } else if originalIndent <= 2 { // Support up to 3 levels (0, 1, 2)
+                    // Find the appropriate parent for this indented item
+                    if let parentItem = findParentItem(for: originalIndent, in: currentNestedListItems) {
+                        // Check if we're adding to a parent
+                        if parentItem.level < originalIndent {
+                            // We need to modify the parent item (which is immutable), so we find its index
+                            if let parentIndex = currentNestedListItems.firstIndex(where: { $0.id == parentItem.id }) {
+                                // Add this item as a child of the parent
+                                currentNestedListItems[parentIndex].children.append(newItem)
+                            }
+                        }
+                    } else {
+                        // If no parent found, treat as top level
+                        currentNestedListItems.append(newItem)
+                    }
+                }
+                
                 continue
             }
             
-            // Handle numbered lists
+            // Handle numbered lists with indentation
             let isNumberedItem = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) != nil
             if isNumberedItem {
                 if currentSectionType != .numberedList {
@@ -918,7 +1077,33 @@ struct CustomMarkdownContentParser: View {
                 // Extract the content without the number marker
                 if let range = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) {
                     let itemContent = String(trimmed[range.upperBound...])
-                    currentListItems.append(itemContent.trimmingCharacters(in: .whitespaces))
+                    let cleanedContent = itemContent.trimmingCharacters(in: .whitespaces)
+                    
+                    // Add to flat list for backward compatibility
+                    currentListItems.append(cleanedContent)
+                    
+                    // Create a new list item with the appropriate level
+                    let newItem = MarkdownListItem(content: cleanedContent, level: originalIndent)
+                    
+                    if originalIndent == 0 {
+                        // Top level item
+                        currentNestedListItems.append(newItem)
+                    } else if originalIndent <= 2 { // Support up to 3 levels (0, 1, 2)
+                        // Find the appropriate parent for this indented item
+                        if let parentItem = findParentItem(for: originalIndent, in: currentNestedListItems) {
+                            // Check if we're adding to a parent
+                            if parentItem.level < originalIndent {
+                                // We need to modify the parent item (which is immutable), so we find its index
+                                if let parentIndex = currentNestedListItems.firstIndex(where: { $0.id == parentItem.id }) {
+                                    // Add this item as a child of the parent
+                                    currentNestedListItems[parentIndex].children.append(newItem)
+                                }
+                            }
+                        } else {
+                            // If no parent found, treat as top level
+                            currentNestedListItems.append(newItem)
+                        }
+                    }
                 }
                 continue
             }
@@ -959,12 +1144,21 @@ enum MarkdownSectionType {
     case horizontalLine
 }
 
+// Define a structure for markdown list items with support for nesting
+struct MarkdownListItem: Identifiable {
+    let id: String = UUID().uuidString
+    let content: String
+    let level: Int // Nesting level: 0 for top level, 1 for first indent, etc.
+    var children: [MarkdownListItem] = []
+}
+
 // Define a structure for markdown sections
 struct MarkdownSection: Identifiable {
     let id: String
     let type: MarkdownSectionType
     let content: String
-    let listItems: [String]
+    let listItems: [String] // Used for flat list rendering
+    var nestedListItems: [MarkdownListItem] = [] // Used for nested list rendering
 }
 
 // ViewModel to handle markdown processing and caching
@@ -1148,17 +1342,49 @@ class MarkdownViewModel: ObservableObject {
         
         ---
         
-        ## Bullet List with Hanging Indentation
+        ## Basic Bullet List
         
         * This is a bullet item with longer text that should wrap to the next line while maintaining proper hanging indentation
         * Another bullet item with **bold** and *italic* formatting
         * A third item with `inline code`
         
-        ## Numbered List with Hanging Indentation
+        ## Nested Bullet List
+        
+        * First level item 1
+          * Second level item 1.1
+          * Second level item 1.2
+            * Third level item 1.2.1
+            * Third level item 1.2.2
+        * First level item 2
+          * Second level item 2.1
+        * First level item 3
+        
+        ## Basic Numbered List
         
         1. This is a numbered item with longer text that should wrap to the next line while maintaining proper hanging indentation
         2. Another numbered item with **bold** and *italic* formatting
         3. A third item with `inline code`
+        
+        ## Nested Numbered List
+        
+        1. First level item 1
+           1) Second level item 1.1
+           2) Second level item 1.2
+              (1) Third level item 1.2.1
+              (2) Third level item 1.2.2
+        2. First level item 2
+           1) Second level item 2.1
+        3. First level item 3
+        
+        ## Mixed List Types
+        
+        1. First level numbered item
+           * Second level bullet item
+           * Another second level bullet item
+             1) Third level numbered item
+             2) Another third level numbered item
+        2. Second first level numbered item
+           * Second level bullet under item 2
         
         ## Code Block Example
         
