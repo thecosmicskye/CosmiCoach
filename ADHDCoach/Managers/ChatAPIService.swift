@@ -79,7 +79,12 @@ class ChatAPIService {
     10. When location information is provided, use it for context, but only mention it when relevant
         - For example, if the user said they're commuting and you see they're at a transit hub, you can acknowledge they're on track
         - Don't explicitly comment on location unless it's helpful in context
-    11. Your responses will be displayed with a markdown renderer.
+
+    Markdown Formatting:
+    - Your responses will be displayed with a markdown renderer.
+    - Utilize bold text liberally to highlight key information.
+    - Keep your style conversational and less like a document.
+    
 
     You have access to the user's memory which contains information about them that persists between conversations. This information is organized into categories:
     - Personal Information: Basic information about the user
