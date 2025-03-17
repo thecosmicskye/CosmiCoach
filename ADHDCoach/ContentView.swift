@@ -35,6 +35,15 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var inputText = ""
     @StateObject private var keyboardState = KeyboardState()
+    @State private var scrollPosition: CGPoint = {
+        // Load saved position from UserDefaults on initialization
+        if let savedY = UserDefaults.standard.object(forKey: "saved_scroll_position_y") as? CGFloat, savedY > 0 {
+            return CGPoint(x: 0, y: savedY)
+        }
+        return .zero
+    }()
+    @State private var isRestoringScrollPosition: Bool = false
+    @State private var cachedScrollView: UIScrollView?
     
     // MARK: - Debug State
     @State private var debugOutlineMode: DebugOutlineMode = .none
@@ -51,6 +60,56 @@ struct ContentView: View {
             Task { @MainActor in
                 chatManager.messages = []
                 await chatManager.checkAndSendAutomaticMessageAfterHistoryDeletion()
+            }
+        }
+        
+        // Set up observers for saving/restoring scroll position
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            // Save scroll position before going to background
+            if let scrollView = cachedScrollView {
+                let newPosition = scrollView.contentOffset
+                // Only update if the current position is valid (non-zero and scrolled)
+                if newPosition.y > 0 {
+                    scrollPosition = newPosition
+                    print("📱 Saving scroll position from notification: \(scrollPosition.y)")
+                    
+                    // Also persist to UserDefaults for long-term storage
+                    UserDefaults.standard.set(scrollPosition.y, forKey: "saved_scroll_position_y")
+                } else {
+                    print("⚠️ Ignoring zero scroll position in notification: \(newPosition.y), keeping existing: \(scrollPosition.y)")
+                }
+            }
+        }
+        
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [self] _ in
+            // Only restore if we have a valid position (either in memory or from UserDefaults)
+            let positionToRestore = scrollPosition
+            
+            // If our in-memory position is invalid, check UserDefaults
+            if positionToRestore.y <= 0, let savedY = UserDefaults.standard.object(forKey: "saved_scroll_position_y") as? CGFloat, savedY > 0 {
+                scrollPosition = CGPoint(x: 0, y: savedY)
+                print("📱 Retrieved saved position from UserDefaults: \(savedY)")
+            }
+            
+            if scrollPosition.y > 0 {
+                // Set flag to prevent auto-scrolling and restore position
+                isRestoringScrollPosition = true
+                print("📱 Will restore position from notification: \(scrollPosition.y)")
+                
+                // Reset the flag after enough time for restoration
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    isRestoringScrollPosition = false
+                }
+            } else {
+                print("⚠️ Not restoring - scroll position is at top: \(scrollPosition.y)")
             }
         }
     }
@@ -210,41 +269,54 @@ struct ContentView: View {
         .scrollDismissesKeyboard(.interactively)
         .onChange(of: chatManager.messages.count) { oldCount, newCount in
             // Only auto-scroll when adding messages (not when scrolling up through history)
-            if newCount > oldCount {
+            // Skip if we're restoring scroll position
+            if newCount > oldCount && !isRestoringScrollPosition {
                 DispatchQueue.main.async {
                     scrollView.scrollTo("messageBottom", anchor: .bottom)
                 }
             }
         }
         .onChange(of: chatManager.messages.last?.content) { _, _ in
-            // Auto-scroll for new content
-            DispatchQueue.main.async {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    scrollView.scrollTo("messageBottom", anchor: .bottom)
+            // Auto-scroll for new content, but skip if restoring position
+            if !isRestoringScrollPosition {
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        scrollView.scrollTo("messageBottom", anchor: .bottom)
+                    }
                 }
             }
         }
         .onChange(of: chatManager.streamingUpdateCount) { _, _ in
-            // Ensure scrolling happens on each streaming update
-            DispatchQueue.main.async {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    scrollView.scrollTo("messageBottom", anchor: .bottom)
+            // Ensure scrolling happens on each streaming update, but skip if restoring position
+            if !isRestoringScrollPosition {
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        scrollView.scrollTo("messageBottom", anchor: .bottom)
+                    }
                 }
             }
         }
         .onChange(of: chatManager.operationStatusUpdateCount) { _, _ in
-            // Scroll when new operation status messages are added
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    scrollView.scrollTo("messageBottom", anchor: .bottom)
+            // Scroll when new operation status messages are added, but skip if restoring position
+            if !isRestoringScrollPosition {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        scrollView.scrollTo("messageBottom", anchor: .bottom)
+                    }
                 }
             }
         }
         .onAppear {
+            // Only auto-scroll on initial appearance, not when reforegrounding
+            let isInitialAppearance = !hasAppearedBefore
+            
             // Scroll to bottom when view appears with a slight delay to ensure layout is complete
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    scrollView.scrollTo("messageBottom", anchor: .bottom)
+            // Skip if we're restoring scroll position or if this is a reforegrounding
+            if !isRestoringScrollPosition && isInitialAppearance {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        scrollView.scrollTo("messageBottom", anchor: .bottom)
+                    }
                 }
             }
         }
@@ -281,7 +353,13 @@ struct ContentView: View {
                     VStack(spacing: 0) {
                         // Main scrollable content area with message list
                         ScrollViewReader { scrollView in
-                            createScrollView(scrollView: scrollView)
+                            ScrollViewWithRestorablePosition(
+                                scrollPosition: $scrollPosition,
+                                isRestoringPosition: $isRestoringScrollPosition,
+                                cachedScrollView: $cachedScrollView
+                            ) {
+                                createScrollView(scrollView: scrollView)
+                            }
                         }
                         
                         // Dynamic spacer that adjusts based on keyboard presence
@@ -353,14 +431,61 @@ struct ContentView: View {
                 }
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
+                // When app becomes inactive, save scroll position
+                if newPhase == .inactive || newPhase == .background {
+                    if let scrollView = cachedScrollView {
+                        let newPosition = scrollView.contentOffset
+                        // Only update if the current position is valid (non-zero and scrolled)
+                        if newPosition.y > 0 {
+                            scrollPosition = newPosition
+                            print("📱 Saving scroll position from cached scroll view: \(scrollPosition.y)")
+                            
+                            // Also persist to UserDefaults for long-term storage
+                            UserDefaults.standard.set(scrollPosition.y, forKey: "saved_scroll_position_y")
+                        } else {
+                            print("⚠️ Ignoring zero scroll position: \(newPosition.y), keeping existing: \(scrollPosition.y)")
+                        }
+                    } else {
+                        print("❌ No cached scroll view available")
+                    }
+                }
+                
                 // Check for transition to active state (from any state)
                 if newPhase == .active && hasAppearedBefore {
+                    // Set flag to prevent auto-scrolling during restoration
+                    isRestoringScrollPosition = true
+                    
                     // Only run necessary updates if we've seen the app before
                     if let lastSessionTime = UserDefaults.standard.object(forKey: "last_app_session_time") as? TimeInterval {
                         // Load memory - automatic messages handled by ADHDCoachApp
                         Task {
                             let _ = await memoryManager.readMemory()
+                            
+                            // Check if we have a valid position (either in memory or from UserDefaults)
+                            let positionToRestore = scrollPosition
+                            
+                            // If our in-memory position is invalid, check UserDefaults
+                            if positionToRestore.y <= 0, let savedY = UserDefaults.standard.object(forKey: "saved_scroll_position_y") as? CGFloat, savedY > 0 {
+                                scrollPosition = CGPoint(x: 0, y: savedY)
+                                print("📱 Retrieved saved position from UserDefaults in scene phase: \(savedY)")
+                            }
+                            
+                            if scrollPosition.y > 0 {
+                                // Our custom ScrollViewWithRestorablePosition will handle the restoration
+                                isRestoringScrollPosition = true
+                                
+                                print("📱 Will restore to position: \(scrollPosition.y)")
+                                
+                                // Reset the flag after enough time for restoration
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                    isRestoringScrollPosition = false
+                                }
+                            } else {
+                                print("⚠️ Not restoring in scene phase - position is at top: \(scrollPosition.y)")
+                            }
                         }
+                    } else {
+                        isRestoringScrollPosition = false
                     }
                 }
             }
@@ -372,6 +497,7 @@ struct ContentView: View {
     private func hideKeyboard() {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
+    
     
     /// Processes and sends user message
     private func sendMessage() {
@@ -488,6 +614,118 @@ struct MessageHeightPreferenceKey: PreferenceKey {
     .environmentObject(ThemeManager())
 }
 
+
+// MARK: - ScrollViewWithRestorablePosition
+struct ScrollViewWithRestorablePosition<Content: View>: UIViewRepresentable {
+    @Binding var scrollPosition: CGPoint
+    @Binding var isRestoringPosition: Bool
+    @Binding var cachedScrollView: UIScrollView?
+    let content: Content
+    
+    init(scrollPosition: Binding<CGPoint>, 
+         isRestoringPosition: Binding<Bool>,
+         cachedScrollView: Binding<UIScrollView?>,
+         @ViewBuilder content: () -> Content) {
+        self._scrollPosition = scrollPosition
+        self._isRestoringPosition = isRestoringPosition
+        self._cachedScrollView = cachedScrollView
+        self.content = content()
+    }
+    
+    func makeUIView(context: Context) -> UIScrollView {
+        let scrollView = UIScrollView()
+        
+        // Configure scroll view
+        scrollView.showsVerticalScrollIndicator = true
+        scrollView.contentInsetAdjustmentBehavior = .automatic
+        scrollView.backgroundColor = .clear
+        
+        // Add hosting controller as child view
+        let hostingController = UIHostingController(rootView: content)
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        hostingController.view.backgroundColor = .clear
+        
+        scrollView.addSubview(hostingController.view)
+        
+        // Set up constraints
+        NSLayoutConstraint.activate([
+            hostingController.view.leadingAnchor.constraint(equalTo: scrollView.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: scrollView.trailingAnchor),
+            hostingController.view.topAnchor.constraint(equalTo: scrollView.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: scrollView.bottomAnchor),
+            hostingController.view.widthAnchor.constraint(equalTo: scrollView.widthAnchor)
+        ])
+        
+        // Add delegate
+        scrollView.delegate = context.coordinator
+        
+        // Store a reference
+        context.coordinator.hostingController = hostingController
+        
+        // Cache the scroll view so we can access it directly
+        DispatchQueue.main.async {
+            cachedScrollView = scrollView
+        }
+        
+        // If we have a position to restore, set it (only if position is valid)
+        if scrollPosition.y > 0 && isRestoringPosition {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                print("📱 Initial restore in makeUIView: \(self.scrollPosition.y)")
+                scrollView.contentOffset = self.scrollPosition
+            }
+        }
+        
+        return scrollView
+    }
+    
+    func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        context.coordinator.hostingController?.rootView = content
+        
+        // If dimensions change, we need to let the view layout settle before restoring position
+        DispatchQueue.main.async {
+            // If we're actively restoring position, apply it (only if position is valid)
+            if isRestoringPosition && scrollPosition.y > 0 {
+                print("📱 Applying position in updateUIView: \(scrollPosition.y)")
+                scrollView.contentOffset = scrollPosition
+                
+                // Ensure we apply it again after a delay to override any other scrolling
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    scrollView.contentOffset = self.scrollPosition
+                }
+            }
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIScrollViewDelegate {
+        var parent: ScrollViewWithRestorablePosition
+        var hostingController: UIHostingController<Content>?
+        
+        init(_ parent: ScrollViewWithRestorablePosition) {
+            self.parent = parent
+        }
+        
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            // Only track scrolling positions when we're not in the process of restoring
+            if !parent.isRestoringPosition {
+                parent.scrollPosition = scrollView.contentOffset
+            }
+        }
+        
+        func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+            parent.scrollPosition = scrollView.contentOffset
+        }
+        
+        func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+            if !decelerate {
+                parent.scrollPosition = scrollView.contentOffset
+            }
+        }
+    }
+}
 
 // MARK: - KeyboardState
 class KeyboardState: ObservableObject {
