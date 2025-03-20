@@ -27,6 +27,8 @@
 		2A712F0E2D79404100D148EC /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A712F0C2D79404100D148EC /* APIModels.swift */; };
 		2A712F0F2D79404100D148EC /* APIRequestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */; };
 		2A771BA92D725173000B70E6 /* CommandModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A771BA82D725173000B70E6 /* CommandModels.swift */; };
+		2AAF0EFA2D8BA564002A3F7D /* SpeechManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAF0EF92D8BA564002A3F7D /* SpeechManager.swift */; };
+		2AAF0EFC2D8BA57D002A3F7D /* SpeechSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAF0EFB2D8BA57D002A3F7D /* SpeechSettingsView.swift */; };
 		2ABF1DA72D6FFEFE00E5A6C1 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A352A2A2A352A2A2A35 /* OnboardingView.swift */; };
 		2ADE8ADF2D84F69500B2BE68 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 2ADE8ADE2D84F69500B2BE68 /* Markdown */; };
 		2AEC0FF32D7EA9ED00268460 /* ProcessToolUseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AEC0FF12D7EA9ED00268460 /* ProcessToolUseService.swift */; };
@@ -84,6 +86,8 @@
 		2A712F0D2D79404100D148EC /* APIRequestBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIRequestBuilder.swift; sourceTree = "<group>"; };
 		2A771BA82D725173000B70E6 /* CommandModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandModels.swift; sourceTree = "<group>"; };
 		2A7B3FFF2D6EFCFC004CF1E4 /* CosmiCoachTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CosmiCoachTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2AAF0EF92D8BA564002A3F7D /* SpeechManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechManager.swift; sourceTree = "<group>"; };
+		2AAF0EFB2D8BA57D002A3F7D /* SpeechSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSettingsView.swift; sourceTree = "<group>"; };
 		2AEC0FF12D7EA9ED00268460 /* ProcessToolUseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessToolUseService.swift; sourceTree = "<group>"; };
 		2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ADHDCoach/Assets.xcassets; sourceTree = "<group>"; };
 		3A3A3A3A3A3A3A3A3A3A3A3A /* CosmiCoach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CosmiCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -145,6 +149,7 @@
 				2A2A2A352A2A2A352A2A2A35 /* OnboardingView.swift */,
 				2A2A2A2D2A2A2A2D2A2A2A2F /* OperationStatusView.swift */,
 				2A2A2A392A2A2A392A2A2A41 /* ThemeSelectionView.swift */,
+				2AAF0EFB2D8BA57D002A3F7D /* SpeechSettingsView.swift */,
 				8A8A8A8A8A8A8A8A8A8A8A8A /* Models */,
 				9A9A9A9A9A9A9A9A9A9A9A9A /* Managers */,
 				2AEC0FF22D7EA9ED00268460 /* Services */,
@@ -192,6 +197,7 @@
 				2A2A2A332A2A2A332A2A2A33 /* MemoryManager.swift */,
 				2A06F4912D711B770030A1AE /* LocationManager.swift */,
 				2A2A2A352A2A2A352A2A2A37 /* ThemeManager.swift */,
+				2AAF0EF92D8BA564002A3F7D /* SpeechManager.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -324,6 +330,8 @@
 				E4C961F82D73F9600012035F /* ThemeManager.swift in Sources */,
 				E4C962052D741EFA0012035F /* DateFormatter+Shared.swift in Sources */,
 				2A2A2FD72D7E37A00059A323 /* PromptCachingView.swift in Sources */,
+				2AAF0EFA2D8BA564002A3F7D /* SpeechManager.swift in Sources */,
+				2AAF0EFC2D8BA57D002A3F7D /* SpeechSettingsView.swift in Sources */,
 				E4C961F92D73F9600012035F /* Color+Theme.swift in Sources */,
 				E4C961F42D73F9500012035F /* ThemeColorModifier.swift in Sources */,
 				1A1A1A1A1A1A1A1A1A1A1A1A /* ADHDCoachApp.swift in Sources */,
