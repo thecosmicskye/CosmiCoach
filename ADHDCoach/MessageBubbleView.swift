@@ -1,10 +1,12 @@
 import SwiftUI
+import AVFoundation
 
 struct MessageBubbleView: View {
     let message: ChatMessage
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var chatManager: ChatManager
+    @EnvironmentObject private var speechManager: SpeechManager
     
     var body: some View {
         HStack {
@@ -28,6 +30,12 @@ struct MessageBubbleView: View {
                                 UIPasteboard.general.string = message.content
                             }) {
                                 Label("Copy", systemImage: "doc.on.doc")
+                            }
+                            
+                            Button(action: {
+                                speechManager.speak(text: message.content)
+                            }) {
+                                Label("Speak", systemImage: "speaker.wave.2.fill")
                             }
                         }
                 } else {
@@ -77,6 +85,12 @@ struct MessageBubbleView: View {
                             }) {
                                 Label("Copy", systemImage: "doc.on.doc")
                             }
+                            
+                            Button(action: {
+                                speechManager.speak(text: message.content)
+                            }) {
+                                Label("Speak", systemImage: "speaker.wave.2.fill")
+                            }
                         }
                         
                         // Show loader while content is streaming
@@ -105,4 +119,6 @@ struct MessageBubbleView: View {
     }
     .padding()
     .environmentObject(ThemeManager())
+    .environmentObject(ChatManager())
+    .environmentObject(SpeechManager())
 }

@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import UIKit
+import AVFoundation
 
 // Debug outline mode enum for visual debugging
 enum DebugOutlineMode: String, CaseIterable {
@@ -24,6 +25,7 @@ struct ContentView: View {
     @EnvironmentObject private var eventKitManager: EventKitManager
     @EnvironmentObject private var memoryManager: MemoryManager
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var speechManager: SpeechManager
     // Use ObservedObject instead of EnvironmentObject for locationManager to prevent cascading rebuilds
     @ObservedObject private var locationManager = LocationManager()
     
@@ -438,6 +440,7 @@ struct ContentView: View {
             .environmentObject(memoryManager)
             .environmentObject(locationManager)
             .environmentObject(chatManager)
+            .environmentObject(speechManager)
             .onAppear {
                 hideKeyboard()
             }
@@ -715,6 +718,7 @@ struct MessageHeightPreferenceKey: PreferenceKey {
         .environmentObject(MemoryManager())
         .environmentObject(ThemeManager())
         .environmentObject(LocationManager())
+        .environmentObject(SpeechManager())
 }
 
 #Preview("Message Components") {
@@ -735,6 +739,8 @@ struct MessageHeightPreferenceKey: PreferenceKey {
     }
     .padding(.horizontal)
     .environmentObject(ThemeManager())
+    .environmentObject(ChatManager())
+    .environmentObject(SpeechManager())
 }
 
 
