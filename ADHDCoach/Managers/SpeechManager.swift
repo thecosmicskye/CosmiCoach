@@ -5,12 +5,28 @@ class SpeechManager: NSObject, ObservableObject {
     @Published var availableVoices: [AVSpeechSynthesisVoice] = []
     @Published var selectedVoiceIdentifier: String = ""
     @Published var isSpeaking: Bool = false
+    @Published var personalVoiceAuthStatus: AVSpeechSynthesizer.PersonalVoiceAuthorizationStatus = .notDetermined
+    @Published var hasPersonalVoices: Bool = false
     
     private let synthesizer = AVSpeechSynthesizer()
     
     override init() {
         super.init()
         synthesizer.delegate = self
+        
+        // Check personal voice authorization status
+        if #available(iOS 17.0, macOS 14.0, *) {
+            personalVoiceAuthStatus = AVSpeechSynthesizer.personalVoiceAuthorizationStatus
+            
+            // Setup notification listener for voice changes
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(availableVoicesDidChange),
+                name: AVSpeechSynthesizer.availableVoicesDidChangeNotification,
+                object: nil
+            )
+        }
+        
         loadAvailableVoices()
         
         // Load saved voice or use default
@@ -23,12 +39,32 @@ class SpeechManager: NSObject, ObservableObject {
         }
     }
     
+    @objc private func availableVoicesDidChange(_ notification: Notification) {
+        loadAvailableVoices()
+    }
+    
     private func loadAvailableVoices() {
         // Get all available voices
         let allVoices = AVSpeechSynthesisVoice.speechVoices()
         
+        // Check if we have personal voices
+        if #available(iOS 17.0, macOS 14.0, *) {
+            hasPersonalVoices = allVoices.contains { voice in
+                voice.quality == .premium && voice.name.contains("Personal Voice")
+            }
+        }
+        
         // Sort voices by language and quality
         availableVoices = allVoices.sorted { (voice1, voice2) -> Bool in
+            // Personal voices at the very top if available
+            if #available(iOS 17.0, macOS 14.0, *) {
+                if voice1.name.contains("Personal Voice") && !voice2.name.contains("Personal Voice") {
+                    return true
+                } else if !voice1.name.contains("Personal Voice") && voice2.name.contains("Personal Voice") {
+                    return false
+                }
+            }
+            
             if voice1.language == voice2.language {
                 // Premium voices first, then alphabetical by name
                 if voice1.quality != voice2.quality {
@@ -90,6 +126,46 @@ class SpeechManager: NSObject, ObservableObject {
     func setVoice(identifier: String) {
         selectedVoiceIdentifier = identifier
         UserDefaults.standard.set(identifier, forKey: "selected_voice_identifier")
+    }
+    
+    func requestPersonalVoiceAuthorization() async {
+        if #available(iOS 17.0, macOS 14.0, *) {
+            // Only request if not already authorized or denied
+            if personalVoiceAuthStatus == .notDetermined {
+                let status = await AVSpeechSynthesizer.requestPersonalVoiceAuthorization()
+                DispatchQueue.main.async {
+                    self.personalVoiceAuthStatus = status
+                    // Reload voices to pick up any personal voices
+                    self.loadAvailableVoices()
+                }
+            }
+        }
+    }
+    
+    func personalVoiceStatusText() -> String {
+        if #available(iOS 17.0, macOS 14.0, *) {
+            switch personalVoiceAuthStatus {
+            case .authorized:
+                return hasPersonalVoices ? "Authorized - Personal Voice available" : "Authorized - Create a Personal Voice in Settings"
+            case .denied:
+                return "Access Denied - Enable in Settings"
+            case .notDetermined:
+                return "Not Requested"
+            case .unsupported:
+                return "Not Supported on this Device"
+            @unknown default:
+                return "Unknown Status"
+            }
+        } else {
+            return "Requires iOS 17 or macOS 14"
+        }
+    }
+    
+    func isPersonalVoice(_ voice: AVSpeechSynthesisVoice) -> Bool {
+        if #available(iOS 17.0, macOS 14.0, *) {
+            return voice.name.contains("Personal Voice")
+        }
+        return false
     }
 }
 
