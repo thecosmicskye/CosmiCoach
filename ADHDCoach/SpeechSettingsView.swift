@@ -9,7 +9,6 @@ struct SpeechSettingsView: View {
     
     @State private var searchText = ""
     @State private var selectedVoiceId: String
-    @State private var testText = "Hello, this is a test of the selected voice."
     
     init() {
         // Initialize with the current selection from UserDefaults
@@ -18,10 +17,31 @@ struct SpeechSettingsView: View {
     }
     
     var filteredVoices: [AVSpeechSynthesisVoice] {
+        // Get only English voices and sort with Enhanced first
+        let englishVoices = speechManager.availableVoices.filter { voice in 
+            return voice.language.starts(with: "en-")
+        }.sorted { (voice1, voice2) -> Bool in
+            // Enhanced voices at the top
+            if voice1.name.contains("Enhanced") && !voice2.name.contains("Enhanced") {
+                return true
+            } else if !voice1.name.contains("Enhanced") && voice2.name.contains("Enhanced") {
+                return false
+            }
+            
+            // Then sort by quality
+            if voice1.quality != voice2.quality {
+                return voice1.quality.rawValue > voice2.quality.rawValue
+            }
+            
+            // Then by name
+            return voice1.name < voice2.name
+        }
+        
+        // Apply search filter if needed
         if searchText.isEmpty {
-            return speechManager.availableVoices
+            return englishVoices
         } else {
-            return speechManager.availableVoices.filter { voice in
+            return englishVoices.filter { voice in
                 let displayName = speechManager.getDisplayName(for: voice).lowercased()
                 return displayName.contains(searchText.lowercased())
             }
@@ -30,150 +50,55 @@ struct SpeechSettingsView: View {
     
     var body: some View {
         NavigationStack {
-            VStack {
-                // Search bar
-                if #available(iOS 15.0, *) {
-                    List {
-                        Section(header: Text("Test Voice")) {
-                            TextField("Enter text to test voices", text: $testText)
-                                .textFieldStyle(.roundedBorder)
-                                .padding(.vertical, 5)
+            List {
+                Section(header: Text("Voices")) {
+                    ForEach(filteredVoices, id: \.identifier) { voice in
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(voice.name)
+                                    .font(.headline)
+                                Text(getLanguageName(for: voice.language))
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
                             
-                            Button(action: {
-                                if let selectedVoice = speechManager.availableVoices.first(where: { $0.identifier == selectedVoiceId }) {
-                                    speechManager.setVoice(identifier: selectedVoice.identifier)
-                                    speechManager.speak(text: testText)
-                                }
-                            }) {
-                                HStack {
-                                    Text("Speak Test Text")
-                                    Spacer()
-                                    Image(systemName: "speaker.wave.2.fill")
-                                }
-                            }
-                            .disabled(testText.isEmpty)
-                        }
-                        
-                        Section(header: Text("Voices")) {
-                            ForEach(filteredVoices, id: \.identifier) { voice in
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(voice.name)
-                                            .font(.headline)
-                                        Text(getLanguageName(for: voice.language))
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    if voice.quality == .premium {
-                                        Text("Premium")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.secondary.opacity(0.2))
-                                            .cornerRadius(4)
-                                    }
-                                    
-                                    Image(systemName: selectedVoiceId == voice.identifier ? "checkmark.circle.fill" : "circle")
-                                        .foregroundColor(selectedVoiceId == voice.identifier ? themeManager.accentColor(for: colorScheme) : .gray)
-                                }
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    selectedVoiceId = voice.identifier
-                                    speechManager.setVoice(identifier: voice.identifier)
-                                    
-                                    // Provide haptic feedback
-                                    let generator = UIImpactFeedbackGenerator(style: .light)
-                                    generator.impactOccurred()
-                                }
-                            }
-                        }
-                    }
-                    .searchable(text: $searchText, prompt: "Search voices")
-                } else {
-                    // Fallback for iOS 14
-                    List {
-                        Section(header: Text("Search")) {
-                            TextField("Search voices", text: $searchText)
-                                .textFieldStyle(.roundedBorder)
-                        }
-                        
-                        Section(header: Text("Test Voice")) {
-                            TextField("Enter text to test voices", text: $testText)
-                                .textFieldStyle(.roundedBorder)
-                                .padding(.vertical, 5)
+                            Spacer()
                             
-                            Button(action: {
-                                if let selectedVoice = speechManager.availableVoices.first(where: { $0.identifier == selectedVoiceId }) {
-                                    speechManager.setVoice(identifier: selectedVoice.identifier)
-                                    speechManager.speak(text: testText)
-                                }
-                            }) {
-                                HStack {
-                                    Text("Speak Test Text")
-                                    Spacer()
-                                    Image(systemName: "speaker.wave.2.fill")
-                                }
+                            if voice.quality == .premium {
+                                Text("Premium")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.secondary.opacity(0.2))
+                                    .cornerRadius(4)
                             }
-                            .disabled(testText.isEmpty)
-                        }
-                        
-                        Section(header: Text("Voices")) {
-                            ForEach(filteredVoices, id: \.identifier) { voice in
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(voice.name)
-                                            .font(.headline)
-                                        Text(getLanguageName(for: voice.language))
-                                            .font(.subheadline)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    if voice.quality == .premium {
-                                        Text("Premium")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2)
-                                            .background(Color.secondary.opacity(0.2))
-                                            .cornerRadius(4)
-                                    }
-                                    
-                                    Image(systemName: selectedVoiceId == voice.identifier ? "checkmark.circle.fill" : "circle")
-                                        .foregroundColor(selectedVoiceId == voice.identifier ? themeManager.accentColor(for: colorScheme) : .gray)
-                                }
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    selectedVoiceId = voice.identifier
-                                    speechManager.setVoice(identifier: voice.identifier)
-                                    
-                                    // Provide haptic feedback
-                                    let generator = UIImpactFeedbackGenerator(style: .light)
-                                    generator.impactOccurred()
-                                }
+                            
+                            Image(systemName: selectedVoiceId == voice.identifier ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 22))
+                                .foregroundColor(selectedVoiceId == voice.identifier ? themeManager.accentColor(for: colorScheme) : .gray)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                selectedVoiceId = voice.identifier
+                                speechManager.setVoice(identifier: voice.identifier)
+                                
+                                // Speak test message with the selected voice
+                                speechManager.speak(text: "This is my voice.")
+                                
+                                // Provide haptic feedback
+                                let generator = UIImpactFeedbackGenerator(style: .light)
+                                generator.impactOccurred()
                             }
                         }
                     }
                 }
-            }
+                .searchable(text: $searchText, prompt: "Search voices")
+            
             .navigationTitle("Speech")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(colorScheme)
             .applyThemeColor()
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Done") {
-                        speechManager.stopSpeaking()
-                        dismiss()
-                    }
-                    .foregroundColor(themeManager.accentColor(for: colorScheme))
-                }
-            }
             .onChange(of: selectedVoiceId) { _, newValue in
                 speechManager.setVoice(identifier: newValue)
             }
