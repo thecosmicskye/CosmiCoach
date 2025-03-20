@@ -14,6 +14,9 @@ class SpeechManager: NSObject, ObservableObject {
         super.init()
         synthesizer.delegate = self
         
+        // Configure audio session to allow playback through speakers
+        configureAudioSession()
+        
         // Check personal voice authorization status
         if #available(iOS 17.0, macOS 14.0, *) {
             personalVoiceAuthStatus = AVSpeechSynthesizer.personalVoiceAuthorizationStatus
@@ -36,6 +39,17 @@ class SpeechManager: NSObject, ObservableObject {
         } else {
             // Default to system voice or first English voice
             selectedVoiceIdentifier = AVSpeechSynthesisVoice.currentLanguageCode()
+        }
+    }
+    
+    private func configureAudioSession() {
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            // Configure to allow playback through device speakers
+            try audioSession.setCategory(.playback, mode: .default, options: [.duckOthers, .defaultToSpeaker])
+            try audioSession.setActive(true)
+        } catch {
+            print("Failed to configure audio session: \(error.localizedDescription)")
         }
     }
     
@@ -96,6 +110,9 @@ class SpeechManager: NSObject, ObservableObject {
         if isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+        
+        // Ensure audio session is properly configured
+        configureAudioSession()
         
         // Create utterance with selected voice
         let utterance = AVSpeechUtterance(string: text)
