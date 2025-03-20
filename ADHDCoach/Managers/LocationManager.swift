@@ -59,7 +59,8 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         locationManager.delegate = self
-        locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        locationManager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters 
+        locationManager.distanceFilter = 10 // Only update if moved at least 10 meters
         checkPermissions()
     }
     
@@ -71,13 +72,14 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     func requestAccess() {
         print("📍 Requesting location authorization")
         locationManager.requestWhenInUseAuthorization()
-        // Always start updates when requesting access - this is needed for permission prompt to show
-        locationManager.startUpdatingLocation()
+        // Request a single location update when asking for permission
+        locationManager.requestLocation()
     }
     
     func startUpdatingLocation() {
         if locationAccessGranted {
-            locationManager.startUpdatingLocation()
+            // Request a single location update instead of continuous updates
+            locationManager.requestLocation()
         }
     }
     
@@ -90,7 +92,8 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         checkPermissions()
         if locationAccessGranted && UserDefaults.standard.bool(forKey: "enable_location_awareness") {
-            locationManager.startUpdatingLocation()
+            // Request a single location update
+            locationManager.requestLocation()
         } else {
             locationManager.stopUpdatingLocation()
         }
@@ -98,6 +101,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         if let location = locations.last {
+            // Update published properties, which will rebuild any dependent views
             currentLocation = location
             lastLocationUpdate = Date()
         }

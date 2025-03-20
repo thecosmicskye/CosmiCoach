@@ -24,7 +24,8 @@ struct ContentView: View {
     @EnvironmentObject private var eventKitManager: EventKitManager
     @EnvironmentObject private var memoryManager: MemoryManager
     @EnvironmentObject private var themeManager: ThemeManager
-    @EnvironmentObject private var locationManager: LocationManager
+    // Use ObservedObject instead of EnvironmentObject for locationManager to prevent cascading rebuilds
+    @ObservedObject private var locationManager = LocationManager()
     
     // MARK: - Environment Values
     @Environment(\.colorScheme) private var colorScheme
@@ -52,7 +53,7 @@ struct ContentView: View {
     @State private var showDebugTools: Bool = false
     
     init() {
-        print("ContentView initialized")
+        print("ContentView initialized at \(Date())")
     }
 
     // MARK: - Methods
@@ -444,7 +445,9 @@ struct ContentView: View {
     
     // MARK: - Main View Body
     var body: some View {
-        NavigationStack {
+        let _ = Self._printChanges() // Add view body change tracking for debugging
+        
+        return NavigationStack {
             GeometryReader { geometry in
                 ZStack(alignment: .bottom) {
                     // Constants for layout management
@@ -851,6 +854,7 @@ struct KeyboardAttachedView: UIViewControllerRepresentable {
     
     // MARK: UIViewControllerRepresentable
     func makeUIViewController(context: Context) -> KeyboardObservingViewController {
+        print("KeyboardAttachedView.makeUIViewController")
         return KeyboardObservingViewController(
             keyboardState: keyboardState,
             text: $text,
@@ -863,13 +867,22 @@ struct KeyboardAttachedView: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: KeyboardObservingViewController, context: Context) {
-        uiViewController.updateContent(
-            text: text,
-            colorScheme: colorScheme,
-            themeColor: themeColor,
-            isDisabled: isDisabled,
-            debugOutlineMode: debugOutlineMode
-        )
+        // Only update content if there are actual changes to avoid unnecessary view rebuilds
+        let textChanged = uiViewController.text.wrappedValue != text
+        let colorSchemeChanged = uiViewController.colorScheme != colorScheme
+        let themeColorChanged = uiViewController.themeColor != themeColor
+        let disabledStateChanged = uiViewController.isDisabled != isDisabled
+        let debugModeChanged = uiViewController.debugOutlineMode != debugOutlineMode
+        
+        if textChanged || colorSchemeChanged || themeColorChanged || disabledStateChanged || debugModeChanged {
+            uiViewController.updateContent(
+                text: text,
+                colorScheme: colorScheme,
+                themeColor: themeColor,
+                isDisabled: isDisabled,
+                debugOutlineMode: debugOutlineMode
+            )
+        }
     }
 }
 
@@ -885,14 +898,14 @@ class KeyboardObservingViewController: UIViewController {
     private let keyboardVisibilityThreshold: CGFloat = 100
     
     // MARK: Properties
-    private var keyboardState: KeyboardState
+    internal var keyboardState: KeyboardState // Changed from private to internal
     private var bottomConstraint: NSLayoutConstraint?
-    private var text: Binding<String>
-    private var onSend: () -> Void
-    private var colorScheme: ColorScheme
-    private var themeColor: Color
-    private var isDisabled: Bool
-    private var debugOutlineMode: DebugOutlineMode
+    internal var text: Binding<String> // Changed from private to internal
+    internal var onSend: () -> Void // Changed from private to internal
+    internal var colorScheme: ColorScheme // Changed from private to internal
+    internal var themeColor: Color // Changed from private to internal
+    internal var isDisabled: Bool // Changed from private to internal
+    internal var debugOutlineMode: DebugOutlineMode // Changed from private to internal
     
     // MARK: Lifecycle
     deinit {
@@ -1005,7 +1018,7 @@ class KeyboardObservingViewController: UIViewController {
         isDisabled: Bool,
         debugOutlineMode: DebugOutlineMode
     ) {
-        // Check for changes
+        // Check for changes that would require us to update the view
         let textChanged = self.text.wrappedValue != text
         let themeColorChanged = self.themeColor != themeColor
         let disabledStateChanged = self.isDisabled != isDisabled
@@ -1013,24 +1026,31 @@ class KeyboardObservingViewController: UIViewController {
         let colorSchemeChanged = self.colorScheme != colorScheme
         let visualPropertiesChanged = themeColorChanged || disabledStateChanged || debugModeChanged || colorSchemeChanged
         
+        // Skip full update if nothing has changed
+        if !textChanged && !visualPropertiesChanged {
+            return
+        }
+        
+        print("KeyboardObservingViewController.updateContent - updating \(textChanged ? "text" : "") \(visualPropertiesChanged ? "visuals" : "")")
+        
         // Update text (without animation if clearing)
         if textChanged && text.isEmpty {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             self.text.wrappedValue = text
             CATransaction.commit()
-        } else {
+        } else if textChanged {
             self.text.wrappedValue = text
         }
         
         // Update other properties
-        self.colorScheme = colorScheme
-        self.themeColor = themeColor
-        self.isDisabled = isDisabled
-        self.debugOutlineMode = debugOutlineMode
-        
-        // Update SwiftUI view if visual properties changed
         if visualPropertiesChanged {
+            self.colorScheme = colorScheme
+            self.themeColor = themeColor
+            self.isDisabled = isDisabled
+            self.debugOutlineMode = debugOutlineMode
+            
+            // Update SwiftUI view only if visual properties changed
             inputHostView.rootView = createTextInputView()
             updateSwiftUIViewPosition()
         }
