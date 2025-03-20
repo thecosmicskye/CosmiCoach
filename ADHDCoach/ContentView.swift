@@ -51,6 +51,10 @@ struct ContentView: View {
     @State private var debugOutlineMode: DebugOutlineMode = .none
     @State private var showDebugTools: Bool = false
     
+    init() {
+        print("ContentView initialized")
+    }
+
     // MARK: - Methods
     /// Sets up notification observer for chat history deletion and scroll position restoration
     private func setupNotificationObserver() {
