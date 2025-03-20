@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 @main
 struct ADHDCoachApp: App {
@@ -7,6 +8,7 @@ struct ADHDCoachApp: App {
     @StateObject private var memoryManager = MemoryManager()
     @StateObject private var locationManager = LocationManager()
     @StateObject private var themeManager = ThemeManager()
+    @StateObject private var speechManager = SpeechManager()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("enable_location_awareness") private var enableLocationAwareness = false
     
@@ -46,6 +48,7 @@ struct ADHDCoachApp: App {
                     .environmentObject(memoryManager)
                     .environmentObject(locationManager)
                     .environmentObject(themeManager)
+                    .environmentObject(speechManager)
                     .onAppear {
                         // Configure UIKit appearance - now safe to use StateObjects
                         configureUIKitAppearance()
@@ -81,6 +84,7 @@ struct ADHDCoachApp: App {
                     .environmentObject(chatManager)
                     .environmentObject(locationManager)
                     .environmentObject(themeManager)
+                    .environmentObject(speechManager)
                     .onAppear {
                         // Configure UIKit appearance - now safe to use StateObjects
                         configureUIKitAppearance()

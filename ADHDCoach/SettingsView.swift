@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AVFoundation
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -8,6 +9,7 @@ struct SettingsView: View {
     @EnvironmentObject private var locationManager: LocationManager
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var chatManager: ChatManager
+    @EnvironmentObject private var speechManager: SpeechManager
     @AppStorage("claude_api_key") private var apiKey = ""
     @AppStorage("check_basics_daily") private var checkBasicsDaily = true
     @AppStorage("token_limit") private var tokenLimit = 75000
@@ -202,6 +204,26 @@ struct SettingsView: View {
                             }
                         }
                     }
+                    
+                    NavigationLink {
+                        SpeechSettingsView()
+                            .environmentObject(themeManager)
+                            .environmentObject(speechManager)
+                    } label: {
+                        HStack {
+                            Text("Speech")
+                            
+                            Spacer()
+                            
+                            HStack {
+                                Image(systemName: "speaker.wave.2.fill")
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 16, height: 16)
+                                Text("Voices")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
                 }
                 
                 Section(footer: 
@@ -322,4 +344,5 @@ struct SettingsView: View {
         .environmentObject(LocationManager())
         .environmentObject(ThemeManager())
         .environmentObject(ChatManager())
+        .environmentObject(SpeechManager())
 }
