@@ -261,26 +261,23 @@ struct SettingsView: View {
                         }
                 }
                 
-                Section(footer:
-                    Text("Sync chat messages between your devices automatically when both are using the same app.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                ) {
-                    Toggle("Device Sync", isOn: $multipeerService.isSyncEnabled)
-                    
-                    if multipeerService.isSyncEnabled {
-                        NavigationLink {
-                            SyncDevicesView()
-                                .environmentObject(themeManager)
-                                .environmentObject(multipeerService)
-                        } label: {
+                Section {
+                    NavigationLink {
+                        SyncDevicesView()
+                            .environmentObject(themeManager)
+                            .environmentObject(multipeerService)
+                    } label: {
+                        HStack {
+                            Text("Sync Devices")
+                            
+                            Spacer()
+                            
                             HStack {
-                                Text("Manage Devices")
-                                
-                                Spacer()
-                                
-                                HStack {
+                                if multipeerService.isSyncEnabled {
                                     Text("\(multipeerService.connectedPeers.count) connected")
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text("Off")
                                         .foregroundColor(.secondary)
                                 }
                             }
