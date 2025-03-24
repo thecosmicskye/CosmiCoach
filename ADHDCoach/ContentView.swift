@@ -844,13 +844,20 @@ class KeyboardState: ObservableObject {
     ///   - visible: Whether keyboard is visible
     ///   - height: Height of keyboard in points
     func setKeyboardVisible(_ visible: Bool, height: CGFloat) {
-        // Only trigger updates when there's an actual change
-        let heightChanged = visible && keyboardOffset != height
+        // Always update if visible state changes
         let visibilityChanged = isKeyboardVisible != visible
+        // For height changes, only check when keyboard is/remains visible
+        let heightChanged = visible && keyboardOffset != height
         
-        if visibilityChanged || heightChanged {
-            isKeyboardVisible = visible
-            keyboardOffset = visible ? height : 0
+        if visibilityChanged {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isKeyboardVisible = visible
+                keyboardOffset = visible ? height : 0
+            }
+        } else if heightChanged {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                keyboardOffset = height
+            }
         }
     }
     
@@ -860,6 +867,7 @@ class KeyboardState: ObservableObject {
     ///   - safeAreaPadding: Additional padding to account for safe area
     /// - Returns: The calculated padding value
     func getInputViewPadding(baseHeight: CGFloat, safeAreaPadding: CGFloat) -> CGFloat {
+        // Apply consistent padding calculation for both keyboard states
         return isKeyboardVisible ? keyboardOffset + safeAreaPadding : baseHeight
     }
 }
@@ -1221,10 +1229,13 @@ class KeyboardObservingViewController: UIViewController {
         // Check keyboard visibility
         let isVisible = keyboardFrame.minY < UIScreen.main.bounds.height
         
-        // Update state
+        // Update state without SwiftUI animation (since we'll do UIKit animation)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         keyboardState.setKeyboardVisible(isVisible, height: keyboardFrame.height)
+        CATransaction.commit()
         
-        // Match keyboard animation exactly
+        // Match keyboard animation exactly using UIKit
         let curveValue = curve.uintValue
         let animationOptions = UIView.AnimationOptions(rawValue: curveValue << 16)
         
@@ -1247,8 +1258,11 @@ class KeyboardObservingViewController: UIViewController {
             return
         }
         
-        // Update state
+        // Update state without SwiftUI animation (since we'll do UIKit animation)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         keyboardState.setKeyboardVisible(false, height: 0)
+        CATransaction.commit()
         
         // Match keyboard animation exactly
         let curveValue = curve.uintValue
@@ -1291,8 +1305,13 @@ class KeyboardObservingViewController: UIViewController {
         let shouldUpdate = heightDifference > 1.0 || keyboardState.isKeyboardVisible != isVisible
         
         if shouldUpdate {
-            // Update state and layout
+            // Update state without animation during interactive gesture
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             keyboardState.setKeyboardVisible(isVisible, height: isVisible ? keyboardHeight : 0)
+            CATransaction.commit()
+            
+            // Update layout immediately
             view.layoutIfNeeded()
             updateSwiftUIViewPosition()
         }
