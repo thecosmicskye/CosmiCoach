@@ -53,7 +53,7 @@ struct ContentView: View {
     
     // MARK: - Debug State
     @State private var debugOutlineMode: DebugOutlineMode = .none
-    @State private var showDebugTools: Bool = false
+    @State private var showDebugTools: Bool = true
     
     init() {
         print("ContentView initialized at \(Date())")
@@ -218,10 +218,14 @@ struct ContentView: View {
             isDisabled: chatManager.isProcessing,
             debugOutlineMode: debugOutlineMode
         )
-        .frame(height: keyboardState.getInputViewPadding(
-            baseHeight: inputBaseHeight,
-            safeAreaPadding: safeAreaBottomPadding
+        .frame(height: max(
+            keyboardState.inputViewHeight, // Always respect the minimum actual height of the input view
+            keyboardState.getInputViewPadding(
+                baseHeight: inputBaseHeight,
+                safeAreaPadding: safeAreaBottomPadding
+            )
         ))
+        .animation(.easeInOut(duration: 0.2), value: keyboardState.inputViewHeight)
         .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, width: 2)
     }
     
@@ -494,8 +498,8 @@ struct ContentView: View {
         return NavigationStack {
             GeometryReader { geometry in
                 ZStack(alignment: .bottom) {
-                    // Constants for layout management
-                    let inputBaseHeight: CGFloat = 54
+                    // Constants for layout management - based on system font metrics
+                    let inputBaseHeight: CGFloat = keyboardState.defaultInputHeight
                     let safeAreaBottomPadding: CGFloat = 20
                     
                     // Debug border around entire ZStack
@@ -510,13 +514,14 @@ struct ContentView: View {
                             createScrollView(scrollView: scrollView)
                         }
                         
-                        // Dynamic spacer that adjusts based on keyboard presence
+                        // Dynamic spacer that adjusts based on keyboard presence and text input height
                         Spacer()
                             .frame(height: keyboardState.getInputViewPadding(
                                 baseHeight: inputBaseHeight,
                                 safeAreaPadding: safeAreaBottomPadding
                             ))
                             .border(debugOutlineMode == .spacer ? Color.yellow : Color.clear, width: 2)
+                            .animation(.easeInOut(duration: 0.2), value: keyboardState.inputViewHeight)
                     }
                     .frame(height: geometry.size.height)
                     .border(debugOutlineMode == .vStack ? Color.orange : Color.clear, width: 2)
@@ -718,6 +723,19 @@ struct ContentView: View {
         let messageToSend = trimmedText
         inputText = ""
         
+        // Reset text input height immediately
+        DispatchQueue.main.async {
+            // Explicitly reset the KeyboardState inputViewHeight to default
+            keyboardState.inputViewHeight = keyboardState.defaultInputHeight
+            
+            // Notify about height change
+            NotificationCenter.default.post(
+                name: NSNotification.Name("InputViewHeightChanged"),
+                object: nil,
+                userInfo: ["height": keyboardState.defaultInputHeight]
+            )
+        }
+        
         // Add user message to chat immediately
         chatManager.addUserMessage(content: messageToSend)
         
@@ -792,6 +810,26 @@ struct MessageHeightPreferenceKey: PreferenceKey {
     }
 }
 
+// Extension to get keyboard modifier flags
+extension UIWindow {
+    var eventModifierFlags: UIKeyModifierFlags? {
+        // For when a hardware keyboard is attached to the device
+        if let event = UIApplication.shared.windows.first?.undocumentedCurrentEvent {
+            return event.modifierFlags
+        }
+        return nil
+    }
+    
+    private var undocumentedCurrentEvent: UIEvent? {
+        // Private API access to get current event - necessary for detecting modifier keys
+        let selector = NSSelectorFromString("_currentEvent")
+        if responds(to: selector) {
+            return perform(selector).takeUnretainedValue() as? UIEvent
+        }
+        return nil
+    }
+}
+
 
 // MARK: - Previews
 
@@ -833,11 +871,24 @@ struct MessageHeightPreferenceKey: PreferenceKey {
 
 // MARK: - KeyboardState
 class KeyboardState: ObservableObject {
+    // Default font and sizing for consistency - accessible to other components
+    var defaultFont: UIFont { UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.2) }
+    var singleLineHeight: CGFloat { defaultFont.lineHeight + 16 } // Line height + padding
+    var defaultInputHeight: CGFloat { singleLineHeight + 16 } // Add container padding
+    
     /// Current keyboard height when visible, or 0 when hidden
     @Published var keyboardOffset: CGFloat = 0
     
     /// Whether the keyboard is currently visible
     @Published var isKeyboardVisible: Bool = false
+    
+    /// Height of the input view component
+    @Published var inputViewHeight: CGFloat = 0
+    
+    init() {
+        // Initialize with calculated default height
+        self.inputViewHeight = defaultInputHeight
+    }
     
     /// Updates keyboard state if there's an actual change to prevent unnecessary view updates
     /// - Parameters:
@@ -867,8 +918,20 @@ class KeyboardState: ObservableObject {
     ///   - safeAreaPadding: Additional padding to account for safe area
     /// - Returns: The calculated padding value
     func getInputViewPadding(baseHeight: CGFloat, safeAreaPadding: CGFloat) -> CGFloat {
-        // Apply consistent padding calculation for both keyboard states
-        return isKeyboardVisible ? keyboardOffset + safeAreaPadding : baseHeight
+        // Get the correct height based on the text input size
+        let actualBaseHeight = inputViewHeight != defaultInputHeight ? inputViewHeight : baseHeight
+        
+        // When keyboard is visible, we need to account for both keyboard height AND the text input height difference
+        if isKeyboardVisible {
+            // Calculate height difference from default
+            let heightDifference = inputViewHeight - defaultInputHeight
+            
+            // Add this difference to the keyboard offset
+            return keyboardOffset + safeAreaPadding + (heightDifference > 0 ? heightDifference : 0)
+        } else {
+            // When keyboard is hidden, just use the actual base height
+            return actualBaseHeight
+        }
     }
 }
 
@@ -888,6 +951,14 @@ struct TextInputView: View {
     
     // Local state
     @State private var isSending = false
+    @State private var textEditorHeight: CGFloat = 0 // Will be set to minHeight in onAppear
+    
+    // Constants 
+    private var defaultFont: UIFont { UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.2) }
+    private var defaultFontSize: CGFloat { defaultFont.pointSize }
+    private var lineHeight: CGFloat { defaultFont.lineHeight }
+    private let maxLines: Int = 4
+    private var minHeight: CGFloat { lineHeight + 16 } // Single line + padding
     
     // Computed properties
     private var isButtonDisabled: Bool {
@@ -898,22 +969,99 @@ struct TextInputView: View {
         isButtonDisabled ? .gray : themeColor
     }
     
+    // Calculate max height based on max lines
+    private var maxHeight: CGFloat {
+        let padding: CGFloat = 16 // vertical padding
+        return (CGFloat(maxLines) * lineHeight) + padding
+    }
+    
     // MARK: Body
     var body: some View {
-        HStack {
-            // Text input field
-            TextField("Message", text: $text)
-                .padding(.horizontal, 15)
-                .padding(.vertical, 8)
-                .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, width: 1)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .animation(nil, value: text) // Prevent animation during transitions
+        HStack(alignment: .bottom) {
+            // Text input field - using a multi-line editor
+            ZStack(alignment: .leading) {
+                // Placeholder text that shows when the text editor is empty
+                if text.isEmpty {
+                    Text("Message")
+                        .foregroundColor(Color(.placeholderText))
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 8)
+                }
+                
+                // Actual text editor
+                MultilineTextField(text: $text, onSubmit: {
+                    // Submit on shift+return or command+return
+                    if !text.isEmpty {
+                        onSend()
+                    }
+                })
+                .frame(height: min(textEditorHeight, maxHeight))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .onAppear {
+                    // Initialize height with calculated minHeight
+                    textEditorHeight = minHeight
+                }
+                .background(Color.clear)
+                .onChange(of: text) { _, newText in
+                    // Calculate height based on text content
+                    let size = getTextSize(for: newText)
+                    let newHeight = min(max(size.height + 16, minHeight), maxHeight)
+                    
+                    // Only update if height actually changed
+                    if newHeight != textEditorHeight {
+                        textEditorHeight = newHeight
+                        
+                        // Calculate total height including padding and container
+                        let totalHeight = newHeight + 16 // Add padding for the container
+                        
+                        // Logging for debugging
+                        if inputViewLayoutDebug {
+                            print("Text height changed: \(textEditorHeight) → total: \(totalHeight)")
+                        }
+                        
+                        // Notify parent view controller of height change
+                        DispatchQueue.main.async {
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("InputViewHeightChanged"),
+                                object: nil,
+                                userInfo: ["height": totalHeight]
+                            )
+                        }
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+            .padding(.horizontal, 7)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, width: 1)
+            .animation(nil, value: text) // Prevent animation during transitions
             
             // Send button
             Button {
                 guard !isSending else { return }
                 isSending = true
+                
+                // Reset text editor height before sending
+                textEditorHeight = minHeight
+                
+                // Explicitly notify about height change to default
+                if inputViewLayoutDebug {
+                    print("Resetting text height to default: \(minHeight)")
+                }
+                
+                // Calculate total input view height (text + container padding)
+                let totalHeight = minHeight + 16 // Add padding for container
+                
+                // Notify parent about height change
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("InputViewHeightChanged"),
+                    object: nil,
+                    userInfo: ["height": totalHeight]
+                )
+                
+                // Call send after height is reset
                 onSend()
                 
                 // Reset button state after a brief delay
@@ -930,6 +1078,7 @@ struct TextInputView: View {
                         .foregroundColor(isButtonDisabled ? Color(.systemBackground) : .white)
                 }
             }
+            .padding(.bottom, 4)
             .disabled(isButtonDisabled)
             .animation(.easeInOut(duration: 0.1), value: isButtonDisabled)
         }
@@ -938,6 +1087,24 @@ struct TextInputView: View {
         .transaction { transaction in
             transaction.animation = nil // Prevent position animations
         }
+    }
+    
+    // Helper to calculate text size
+    private func getTextSize(for text: String) -> CGSize {
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: defaultFont
+        ]
+        
+        let width = UIScreen.main.bounds.width - 100 // Approximate width after padding and button
+        let constraintRect = CGSize(width: width, height: .greatestFiniteMagnitude)
+        let boundingBox = text.boundingRect(
+            with: constraintRect,
+            options: .usesLineFragmentOrigin,
+            attributes: attributes,
+            context: nil
+        )
+        
+        return boundingBox.size
     }
 }
 
@@ -986,6 +1153,89 @@ struct KeyboardAttachedView: UIViewControllerRepresentable {
     }
 }
 
+// MARK: - MultilineTextField
+struct MultilineTextField: UIViewRepresentable {
+    @Binding var text: String
+    var onSubmit: () -> Void
+    
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.delegate = context.coordinator
+        textView.font = UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.2) // Use system font size with slight increase
+        textView.backgroundColor = .clear
+        textView.isScrollEnabled = true
+        textView.isEditable = true
+        textView.isUserInteractionEnabled = true
+        textView.autocapitalizationType = .sentences
+        textView.returnKeyType = .default // Use default return key
+        textView.keyboardType = .default
+        textView.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
+        textView.text = text
+        return textView
+    }
+    
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        // Only update if text changed externally
+        if uiView.text != text {
+            uiView.text = text
+            
+            // When text is cleared, notify about height change
+            if text.isEmpty {
+                // Access defaultInputHeight via UIKit extension since we're in a UIViewRepresentable
+                let defaultHeight = UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.2).lineHeight + 32 // Line height + padding + container
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("InputViewHeightChanged"),
+                        object: nil,
+                        userInfo: ["height": defaultHeight]
+                    )
+                }
+            }
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UITextViewDelegate {
+        var parent: MultilineTextField
+        
+        init(_ parent: MultilineTextField) {
+            self.parent = parent
+        }
+        
+        func textViewDidChange(_ textView: UITextView) {
+            parent.text = textView.text
+        }
+        
+        func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            // Check for special key combinations
+            let currentText = textView.text ?? ""
+            
+            // Current selection
+            let selectedRange = textView.selectedRange
+            
+            // Handle key combinations
+            if text == "\n" {
+                // Check if shift or command key is pressed
+                let modifierFlags = UIApplication.shared.windows.first?.windowScene?.keyWindow?.eventModifierFlags
+                
+                if modifierFlags?.contains(.shift) == true || modifierFlags?.contains(.command) == true {
+                    // Shift+Return or Command+Return: submit message
+                    parent.onSubmit()
+                    return false
+                } else {
+                    // Normal Return: insert line break (default behavior)
+                    return true
+                }
+            }
+            
+            return true
+        }
+    }
+}
+
 // MARK: - KeyboardObservingViewController
 class KeyboardObservingViewController: UIViewController {
     // MARK: Views
@@ -994,12 +1244,20 @@ class KeyboardObservingViewController: UIViewController {
     private var inputHostView: UIHostingController<TextInputView>!
     
     // MARK: Constants
-    private let inputViewHeight: CGFloat = 54
+    private var defaultFont: UIFont { UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.2) }
+    private var singleLineInputHeight: CGFloat { defaultFont.lineHeight + 16 } // Line height + padding
+    private var inputViewHeight: CGFloat { singleLineInputHeight + 16 } // Add container padding
     private let keyboardVisibilityThreshold: CGFloat = 100
     
     // MARK: Properties
     internal var keyboardState: KeyboardState // Changed from private to internal
     private var bottomConstraint: NSLayoutConstraint?
+    private var heightConstraint: NSLayoutConstraint?
+    private var _lastInputViewHeight: CGFloat = 0
+    private var currentInputViewHeight: CGFloat {
+        get { inputViewHeight }
+        set { _lastInputViewHeight = newValue } 
+    }
     internal var text: Binding<String> // Changed from private to internal
     internal var onSend: () -> Void // Changed from private to internal
     internal var colorScheme: ColorScheme // Changed from private to internal
@@ -1091,12 +1349,23 @@ class KeyboardObservingViewController: UIViewController {
         NSLayoutConstraint.activate([
             inputHostView.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             inputHostView.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            inputHostView.view.heightAnchor.constraint(equalToConstant: inputViewHeight)
         ])
+        
+        // Create height constraint that we can update later
+        heightConstraint = inputHostView.view.heightAnchor.constraint(equalToConstant: inputViewHeight)
+        heightConstraint?.isActive = true
         
         // Attach to keyboard
         bottomConstraint = inputHostView.view.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor)
         bottomConstraint?.isActive = true
+        
+        // Setup notification observer for input view height changes
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleInputViewHeightChange),
+            name: NSNotification.Name("InputViewHeightChanged"),
+            object: nil
+        )
     }
     
     private func createTextInputView() -> TextInputView {
@@ -1272,6 +1541,55 @@ class KeyboardObservingViewController: UIViewController {
         UIView.animate(withDuration: duration, delay: 0, options: [animationOptions, .beginFromCurrentState]) {
             self.view.layoutIfNeeded()
             self.updateSwiftUIViewPosition()
+        }
+    }
+    
+    // MARK: Input View Height Handling
+    @objc func handleInputViewHeightChange(_ notification: Notification) {
+        guard let height = notification.userInfo?["height"] as? CGFloat else { return }
+        
+        print("📝 Height change notification received: \(height) (current: \(_lastInputViewHeight))")
+        
+        // Store the height in our backing variable
+        _lastInputViewHeight = height
+        
+        // Update the height constraint
+        heightConstraint?.constant = height
+        
+        // Update keyboardState with new input view height
+        keyboardState.inputViewHeight = height
+        
+        // Notify parent view to update layout for the new height
+        NotificationCenter.default.post(
+            name: NSNotification.Name("KeyboardStateChanged"),
+            object: nil,
+            userInfo: ["height": height]
+        )
+        
+        // Update layout with animation
+        UIView.animate(withDuration: 0.2) {
+            self.view.layoutIfNeeded()
+        }
+        
+        // Make sure we update the parent ContentView's layout as well
+        DispatchQueue.main.async {
+            self.updateSwiftUIViewPosition()
+        }
+        
+        // Ensure the parent views are updated as well
+        // This is especially important after sending a message
+        if text.wrappedValue.isEmpty || height == inputViewHeight {
+            print("📝 Text is empty or height is default, forcing reset to defaults")
+            
+            // Force another update after a slight delay to ensure it takes effect
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.heightConstraint?.constant = self.inputViewHeight
+                self.keyboardState.inputViewHeight = self.keyboardState.defaultInputHeight
+                
+                UIView.animate(withDuration: 0.2) {
+                    self.view.layoutIfNeeded()
+                }
+            }
         }
     }
     
