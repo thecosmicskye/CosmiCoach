@@ -169,6 +169,9 @@ class MemoryManager: ObservableObject {
                 memories.append(newMemory)
                 self.memoryContent = formatMemoriesForClaude()
                 print("📝 Memory successfully added with ID: \(newMemory.id)")
+                
+                // Post notification for sync between devices
+                NotificationCenter.default.post(name: NSNotification.Name("MemoryItemAdded"), object: newMemory)
             }
             
             try await saveMemories()
@@ -203,6 +206,20 @@ class MemoryManager: ObservableObject {
             
             throw error
         }
+    }
+    
+    /// Add a memory received from another device (without triggering notification)
+    func addReceivedMemory(_ memory: MemoryItem) async throws {
+        print("📝 Adding received memory from sync: \"\(memory.content)\"")
+        
+        await MainActor.run {
+            memories.append(memory)
+            self.memoryContent = formatMemoriesForClaude()
+            print("📝 Synced memory added with ID: \(memory.id)")
+        }
+        
+        try await saveMemories()
+        print("📝 Synced memory saved to persistent storage")
     }
     
     func updateMemory(id: UUID, newContent: String? = nil, newCategory: MemoryCategory? = nil, newImportance: Int? = nil, messageId: UUID? = nil, chatManager: ChatManager? = nil) async throws {
@@ -253,6 +270,9 @@ class MemoryManager: ObservableObject {
                 
                 memories[index] = updatedMemory
                 self.memoryContent = formatMemoriesForClaude()
+                
+                // Post notification for sync between devices
+                NotificationCenter.default.post(name: NSNotification.Name("MemoryItemAdded"), object: updatedMemory)
             }
             
             try await saveMemories()
@@ -319,8 +339,15 @@ class MemoryManager: ObservableObject {
         
         do {
             await MainActor.run {
+                // Get the memory item before removal for notification
+                let removedMemory = memories[index]
+                
+                // Remove from memory array
                 memories.remove(at: index)
                 self.memoryContent = formatMemoriesForClaude()
+                
+                // For now, we don't handle deletes across devices - we would need to create a special sync message
+                // type for deletes or provide a "deleted" flag in the memory model
             }
             
             try await saveMemories()

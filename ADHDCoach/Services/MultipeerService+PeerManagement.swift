@@ -180,6 +180,16 @@ extension MultipeerService {
             
             try session.send(syncData, toPeers: [peerID], with: .reliable)
             print("🔄 Sent message sync to \(peerID.displayName) with \(messages.count) messages")
+            
+            // Also sync memories
+            if !memories.isEmpty {
+                // Send memories
+                let syncMemories = SyncMemories(memories: memories)
+                let memoriesData = try JSONEncoder().encode(syncMemories)
+                
+                try session.send(memoriesData, toPeers: [peerID], with: .reliable)
+                print("🔄 Sent memory sync to \(peerID.displayName) with \(memories.count) memories")
+            }
         } catch {
             print("❌ Failed to sync messages: \(error.localizedDescription)")
         }
