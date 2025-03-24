@@ -7,5 +7,12 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_cosmiccoach._tcp</string>
+		<string>_cosmiccoach._udp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Cosmic Coach needs to access your local network to discover and connect to your other devices for syncing.</string>
 </dict>
 </plist>

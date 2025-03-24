@@ -10,6 +10,7 @@ struct SettingsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var chatManager: ChatManager
     @EnvironmentObject private var speechManager: SpeechManager
+    @EnvironmentObject private var multipeerService: MultipeerService
     @AppStorage("claude_api_key") private var apiKey = ""
     @AppStorage("check_basics_daily") private var checkBasicsDaily = true
     @AppStorage("token_limit") private var tokenLimit = 75000
@@ -260,6 +261,33 @@ struct SettingsView: View {
                         }
                 }
                 
+                Section(footer:
+                    Text("Sync chat messages between your devices automatically when both are using the same app.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                ) {
+                    Toggle("Device Sync", isOn: $multipeerService.isSyncEnabled)
+                    
+                    if multipeerService.isSyncEnabled {
+                        NavigationLink {
+                            SyncDevicesView()
+                                .environmentObject(themeManager)
+                                .environmentObject(multipeerService)
+                        } label: {
+                            HStack {
+                                Text("Manage Devices")
+                                
+                                Spacer()
+                                
+                                HStack {
+                                    Text("\(multipeerService.connectedPeers.count) connected")
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+                
                 Section {
                     Button("Delete Chat History") {
                         showingDeleteChatConfirmation = true
@@ -345,4 +373,5 @@ struct SettingsView: View {
         .environmentObject(ThemeManager())
         .environmentObject(ChatManager())
         .environmentObject(SpeechManager())
+        .environmentObject(MultipeerService())
 }
