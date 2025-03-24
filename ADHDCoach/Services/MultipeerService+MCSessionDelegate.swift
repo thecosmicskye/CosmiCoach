@@ -340,31 +340,38 @@ extension MultipeerService: MCSessionDelegate {
                 print("✅ Remote device adopted our history")
                 self.messages.append(ChatMessage.systemMessage("\(peerID.displayName) adopted our message history"))
             } else {
-                // They chose to keep their history, so we use their messages
-                print("ℹ️ Remote device kept their history, adopting it")
+                // They chose to keep their history, so we should completely replace our history with theirs
+                print("ℹ️ Remote device kept their history, replacing our local history")
                 
-                // Keep only our system messages
-                let ourSystemMessages = self.messages.filter { $0.isSystemMessage }
-                
-                // Get user messages from remote
-                let remoteUserMessages = remoteMessages.filter { !$0.isSystemMessage }
-                
-                // Combine and sort
-                self.messages = ourSystemMessages + remoteUserMessages
-                self.messages.sort(by: { $0.timestamp < $1.timestamp })
+                // Create a copy of remote messages
+                var newMessages = remoteMessages
                 
                 // Add info message
-                self.messages.append(ChatMessage.systemMessage("Adopted message history from \(peerID.displayName)"))
+                newMessages.append(ChatMessage.systemMessage("Adopted message history from \(peerID.displayName)"))
                 
-                // Sync with ChatManager using callback
-                // This is critical to ensure the main app UI gets the updated messages
-                if let callback = self.syncWithChatManager, !remoteUserMessages.isEmpty {
-                    // Extract properties for each message and send to ChatManager
-                    let messageArrays = remoteUserMessages.map { message -> [Any] in
-                        return message.getMessageProperties()
+                // Sort by timestamp
+                newMessages.sort(by: { $0.timestamp < $1.timestamp })
+                
+                // Replace our entire message list
+                self.messages = newMessages
+                
+                // Sync with ChatManager using NotificationCenter
+                // We need a full history replacement - this requires notifying the app to clear its history
+                NotificationCenter.default.post(name: NSNotification.Name("ChatHistoryDeleted"), object: nil)
+                
+                // Then sync all non-system messages to rebuild the history
+                if let callback = self.syncWithChatManager {
+                    // Extract only user messages (not system messages)
+                    let userMessages = newMessages.filter { !$0.isSystemMessage }
+                    
+                    if !userMessages.isEmpty {
+                        // Extract properties for each message and send to ChatManager
+                        let messageArrays = userMessages.map { message -> [Any] in
+                            return message.getMessageProperties()
+                        }
+                        callback(messageArrays)
+                        print("🔄 Replaced chat history with \(userMessages.count) messages from \(peerID.displayName)")
                     }
-                    callback(messageArrays)
-                    print("🔄 Synced \(remoteUserMessages.count) remote messages to ChatManager")
                 }
             }
             
