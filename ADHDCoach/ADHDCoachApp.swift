@@ -9,6 +9,7 @@ struct ADHDCoachApp: App {
     @StateObject private var locationManager = LocationManager()
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var speechManager = SpeechManager()
+    @StateObject private var multipeerService = MultipeerService()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("enable_location_awareness") private var enableLocationAwareness = false
     
@@ -39,6 +40,68 @@ struct ADHDCoachApp: App {
         themeManager.setTheme(themeManager.currentTheme)
     }
     
+    /// Sets up the message syncing between ChatManager and MultipeerService
+    private func setupMessageSync() {
+        // Set up chat manager notification subscription
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("ChatMessageAdded"),
+            object: nil,
+            queue: .main
+        ) { [self] notification in
+            if let message = notification.object as? ChatMessage {
+                // Send new message to connected peers by passing the individual properties
+                multipeerService.syncAppMessage(
+                    id: message.id,
+                    content: message.content,
+                    timestamp: message.timestamp,
+                    isUser: message.isUser,
+                    isComplete: message.isComplete
+                )
+            }
+        }
+        
+        // Set up incoming message handling
+        multipeerService.syncWithChatManager = { [weak chatManager] messageArrays in
+            guard let chatManager = chatManager else { return }
+            
+            Task { @MainActor in
+                // Add each message to the chat manager if it doesn't already exist
+                for messageArray in messageArrays {
+                    // Each array contains [id, content, timestamp, isUser, isComplete]
+                    if messageArray.count >= 5,
+                       let id = messageArray[0] as? UUID,
+                       let content = messageArray[1] as? String,
+                       let timestamp = messageArray[2] as? Date,
+                       let isUser = messageArray[3] as? Bool,
+                       let isComplete = messageArray[4] as? Bool {
+                        
+                        // Create app ChatMessage from extracted components
+                        let appMessage = ChatMessage(
+                            id: id,
+                            content: content,
+                            timestamp: timestamp,
+                            isUser: isUser,
+                            isComplete: isComplete
+                        )
+                        
+                        // Check if message already exists
+                        if !chatManager.messages.contains(where: { $0.id == id }) {
+                            // Add message to chat manager without triggering notification
+                            // (to prevent echo/loop between devices)
+                            if isUser {
+                                chatManager.addReceivedUserMessage(message: appMessage)
+                            } else {
+                                chatManager.addReceivedAssistantMessage(message: appMessage)
+                            }
+                        }
+                    } else {
+                        print("⚠️ Received malformed message array: \(messageArray)")
+                    }
+                }
+            }
+        }
+    }
+    
     var body: some Scene {
         WindowGroup {
             if hasCompletedOnboarding {
@@ -49,6 +112,7 @@ struct ADHDCoachApp: App {
                     .environmentObject(locationManager)
                     .environmentObject(themeManager)
                     .environmentObject(speechManager)
+                    .environmentObject(multipeerService)
                     .onAppear {
                         // Configure UIKit appearance - now safe to use StateObjects
                         configureUIKitAppearance()
@@ -64,6 +128,9 @@ struct ADHDCoachApp: App {
                         // Connect the managers to the ChatManager
                         chatManager.setEventKitManager(eventKitManager)
                         chatManager.setLocationManager(locationManager)
+                        
+                        // Set up message sync between ChatManager and MultipeerService
+                        setupMessageSync()
                         
                         // Debug: Verify last session time
                         print("⏱️ ADHDCoachApp.body.onAppear - Checking last session time")
@@ -94,8 +161,8 @@ struct ADHDCoachApp: App {
                     }
             }
         }
-        .onChange(of: scenePhase) { oldPhase, newPhase in
-            print("⏱️ App scene phase changed: \(oldPhase) -> \(newPhase)")
+        .onChange(of: scenePhase) { newPhase in
+            print("⏱️ App scene phase changed to: \(newPhase)")
             
             if newPhase == .background {
                 // Update the last session time when app goes to background
@@ -106,11 +173,17 @@ struct ADHDCoachApp: App {
                 UserDefaults.standard.synchronize()
                 print("⏱️ App entered background - updated session timestamp: \(timeDate)")
                 
+                // Notify MultipeerService of background state
+                multipeerService.handleAppDidEnterBackground()
+                
                 // Save cache performance stats to ensure they persist when app closes
                 CachePerformanceTracker.shared.saveStatsToUserDefaults()
                 print("🧠 App entered background - saved cache performance stats")
             } else if newPhase == .active {
                 print("⏱️ App becoming active")
+                
+                // Notify MultipeerService of active state
+                multipeerService.handleAppDidBecomeActive()
                 
                 // Set theme when app becomes active
                 self.themeManager.setTheme(self.themeManager.currentTheme)

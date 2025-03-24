@@ -261,6 +261,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         let message = ChatMessage(content: content, isUser: true)
         messages.append(message)
         persistenceManager.saveMessages(messages: messages, isProcessing: isProcessing, currentStreamingMessageId: currentStreamingMessageId)
+        
+        // Post notification for MultipeerService to sync this message
+        NotificationCenter.default.post(name: NSNotification.Name("ChatMessageAdded"), object: message)
     }
     
     /**
@@ -289,9 +292,34 @@ class ChatManager: ObservableObject, @unchecked Sendable {
                 currentStreamingMessageId = message.id
             } else {
                 currentStreamingMessageId = nil
+                
+                // Only post notification for completed assistant messages, not streaming ones
+                NotificationCenter.default.post(name: NSNotification.Name("ChatMessageAdded"), object: message)
             }
         }
         
+        persistenceManager.saveMessages(messages: messages, isProcessing: isProcessing, currentStreamingMessageId: currentStreamingMessageId)
+    }
+    
+    /**
+     * Adds a user message received from sync without triggering notification loop.
+     * 
+     * @param message The message received from another device
+     */
+    @MainActor
+    func addReceivedUserMessage(message: ChatMessage) {
+        messages.append(message)
+        persistenceManager.saveMessages(messages: messages, isProcessing: isProcessing, currentStreamingMessageId: currentStreamingMessageId)
+    }
+    
+    /**
+     * Adds an assistant message received from sync without triggering notification loop.
+     * 
+     * @param message The message received from another device
+     */
+    @MainActor
+    func addReceivedAssistantMessage(message: ChatMessage) {
+        messages.append(message)
         persistenceManager.saveMessages(messages: messages, isProcessing: isProcessing, currentStreamingMessageId: currentStreamingMessageId)
     }
     
@@ -359,6 +387,9 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             currentStreamingMessageId = nil
             // Trigger one final update for scrolling
             streamingUpdateCount += 1
+            
+            // Post notification for MultipeerService to sync this completed message
+            NotificationCenter.default.post(name: NSNotification.Name("ChatMessageAdded"), object: messages[index])
             
             // Add a delayed second update to ensure scrolling after final rendering
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
