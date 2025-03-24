@@ -355,6 +355,22 @@ extension MultipeerService: MCSessionDelegate {
                 
                 // Add info message
                 self.messages.append(ChatMessage.systemMessage("Adopted message history from \(peerID.displayName)"))
+                
+                // Sync with ChatManager using callback
+                // This is critical to ensure the main app UI gets the updated messages
+                if let callback = self.syncWithChatManager, !remoteUserMessages.isEmpty {
+                    // Extract properties for each message and send to ChatManager
+                    let messageArrays = remoteUserMessages.map { message -> [Any] in
+                        return message.getMessageProperties()
+                    }
+                    callback(messageArrays)
+                    print("🔄 Synced \(remoteUserMessages.count) remote messages to ChatManager")
+                }
+            }
+            
+            // Save the messages
+            if !self.isInitialLoad {
+                self.saveMessages()
             }
             
             // Clean up

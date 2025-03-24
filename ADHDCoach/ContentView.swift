@@ -26,6 +26,7 @@ struct ContentView: View {
     @EnvironmentObject private var memoryManager: MemoryManager
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var speechManager: SpeechManager
+    @EnvironmentObject private var multipeerService: MultipeerService
     // Use ObservedObject instead of EnvironmentObject for locationManager to prevent cascading rebuilds
     @ObservedObject private var locationManager = LocationManager()
     
@@ -537,6 +538,28 @@ struct ContentView: View {
                     hasAppearedBefore = true
                 }
             }
+            // Add multipeer conflict resolution alert
+            .alert("Message History Conflict", isPresented: .init(
+                get: { 
+                    // Use EnvironmentObject directly
+                    return multipeerService.hasPendingSyncDecision
+                },
+                set: { _ in }
+            )) {
+                Button("Use Remote History", role: .destructive) {
+                    multipeerService.resolveMessageSyncConflict(useRemote: true)
+                }
+                
+                Button("Keep Local History", role: .cancel) {
+                    multipeerService.resolveMessageSyncConflict(useRemote: false)
+                }
+            } message: {
+                if let peerID = multipeerService.pendingSyncPeer {
+                    Text("There is a conflict between your message history and \(peerID.displayName)'s history. Which one would you like to keep?")
+                } else {
+                    Text("There is a conflict between message histories. Which one would you like to keep?")
+                }
+            }
             .onChange(of: scenePhase) { oldPhase, newPhase in
                 print("⏱️ Scene phase transition: \(oldPhase) -> \(newPhase)")
                 
@@ -719,6 +742,7 @@ struct MessageHeightPreferenceKey: PreferenceKey {
         .environmentObject(ThemeManager())
         .environmentObject(LocationManager())
         .environmentObject(SpeechManager())
+        .environmentObject(MultipeerService())
 }
 
 #Preview("Message Components") {
@@ -741,6 +765,7 @@ struct MessageHeightPreferenceKey: PreferenceKey {
     .environmentObject(ThemeManager())
     .environmentObject(ChatManager())
     .environmentObject(SpeechManager())
+    .environmentObject(MultipeerService())
 }
 
 
