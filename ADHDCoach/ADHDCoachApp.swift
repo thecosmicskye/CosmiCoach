@@ -37,7 +37,34 @@ struct ADHDCoachApp: App {
     }
     
     private func configureUIKitAppearance() {
+        // Apply theme
         themeManager.setTheme(themeManager.currentTheme)
+        
+        // Configure navigation bar appearance to ensure visibility
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithDefaultBackground()
+        
+        // Get theme color for consistency
+        let themeColor = themeManager.currentTheme.accentColor
+        
+        // Customize navigation bar appearance
+        appearance.backgroundColor = UIColor.systemBackground
+        appearance.titleTextAttributes = [.foregroundColor: UIColor(themeColor)]
+        appearance.largeTitleTextAttributes = [.foregroundColor: UIColor(themeColor)]
+        
+        // Critical for visibility - set up all appearance types for navigation bar
+        // Standard appearance (regular state)
+        UINavigationBar.appearance().standardAppearance = appearance
+        // Compact appearance (compact height state)
+        UINavigationBar.appearance().compactAppearance = appearance
+        // Scroll edge appearance (when content scrolls to edge)
+        UINavigationBar.appearance().scrollEdgeAppearance = appearance
+        // Background visibility - ensure it's not transparent
+        UINavigationBar.appearance().isTranslucent = false
+        
+        // Make sure the navigation bar is never automatically hidden
+        UINavigationBar.appearance().prefersLargeTitles = false
+        UINavigationBar.appearance().isHidden = false
     }
     
     /// Sets up the message syncing between ChatManager and MultipeerService
@@ -187,6 +214,40 @@ struct ADHDCoachApp: App {
                 
                 // Set theme when app becomes active
                 self.themeManager.setTheme(self.themeManager.currentTheme)
+                
+                // Ensure navigation bar appearance is preserved when app becomes active
+                configureUIKitAppearance()
+                
+                // Force navigation bar to be visible by modifying UINavigationBar global appearance
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    UINavigationBar.appearance().isHidden = false
+                    
+                    // Also try to find and make visible any existing navigation controller
+                    if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let window = windowScene.windows.first,
+                       let rootViewController = window.rootViewController {
+                        
+                        // Find navigation controller in view hierarchy
+                        func findNavigationController(in viewController: UIViewController) -> UINavigationController? {
+                            if let nav = viewController as? UINavigationController {
+                                return nav
+                            }
+                            
+                            for child in viewController.children {
+                                if let navController = findNavigationController(in: child) {
+                                    return navController
+                                }
+                            }
+                            
+                            return nil
+                        }
+                        
+                        // Find and ensure navigation bar is visible
+                        if let navigationController = findNavigationController(in: rootViewController) {
+                            navigationController.setNavigationBarHidden(false, animated: false)
+                        }
+                    }
+                }
                 
                 // Check if we have a last session time
                 if let lastSessionTime = UserDefaults.standard.object(forKey: "last_app_session_time") as? TimeInterval {

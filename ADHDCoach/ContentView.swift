@@ -60,6 +60,46 @@ struct ContentView: View {
     }
 
     // MARK: - Methods
+    
+    /// Ensures the navigation bar is visible - made static to avoid capturing self
+    static func ensureNavigationBarIsVisible() {
+        DispatchQueue.main.async {
+            // Get the key window and try to find a UINavigationController
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first(where: { $0.isKeyWindow }),
+               let rootViewController = window.rootViewController {
+                
+                // Find navigation controller in view hierarchy
+                func findNavigationController(in viewController: UIViewController) -> UINavigationController? {
+                    if let nav = viewController as? UINavigationController {
+                        return nav
+                    }
+                    
+                    if let tabController = viewController as? UITabBarController,
+                       let selectedVC = tabController.selectedViewController {
+                        return findNavigationController(in: selectedVC)
+                    }
+                    
+                    for child in viewController.children {
+                        if let navController = findNavigationController(in: child) {
+                            return navController
+                        }
+                    }
+                    
+                    return nil
+                }
+                
+                // Find and ensure navigation bar is visible
+                if let navigationController = findNavigationController(in: rootViewController) {
+                    if navigationController.isNavigationBarHidden {
+                        navigationController.setNavigationBarHidden(false, animated: false)
+                        print("📱 Navigation bar was hidden - making it visible")
+                    }
+                }
+            }
+        }
+    }
+    
     /// Sets up notification observer for chat history deletion and scroll position restoration
     private func setupNotificationObserver() {
         NotificationCenter.default.addObserver(
@@ -498,6 +538,7 @@ struct ContentView: View {
             .navigationTitle("Cosmic Coach")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(colorScheme)
+            .toolbarBackground(.visible, for: .navigationBar) // Force navigation bar background to be visible
             .tint(themeManager.accentColor(for: colorScheme))
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -519,6 +560,20 @@ struct ContentView: View {
                 
                 // Setup notification observers
                 setupNotificationObserver()
+                
+                // Ensure navigation bar is visible initially and after a short delay
+                Self.ensureNavigationBarIsVisible()
+                
+                // Important: Schedule additional checks for navigation bar visibility
+                // Initial appearance may not have navigation controller ready
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    Self.ensureNavigationBarIsVisible()
+                }
+                
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    Self.ensureNavigationBarIsVisible()
+                }
+                
                 
                 // Check for automatic messages
                 let automaticMessagesEnabled = UserDefaults.standard.bool(forKey: "enable_automatic_responses")
@@ -563,6 +618,7 @@ struct ContentView: View {
             .onChange(of: scenePhase) { oldPhase, newPhase in
                 print("⏱️ Scene phase transition: \(oldPhase) -> \(newPhase)")
                 
+                
                 // Only operate on scene phase changes in certain directions
                 if oldPhase == .active && (newPhase == .inactive || newPhase == .background) {
                     // This is a transition from active to background/inactive
@@ -594,15 +650,20 @@ struct ContentView: View {
                 }
                 
                 // Check for transition to active state (from any state)
-                if newPhase == .active && hasAppearedBefore {
-                    // Reset preparation state for next appearance
-                    hasPreparedInitialLayout = false
+                if newPhase == .active {
+                    // Ensure navigation bar is visible when app becomes active
+                    Self.ensureNavigationBarIsVisible()
                     
-                    // Only run necessary updates if we've seen the app before
-                    if let lastSessionTime = UserDefaults.standard.object(forKey: "last_app_session_time") as? TimeInterval {
-                        // Load memory - automatic messages handled by ADHDCoachApp
-                        Task {
-                            let _ = await memoryManager.readMemory()
+                    if hasAppearedBefore {
+                        // Reset preparation state for next appearance
+                        hasPreparedInitialLayout = false
+                        
+                        // Only run necessary updates if we've seen the app before
+                        if let lastSessionTime = UserDefaults.standard.object(forKey: "last_app_session_time") as? TimeInterval {
+                            // Load memory - automatic messages handled by ADHDCoachApp
+                            Task {
+                                let _ = await memoryManager.readMemory()
+                            }
                         }
                     }
                     
