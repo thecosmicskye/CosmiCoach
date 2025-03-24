@@ -83,19 +83,37 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
         print("   Old info: \(oldInfo?.description ?? "none")")
         print("   New info: \(info?.description ?? "none")")
         
-        if self.discoveredPeers[index].state == .disconnected {
-            print("🔍 Disconnected peer is now nearby: \(peerID.displayName)")
+        // Try to auto-connect in several states, not just disconnected
+        if self.discoveredPeers[index].state == .disconnected || 
+           self.discoveredPeers[index].state == .discovered || 
+           self.discoveredPeers[index].state == .rejected {
+            
+            print("🔍 Peer eligible for auto-connection is now nearby: \(peerID.displayName)")
             
             // Check if this is a peer we should auto-connect to,
             // AND if we should be the one to initiate (deterministic leader election)
             if let userId = userId, shouldAutoConnect(to: userId) {
+                // Update the knownPeer record first to ensure sync is enabled
+                updateKnownPeer(displayName: peerID.displayName, userId: userId)
+                
+                // Already connected? Skip invitation
+                let connectedPeerIDs = self.sessionConnectedPeers
+                if connectedPeerIDs.contains(where: { $0.displayName == peerID.displayName }) {
+                    print("⚠️ Peer already connected in session, not inviting again: \(peerID.displayName)")
+                    return
+                }
+                
                 if shouldInitiateConnection(to: userId) {
-                    print("🤝 Auto-connecting to previously known peer that is now nearby: \(peerID.displayName) (we are the leader)")
+                    print("🤝 Auto-connecting to peer that is now nearby: \(peerID.displayName) (we are the leader)")
                     self.invitePeer(self.discoveredPeers[index])
                 } else {
                     print("⏳ Waiting for peer to initiate connection: \(peerID.displayName) (they are the leader)")
                 }
+            } else if let userId = userId {
+                print("ℹ️ Not auto-connecting to \(peerID.displayName) - shouldAutoConnect: \(shouldAutoConnect(to: userId))")
             }
+        } else {
+            print("ℹ️ Peer not eligible for auto-connect due to current state: \(self.discoveredPeers[index].state.rawValue)")
         }
     }
     
@@ -159,21 +177,33 @@ extension MultipeerService: MCNearbyServiceBrowserDelegate {
         print("➕ Added new peer to discovered list: \(peerID.displayName) with state: \(initialState.rawValue)")
         self.messages.append(ChatMessage.systemMessage("Discovered new peer \(peerID.displayName)"))
         
-        // If this is a known peer with disconnected state, check if we should auto-connect 
-        // AND if we should be the one to initiate (deterministic leader election)
-        if initialState == .disconnected, let userId = userId, shouldAutoConnect(to: userId) {
-            if shouldInitiateConnection(to: userId) {
-                print("🤝 Auto-connecting to newly added known peer: \(peerID.displayName) (we are the leader)")
-                self.invitePeer(newPeerInfo)
-            } else {
-                print("⏳ Waiting for peer to initiate connection: \(peerID.displayName) (they are the leader)")
-            }
-        }
-        
-        // If this is a known peer, update the last seen time
-        if let userId = userId, isKnownPeer {
-            print("📝 Updating last seen time for known peer: \(peerID.displayName)")
+        // If this is a new peer with userId, add it to known peers to enable auto-connection
+        if let userId = userId {
+            // Always update the known peer record with latest info
+            print("📝 Updating known peer info for: \(peerID.displayName)")
             updateKnownPeer(displayName: peerID.displayName, userId: userId)
+            
+            // Check if auto-connect is possible
+            if shouldAutoConnect(to: userId) {
+                // Already connected? Skip invitation
+                let connectedPeerIDs = self.sessionConnectedPeers
+                if connectedPeerIDs.contains(where: { $0.displayName == peerID.displayName }) {
+                    print("⚠️ Peer already connected in session, not inviting again: \(peerID.displayName)")
+                    return
+                }
+                
+                // Use deterministic leader election to decide who initiates
+                if shouldInitiateConnection(to: userId) {
+                    print("🤝 Auto-connecting to newly added peer: \(peerID.displayName) (we are the leader)")
+                    self.invitePeer(newPeerInfo)
+                } else {
+                    print("⏳ Waiting for peer to initiate connection: \(peerID.displayName) (they are the leader)")
+                }
+            } else {
+                print("ℹ️ Not auto-connecting to \(peerID.displayName) - shouldAutoConnect: \(shouldAutoConnect(to: userId))")
+            }
+        } else {
+            print("ℹ️ New peer doesn't have userId in discoveryInfo: \(peerID.displayName)")
         }
     }
     

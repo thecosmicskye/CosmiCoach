@@ -247,13 +247,25 @@ extension MultipeerService {
     /// Determine if this device should initiate the connection based on deterministic leader election
     /// Uses UUID comparison to ensure only one side initiates, preventing race conditions
     func shouldInitiateConnection(to remoteUserId: String) -> Bool {
-        guard UUID(uuidString: remoteUserId) != nil else {
+        guard let remoteUUID = UUID(uuidString: remoteUserId) else {
             // If can't parse remote UUID, default to initiating connection
+            print("⚠️ Could not parse remote UUID, defaulting to initiating connection")
             return true
         }
         
+        // Get string representations for clear logging
+        let localUUIDString = self.userId.uuidString
+        let remoteUUIDString = remoteUserId
+        
         // Compare UUIDs lexicographically - device with "lower" UUID is the leader and initiates
-        return self.userId.uuidString.compare(remoteUserId) == .orderedAscending
+        let shouldInitiate = self.userId.uuidString.compare(remoteUserId) == .orderedAscending
+        
+        print("🔄 Leadership determination:")
+        print("   Local UUID: \(localUUIDString)")
+        print("   Remote UUID: \(remoteUUIDString)")
+        print("   Result: \(shouldInitiate ? "We are the leader" : "They are the leader")")
+        
+        return shouldInitiate
     }
     
     // MARK: - Device Management
@@ -337,35 +349,42 @@ extension MultipeerService {
     /// Apply the sync decision locally
     private func applySyncDecision(useRemote: Bool, peerID: MCPeerID, remoteMessages: [ChatMessage]) {
         if useRemote {
-            // Replace our user messages with the remote ones, but keep our system messages
+            // Replace our entire message history with the remote one
             print("🔄 Using remote message history from \(peerID.displayName)")
             DispatchQueue.main.async {
                 // Temporarily disable saving during batch operations
                 let wasInitialLoad = self.isInitialLoad
                 self.isInitialLoad = true
                 
-                // Keep only our system messages
-                let ourSystemMessages = self.messages.filter { $0.isSystemMessage }
-                
-                // Get user messages from remote
-                let remoteUserMessages = remoteMessages.filter { !$0.isSystemMessage }
-                
-                // Combine and sort
-                self.messages = ourSystemMessages + remoteUserMessages
-                self.messages.sort(by: { $0.timestamp < $1.timestamp })
+                // Create a copy of remote messages
+                var newMessages = remoteMessages
                 
                 // Add info message
-                self.messages.append(ChatMessage.systemMessage("Adopted message history from \(peerID.displayName)"))
+                newMessages.append(ChatMessage.systemMessage("Adopted message history from \(peerID.displayName)"))
                 
-                // Sync with ChatManager using callback
-                // This is critical to ensure the main app UI gets the updated messages
-                if let callback = self.syncWithChatManager, !remoteUserMessages.isEmpty {
-                    // Extract properties for each message and send to ChatManager
-                    let messageArrays = remoteUserMessages.map { message -> [Any] in
-                        return message.getMessageProperties()
+                // Sort by timestamp
+                newMessages.sort(by: { $0.timestamp < $1.timestamp })
+                
+                // Replace our entire message list
+                self.messages = newMessages
+                
+                // Sync with ChatManager using NotificationCenter
+                // We need a full history replacement - this requires notifying the app to clear its history
+                NotificationCenter.default.post(name: NSNotification.Name("ChatHistoryDeleted"), object: nil)
+                
+                // Then sync all non-system messages to rebuild the history
+                if let callback = self.syncWithChatManager {
+                    // Extract only user messages (not system messages)
+                    let userMessages = newMessages.filter { !$0.isSystemMessage }
+                    
+                    if !userMessages.isEmpty {
+                        // Extract properties for each message and send to ChatManager
+                        let messageArrays = userMessages.map { message -> [Any] in
+                            return message.getMessageProperties()
+                        }
+                        callback(messageArrays)
+                        print("🔄 Replaced chat history with \(userMessages.count) messages from \(peerID.displayName)")
                     }
-                    callback(messageArrays)
-                    print("🔄 Synced \(remoteUserMessages.count) remote messages to ChatManager")
                 }
                 
                 // Restore previous state and trigger a single save
