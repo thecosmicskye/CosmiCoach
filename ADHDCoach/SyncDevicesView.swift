@@ -168,7 +168,7 @@ struct SyncDevicesView: View {
                     Text("Sync Devices")
                         .font(.headline)
                     
-                    Text("Connect with your other devices such as Mac, iPhone, or iPad to automatically sync your chat history via peer-to-peer networking that doesn't require an internet connection.")
+                    Text("Connect your Mac, iPhone, or iPad to seamlessly sync chat history and memories via peer-to-peer networking—no internet required.")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                 }
