@@ -121,9 +121,7 @@ struct SettingsView: View {
                             }
                         }
                     }
-                }
-                
-                Section {
+                    
                     NavigationLink {
                         MemoryContentView(
                             memoryManager: memoryManager,
@@ -184,9 +182,7 @@ struct SettingsView: View {
                     } message: {
                         Text("This will delete all memory data. This action cannot be undone.")
                     }
-                }
-                
-                Section {
+                    
                     NavigationLink {
                         ThemeSelectionView()
                             .environmentObject(themeManager)
@@ -222,6 +218,28 @@ struct SettingsView: View {
                                     .frame(width: 16, height: 16)
                                 Text("Voices")
                                     .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    
+                    NavigationLink {
+                        SyncDevicesView()
+                            .environmentObject(themeManager)
+                            .environmentObject(multipeerService)
+                    } label: {
+                        HStack {
+                            Text("Sync Devices")
+                            
+                            Spacer()
+                            
+                            HStack {
+                                if multipeerService.isSyncEnabled {
+                                    Text("\(multipeerService.connectedPeers.count) connected")
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text("Off")
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
                     }
@@ -261,29 +279,6 @@ struct SettingsView: View {
                         }
                 }
                 
-                Section {
-                    NavigationLink {
-                        SyncDevicesView()
-                            .environmentObject(themeManager)
-                            .environmentObject(multipeerService)
-                    } label: {
-                        HStack {
-                            Text("Sync Devices")
-                            
-                            Spacer()
-                            
-                            HStack {
-                                if multipeerService.isSyncEnabled {
-                                    Text("\(multipeerService.connectedPeers.count) connected")
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("Off")
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
                 
                 Section {
                     Button("Delete Chat History") {
