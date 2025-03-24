@@ -110,11 +110,19 @@ extension MultipeerService: MCSessionDelegate {
                 handleSyncDecision(data: data, fromPeer: peerID)
             case "sync":
                 handleMessageSync(data: data, fromPeer: peerID)
+            case "sync_memories":
+                handleMemoriesSync(data: data, fromPeer: peerID)
             default:
-                handleChatMessage(data: data, fromPeer: peerID)
+                // Try to decode as memory or message
+                if !handleMemoryItem(data: data, fromPeer: peerID) {
+                    handleChatMessage(data: data, fromPeer: peerID)
+                }
             }
         } else {
-            handleChatMessage(data: data, fromPeer: peerID)
+            // Try to decode as memory or message
+            if !handleMemoryItem(data: data, fromPeer: peerID) {
+                handleChatMessage(data: data, fromPeer: peerID)
+            }
         }
     }
     
@@ -526,5 +534,93 @@ extension MultipeerService: MCSessionDelegate {
         // Auto-accept all certificates in this demo app
         print("🔐 Received certificate from \(peerID.displayName) - auto-accepting")
         certificateHandler(true)
+    }
+    
+    // MARK: - Memory Sync Methods
+    
+    // MARK: - Memory Processing Methods
+    
+    /// Handle a memories sync message
+    private func handleMemoriesSync(data: Data, fromPeer peerID: MCPeerID) {
+        do {
+            let syncMemories = try JSONDecoder().decode(SyncMemories.self, from: data)
+            print("🔄 Received memory sync with \(syncMemories.memories.count) memories")
+            
+            // Process all memories in the sync message
+            DispatchQueue.main.async(execute: DispatchWorkItem(block: {
+                // Temporarily disable saving while we make batch changes
+                let wasInitialLoad = self.isInitialLoad
+                self.isInitialLoad = true
+                
+                // Add memories we don't already have
+                var newMemories = 0
+                for syncedMemory in syncMemories.memories {
+                    if !self.memories.contains(where: { $0.id == syncedMemory.id }) {
+                        self.memories.append(syncedMemory)
+                        newMemories += 1
+                    }
+                }
+                
+                // Restore previous state
+                self.isInitialLoad = wasInitialLoad
+                
+                // Save changes if needed
+                if newMemories > 0 {
+                    print("✅ Added \(newMemories) new memories from sync")
+                    
+                    // Notify MemoryManager
+                    if let callback = self.syncWithMemoryManager {
+                        callback(syncMemories.memories)
+                    }
+                    
+                    // Save memories to local storage
+                    if !self.isInitialLoad {
+                        self.saveMemories()
+                    }
+                } else {
+                    print("ℹ️ No new memories from sync")
+                }
+            }))
+        } catch {
+            print("❌ Failed to decode memories sync message: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Handle a single memory item
+    private func handleMemoryItem(data: Data, fromPeer peerID: MCPeerID) -> Bool {
+        do {
+            let memorySync = try JSONDecoder().decode(MemorySync.self, from: data)
+            print("📩 Received memory: \(memorySync.content)")
+            
+            DispatchQueue.main.async(execute: DispatchWorkItem(block: {
+                // Add the memory to our local list if we don't already have it
+                if !self.memories.contains(where: { $0.id == memorySync.id }) {
+                    let wasInitialLoad = self.isInitialLoad
+                    self.isInitialLoad = true
+                    
+                    self.memories.append(memorySync)
+                    
+                    // Restore state
+                    self.isInitialLoad = wasInitialLoad
+                    
+                    // Notify MemoryManager
+                    if let callback = self.syncWithMemoryManager {
+                        callback([memorySync])
+                    }
+                    
+                    // Save to local storage
+                    if !self.isInitialLoad {
+                        self.saveMemories()
+                    }
+                    
+                    print("✅ Added new memory from peer")
+                }
+            }))
+            
+            return true // Successfully handled as memory
+        } catch {
+            // Not a memory item, return false so it can be handled as a message
+            return false
+        }
     }
 }

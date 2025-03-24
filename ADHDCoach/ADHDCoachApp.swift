@@ -67,7 +67,7 @@ struct ADHDCoachApp: App {
         UINavigationBar.appearance().isHidden = false
     }
     
-    /// Sets up the message syncing between ChatManager and MultipeerService
+    /// Sets up the message and memory syncing between managers and MultipeerService
     private func setupMessageSync() {
         // Set up chat manager notification subscription
         NotificationCenter.default.addObserver(
@@ -84,6 +84,18 @@ struct ADHDCoachApp: App {
                     isUser: message.isUser,
                     isComplete: message.isComplete
                 )
+            }
+        }
+        
+        // Set up memory manager notification subscription
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("MemoryItemAdded"),
+            object: nil,
+            queue: .main
+        ) { [self] notification in
+            if let memory = notification.object as? MemoryItem {
+                // Send new memory to connected peers
+                multipeerService.syncAppMemory(memory: memory)
             }
         }
         
@@ -123,6 +135,31 @@ struct ADHDCoachApp: App {
                         }
                     } else {
                         print("⚠️ Received malformed message array: \(messageArray)")
+                    }
+                }
+            }
+        }
+        
+        // Set up incoming memory handling
+        multipeerService.syncWithMemoryManager = { [weak memoryManager] memorySyncs in
+            guard let memoryManager = memoryManager else { return }
+            
+            Task {
+                // Add each memory to the memory manager if it doesn't already exist
+                for memorySync in memorySyncs {
+                    if let memoryItem = memorySync.toMemoryItem() {
+                        // Check if memory already exists (accessing memory array on main thread)
+                        let memoryExists = await MainActor.run {
+                            return memoryManager.memories.contains(where: { $0.id == memoryItem.id })
+                        }
+                        
+                        if !memoryExists {
+                            // Add memory without triggering notification (to prevent loop)
+                            try? await memoryManager.addReceivedMemory(memoryItem)
+                            print("✅ Added synced memory: \(memoryItem.content)")
+                        }
+                    } else {
+                        print("⚠️ Failed to convert memory sync to memory item")
                     }
                 }
             }

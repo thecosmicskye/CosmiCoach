@@ -46,6 +46,37 @@ extension MultipeerService {
         }
     }
     
+    // MARK: - Memory Persistence
+    
+    /// Save memories to UserDefaults
+    func saveMemories() {
+        do {
+            let data = try JSONEncoder().encode(memories)
+            UserDefaults.standard.set(data, forKey: MultipeerService.UserDefaultsKeys.memories)
+            print("💾 Saved \(memories.count) memories to UserDefaults")
+        } catch {
+            print("❌ Failed to save memories: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Load memories from UserDefaults
+    func loadMemories() {
+        guard let data = UserDefaults.standard.data(forKey: MultipeerService.UserDefaultsKeys.memories) else {
+            print("ℹ️ No memories found in UserDefaults")
+            return
+        }
+        
+        do {
+            let loadedMemories = try JSONDecoder().decode([MemorySync].self, from: data)
+            DispatchQueue.main.async(execute: DispatchWorkItem(block: {
+                self.memories = loadedMemories
+                print("📂 Loaded \(loadedMemories.count) memories from UserDefaults")
+            }))
+        } catch {
+            print("❌ Failed to load memories: \(error.localizedDescription)")
+        }
+    }
+    
     // MARK: - Known Peers Persistence
     
     /// Save known peers to UserDefaults

@@ -149,6 +149,52 @@ class MultipeerService: NSObject, ObservableObject {
         let messages: [ChatMessage]
     }
     
+    /// Special message type for syncing memories
+    struct SyncMemories: Codable {
+        var type = "sync_memories"
+        let memories: [MemorySync]
+    }
+    
+    /// Memory item for syncing
+    struct MemorySync: Identifiable, Codable, Equatable {
+        let id: UUID
+        let content: String
+        let category: String
+        let timestamp: Date
+        let importance: Int
+        
+        static func == (lhs: MemorySync, rhs: MemorySync) -> Bool {
+            return lhs.id == rhs.id
+        }
+        
+        // Convert to app MemoryItem type
+        func toMemoryItem() -> MemoryItem? {
+            // Map the category string to MemoryCategory enum
+            guard let memoryCategory = MemoryCategory.allCases.first(where: { $0.rawValue.lowercased() == category.lowercased() }) else {
+                return nil
+            }
+            
+            return MemoryItem(
+                id: id,
+                content: content,
+                category: memoryCategory,
+                importance: importance,
+                timestamp: timestamp
+            )
+        }
+        
+        // Create from app MemoryItem
+        static func from(memoryItem: MemoryItem) -> MemorySync {
+            return MemorySync(
+                id: memoryItem.id,
+                content: memoryItem.content,
+                category: memoryItem.category.rawValue,
+                timestamp: memoryItem.timestamp,
+                importance: memoryItem.importance
+            )
+        }
+    }
+    
     /// Message type for forget device requests
     struct ForgetDeviceRequest: Codable {
         var type = "forget_device"
@@ -162,6 +208,7 @@ class MultipeerService: NSObject, ObservableObject {
     enum UserDefaultsKeys {
         static let userId = "CosmicCoach.userId"
         static let messages = "CosmicCoach.multipeer.messages"
+        static let memories = "CosmicCoach.multipeer.memories"
         static let peerID = "CosmicCoach.peerID"
         static let peerDisplayName = "CosmicCoach.peerDisplayName"
         static let knownPeers = "CosmicCoach.knownPeers"
@@ -251,6 +298,16 @@ class MultipeerService: NSObject, ObservableObject {
         }
     }
     
+    /// Memories array for syncing
+    @Published var memories: [MemorySync] = [] {
+        didSet {
+            // Only save memories when actually changed (not during initial load)
+            if !isInitialLoad {
+                self.saveMemories()
+            }
+        }
+    }
+    
     /// Store known and blocked peers
     @Published var knownPeers: [KnownPeerInfo] = []
     @Published var blockedPeers: Set<String> = []
@@ -279,6 +336,9 @@ class MultipeerService: NSObject, ObservableObject {
     
     /// Callback for syncing with ChatManager - passes arrays of [id, content, timestamp, isUser, isComplete]
     var syncWithChatManager: (([[Any]]) -> Void)? = nil
+    
+    /// Callback for syncing with MemoryManager - passes an array of MemorySync objects
+    var syncWithMemoryManager: (([MemorySync]) -> Void)? = nil
     
     // MARK: - Internal properties
     
@@ -362,6 +422,7 @@ class MultipeerService: NSObject, ObservableObject {
         
         // Load saved data
         self.loadMessages()
+        self.loadMemories()
         self.loadKnownPeers()
         self.loadBlockedPeers()
         self.loadSyncEnabledPeers()
@@ -595,6 +656,68 @@ class MultipeerService: NSObject, ObservableObject {
             print("✅ Synced \(peerMessages.count) messages to \(session.connectedPeers.count) peers")
         } catch {
             print("❌ Error sending sync message: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Sync a memory item from the local app to connected peers
+    func syncAppMemory(memory: MemoryItem) {
+        // Convert the memory item to the sync format
+        let memorySync = MemorySync.from(memoryItem: memory)
+        
+        // Add memory to our local list if not already there
+        DispatchQueue.main.async(execute: DispatchWorkItem(block: {
+            if !self.memories.contains(where: { $0.id == memorySync.id }) {
+                // Prevent redundant saves when adding a single memory
+                let wasInitialLoad = self.isInitialLoad
+                self.isInitialLoad = true
+                
+                self.memories.append(memorySync)
+                
+                // Restore state and save manually
+                self.isInitialLoad = wasInitialLoad
+                if !self.isInitialLoad {
+                    self.saveMemories()
+                }
+            }
+        }))
+        
+        // If we have no connected peers, just save the memory locally
+        guard !session.connectedPeers.isEmpty else { 
+            print("⚠️ No peers connected, memory saved locally")
+            return 
+        }
+        
+        // Send individual memory item to connected peers
+        do {
+            let memoryData = try JSONEncoder().encode(memorySync)
+            try session.send(memoryData, toPeers: session.connectedPeers, with: .reliable)
+            print("✅ Memory sent to \(session.connectedPeers.count) peers")
+        } catch {
+            print("❌ Error sending memory: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Sync all memories from the local app to connected peers
+    func syncAllMemories() {
+        // Only sync if there are connected peers
+        guard !session.connectedPeers.isEmpty else { 
+            print("⚠️ No peers connected, not syncing batch memories")
+            return 
+        }
+        
+        // Use our existing memories
+        let syncMemories = self.memories
+        
+        // Create a sync message
+        let syncMessage = SyncMemories(memories: syncMemories)
+        
+        // Send sync message to all connected peers
+        do {
+            let syncData = try JSONEncoder().encode(syncMessage)
+            try session.send(syncData, toPeers: session.connectedPeers, with: .reliable)
+            print("✅ Synced \(syncMemories.count) memories to \(session.connectedPeers.count) peers")
+        } catch {
+            print("❌ Error sending sync memories: \(error.localizedDescription)")
         }
     }
     
