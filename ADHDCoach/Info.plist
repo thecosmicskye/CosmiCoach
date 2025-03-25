@@ -14,5 +14,9 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Cosmic Coach needs to access your local network to discover and connect to your other devices for syncing.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Cosmic Coach needs access to speech recognition so you can dictate messages.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Cosmic Coach needs microphone access to enable dictation for messages.</string>
 </dict>
 </plist>
