@@ -588,7 +588,7 @@ struct ContentView: View {
                     .allowsHitTesting(false)
             }
             .ignoresSafeArea(.keyboard)
-            .navigationTitle("Cosmic Coach")
+            .navigationTitle("CosmiCoach")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(colorScheme)
             .toolbarBackground(.visible, for: .navigationBar) // Force navigation bar background to be visible
