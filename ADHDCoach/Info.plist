@@ -13,10 +13,10 @@
 		<string>_cosmiccoach._udp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Cosmic Coach needs to access your local network to discover and connect to your other devices for syncing.</string>
+	<string>CosmiCoach needs to access your local network to sync chat history and memory with across your devices.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Cosmic Coach needs access to speech recognition so you can dictate messages.</string>
+	<string>CosmiCoach needs access to speech recognition so you can dictate messages.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Cosmic Coach needs microphone access to enable dictation for messages.</string>
+	<string>CosmiCoach needs microphone access to enable dictation for messages.</string>
 </dict>
 </plist>

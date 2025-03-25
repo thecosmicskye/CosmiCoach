@@ -599,6 +599,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = CosmiCoach;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "CosmiCoach needs access to your calendar to help you manage your schedule and provide context-aware coaching.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "CosmiCoach needs to access your local network to sync chat history and memory with across your devices.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "CosmiCoach needs your location to provide context-aware assistance";
 				INFOPLIST_KEY_NSRemindersUsageDescription = "CosmiCoach needs access to your reminders to help you manage your tasks and provide context-aware coaching.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -633,6 +634,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = CosmiCoach;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "CosmiCoach needs access to your calendar to help you manage your schedule and provide context-aware coaching.";
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "CosmiCoach needs to access your local network to sync chat history and memory with across your devices.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "CosmiCoach needs your location to provide context-aware assistance";
 				INFOPLIST_KEY_NSRemindersUsageDescription = "CosmiCoach needs access to your reminders to help you manage your tasks and provide context-aware coaching.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
