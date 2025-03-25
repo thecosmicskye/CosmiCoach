@@ -50,6 +50,7 @@ struct ContentView: View {
     @State private var isRestoringScrollPosition: Bool = false
     @State private var scrollViewProxy: ScrollViewProxy? = nil
     @State private var hasPreparedInitialLayout: Bool = false
+    @State private var showScrollToBottom: Bool = false
     
     // MARK: - Debug State
     @State private var debugOutlineMode: DebugOutlineMode = .none
@@ -387,6 +388,9 @@ struct ContentView: View {
                             // Reset the restoration flag
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                                 isRestoringScrollPosition = false
+                                
+                                // Check if we need to show the scroll-to-bottom button
+                                checkIfScrollViewAtBottom()
                             }
                         }
                     } else {
@@ -401,11 +405,17 @@ struct ContentView: View {
                         // Reset after delay
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             isRestoringScrollPosition = false
+                            
+                            // Check if we need to show the scroll-to-bottom button
+                            checkIfScrollViewAtBottom()
                         }
                     }
                 } else {
                     print("⚠️ No valid scroll position to restore")
                     isRestoringScrollPosition = false
+                    
+                    // Check if we need to show the scroll-to-bottom button
+                    checkIfScrollViewAtBottom()
                 }
             }
         }
@@ -415,7 +425,11 @@ struct ContentView: View {
             if newCount > oldCount && !isRestoringScrollPosition {
                 DispatchQueue.main.async {
                     scrollView.scrollTo("messageBottom", anchor: .bottom)
+                    showScrollToBottom = false // Hide button when we scroll to bottom
                 }
+            } else {
+                // Check if we need to show the scroll-to-bottom button
+                checkIfScrollViewAtBottom()
             }
         }
         .onChange(of: chatManager.messages.last?.content) { _, _ in
@@ -424,6 +438,7 @@ struct ContentView: View {
                 DispatchQueue.main.async {
                     withAnimation(.easeOut(duration: 0.2)) {
                         scrollView.scrollTo("messageBottom", anchor: .bottom)
+                        showScrollToBottom = false // Hide button when we scroll to bottom
                     }
                 }
             }
@@ -434,6 +449,7 @@ struct ContentView: View {
                 DispatchQueue.main.async {
                     withAnimation(.easeOut(duration: 0.2)) {
                         scrollView.scrollTo("messageBottom", anchor: .bottom)
+                        showScrollToBottom = false // Hide button when we scroll to bottom
                     }
                 }
             }
@@ -444,6 +460,7 @@ struct ContentView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     withAnimation(.easeOut(duration: 0.2)) {
                         scrollView.scrollTo("messageBottom", anchor: .bottom)
+                        showScrollToBottom = false // Hide button when we scroll to bottom
                     }
                 }
             }
@@ -474,6 +491,20 @@ struct ContentView: View {
                 }
             }
         }
+        .simultaneousGesture(
+            // Use DragGesture with onEnded to reliably detect when the user finishes scrolling
+            DragGesture(minimumDistance: 10)
+                .onChanged { _ in
+                    // Check during the drag for immediate feedback
+                    checkIfScrollViewAtBottom()
+                }
+                .onEnded { _ in
+                    // Important: recheck after the scroll momentum ends
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        checkIfScrollViewAtBottom()
+                    }
+                }
+        )
         .border(debugOutlineMode == .scrollView ? Color.green : Color.clear, width: 2)
     }
     
@@ -523,6 +554,25 @@ struct ContentView: View {
                     }
                     .frame(height: geometry.size.height)
                     .border(debugOutlineMode == .vStack ? Color.orange : Color.clear, width: 2)
+                    
+                    // Scroll to bottom button
+                    if showScrollToBottom {
+                        Button(action: scrollToBottom) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(.secondarySystemBackground))
+                                    .frame(width: 40, height: 40)
+                                    .shadow(color: Color.black.opacity(0.2), radius: 3, x: 0, y: 1)
+                                
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundColor(themeManager.accentColor(for: colorScheme))
+                            }
+                        }
+                        .padding(.bottom, 114) // Position higher above the input view (+24px total)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom) // Center horizontally
+                    }
                     
                     // Keyboard attached input view
                     createKeyboardAttachedView(
@@ -586,11 +636,21 @@ struct ContentView: View {
                     Task {
                         let _ = await memoryManager.readMemory()
                         // Memory loaded - automatic messages handled by ADHDCoachApp
+                        
+                        // Check if we need the scroll-to-bottom button after content is loaded
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            checkIfScrollViewAtBottom()
+                        }
                     }
                 } else {
                     // This is the first appearance
                     Task {
                         let _ = await memoryManager.readMemory()
+                        
+                        // Check if we need the scroll-to-bottom button after content is loaded
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            checkIfScrollViewAtBottom()
+                        }
                     }
                     // Mark that we've appeared before for next time
                     hasAppearedBefore = true
@@ -709,6 +769,99 @@ struct ContentView: View {
         }
         
         return nil
+    }
+    
+    // Add a dedicated property to track if we're in the process of scrolling to bottom
+    // This fixes the flickering issues by preventing position checks from changing the button state
+    // during programmatic scrolling
+    @State private var isScrollingToBottomProgrammatically = false
+    
+    /// Checks if the scroll view is at the bottom
+    private func checkIfScrollViewAtBottom() {
+        // Skip check if we're programmatically scrolling to bottom
+        if isScrollingToBottomProgrammatically {
+            return
+        }
+        
+        DispatchQueue.main.async {
+            guard let scrollView = self.findScrollView() else { return }
+            
+            // Calculate the threshold for considering the view at the bottom (within 15 points)
+            let threshold: CGFloat = 15
+            let contentHeight = scrollView.contentSize.height
+            let scrollViewHeight = scrollView.bounds.height
+            let currentPosition = scrollView.contentOffset.y
+            let maximumScrollPosition = max(0, contentHeight - scrollViewHeight)
+            
+            // Only calculate when we have enough scrollable content
+            let hasScrollableContent = contentHeight > scrollViewHeight + 50 // Lower to 50pt for better sensitivity
+            
+            // Strict check: only consider at bottom if very close to max position
+            let isAtBottom = currentPosition >= (maximumScrollPosition - threshold)
+            
+            // Determine if button should be shown
+            let shouldShowButton = hasScrollableContent && !isAtBottom
+            
+            // Debug logging to troubleshoot
+            print("Scroll position: \(Int(currentPosition))/\(Int(maximumScrollPosition)), at bottom: \(isAtBottom), show button: \(shouldShowButton)")
+            
+            // Only animate if there's an actual change to avoid unnecessary animations
+            if self.showScrollToBottom != shouldShowButton {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self.showScrollToBottom = shouldShowButton
+                }
+            }
+        }
+    }
+    
+    /// Scrolls to the bottom of the chat
+    private func scrollToBottom() {
+        guard let scrollView = scrollViewProxy else { return }
+        
+        // Set flag to prevent any position checks from running during the scroll operation
+        isScrollingToBottomProgrammatically = true
+        
+        // Hide the button immediately to prevent it from showing during scroll animation
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showScrollToBottom = false
+        }
+        
+        // Then scroll to bottom
+        withAnimation(.easeOut(duration: 0.3)) {
+            scrollView.scrollTo("messageBottom", anchor: .bottom)
+        }
+        
+        // Bypass all the intermediate checks and only do a final check
+        // after the animation is completely done
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            // Use direct UIKit scrolling to ensure we're at the bottom
+            if let uiScrollView = findScrollView() {
+                let contentHeight = uiScrollView.contentSize.height
+                let scrollViewHeight = uiScrollView.bounds.height
+                let maximumScrollPosition = max(0, contentHeight - scrollViewHeight)
+                
+                // Ensure we're at the bottom
+                UIView.performWithoutAnimation {
+                    uiScrollView.contentOffset = CGPoint(x: 0, y: maximumScrollPosition)
+                    uiScrollView.layoutIfNeeded()
+                }
+                
+                // Force button to be hidden
+                if showScrollToBottom {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showScrollToBottom = false
+                    }
+                }
+                
+                // Re-enable position checks but only after all animations have completed
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    isScrollingToBottomProgrammatically = false
+                }
+            } else {
+                // Re-enable position checks if we couldn't find the scroll view
+                isScrollingToBottomProgrammatically = false
+            }
+        }
     }
     
     
