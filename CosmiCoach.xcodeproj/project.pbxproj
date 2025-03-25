@@ -38,6 +38,7 @@
 		2AAF0EFA2D8BA564002A3F7D /* SpeechManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAF0EF92D8BA564002A3F7D /* SpeechManager.swift */; };
 		2AAF0EFC2D8BA57D002A3F7D /* SpeechSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AAF0EFB2D8BA57D002A3F7D /* SpeechSettingsView.swift */; };
 		2ABF1DA72D6FFEFE00E5A6C1 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A352A2A2A352A2A2A35 /* OnboardingView.swift */; };
+		2AE9FAFB2D9256FC00C79F0E /* KeyboardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AE9FAFA2D9256FC00C79F0E /* KeyboardManager.swift */; };
 		2AEC0FF32D7EA9ED00268460 /* ProcessToolUseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AEC0FF12D7EA9ED00268460 /* ProcessToolUseService.swift */; };
 		2AF38BCC2D6EE8C600756FD8 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */; };
 		E4C961F42D73F9500012035F /* ThemeColorModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A2A2A372A2A2A372A2A2A39 /* ThemeColorModifier.swift */; };
@@ -103,6 +104,7 @@
 		2A9A81DC2D8FCD46002F3A74 /* SyncDevicesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncDevicesView.swift; sourceTree = "<group>"; };
 		2AAF0EF92D8BA564002A3F7D /* SpeechManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechManager.swift; sourceTree = "<group>"; };
 		2AAF0EFB2D8BA57D002A3F7D /* SpeechSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSettingsView.swift; sourceTree = "<group>"; };
+		2AE9FAFA2D9256FC00C79F0E /* KeyboardManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardManager.swift; sourceTree = "<group>"; };
 		2AEC0FF12D7EA9ED00268460 /* ProcessToolUseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessToolUseService.swift; sourceTree = "<group>"; };
 		2AF38BCB2D6EE8C600756FD8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ADHDCoach/Assets.xcassets; sourceTree = "<group>"; };
 		3A3A3A3A3A3A3A3A3A3A3A3A /* CosmiCoach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CosmiCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -220,6 +222,7 @@
 				2A06F4912D711B770030A1AE /* LocationManager.swift */,
 				2A2A2A352A2A2A352A2A2A37 /* ThemeManager.swift */,
 				2AAF0EF92D8BA564002A3F7D /* SpeechManager.swift */,
+				2AE9FAFA2D9256FC00C79F0E /* KeyboardManager.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -362,6 +365,7 @@
 				2A712F0F2D79404100D148EC /* APIRequestBuilder.swift in Sources */,
 				E4C962002D741EDF0012035F /* ChatAPIService.swift in Sources */,
 				E4C962012D741EDF0012035F /* ChatOperationStatusManager.swift in Sources */,
+				2AE9FAFB2D9256FC00C79F0E /* KeyboardManager.swift in Sources */,
 				E4C962022D741EDF0012035F /* ChatPersistenceManager.swift in Sources */,
 				2A2A2FD52D7E339F0059A323 /* MemoryContentView.swift in Sources */,
 				E4C962032D741EDF0012035F /* ChatToolHandler.swift in Sources */,

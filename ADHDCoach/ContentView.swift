@@ -38,16 +38,7 @@ struct ContentView: View {
     @AppStorage("hasAppearedBefore") private var hasAppearedBefore = false
     @State private var showingSettings = false
     @State private var inputText = ""
-    @StateObject private var keyboardState = KeyboardState()
-    @State private var scrollPosition: CGPoint = {
-        // Load saved position from UserDefaults on initialization
-        if let savedY = UserDefaults.standard.object(forKey: "saved_scroll_position_y") as? CGFloat, savedY > 0 {
-            return CGPoint(x: 0, y: savedY)
-        }
-        return .zero
-    }()
-    @State private var lastKnownValidScenePhase: ScenePhase = .active
-    @State private var isRestoringScrollPosition: Bool = false
+    @StateObject private var keyboardManager = KeyboardManager()
     @State private var scrollViewProxy: ScrollViewProxy? = nil
     @State private var hasPreparedInitialLayout: Bool = false
     @State private var showScrollToBottom: Bool = false
@@ -114,64 +105,15 @@ struct ContentView: View {
             }
         }
         
-        // Set up observers for saving/restoring scroll position
+        // Set up observer for scroll position restoration (after the keyboard manager has restored position)
         NotificationCenter.default.addObserver(
-            forName: UIApplication.willResignActiveNotification,
+            forName: NSNotification.Name("ScrollPositionRestored"),
             object: nil,
             queue: .main
         ) { [self] _ in
-            // Save scroll position before going to background
-            if let scrollView = findScrollView() {
-                let newPosition = scrollView.contentOffset
-                
-                // Store current scroll position from UI before app transitions
-                if newPosition.y > 0 {
-                    // Save the position directly to UserDefaults without updating state
-                    print("📱 Saving scroll position from notification: \(newPosition.y)")
-                    UserDefaults.standard.set(newPosition.y, forKey: "saved_scroll_position_y")
-                    
-                    // Also update in-memory value
-                    scrollPosition = newPosition
-                } else if scrollPosition.y <= 0 {
-                    print("⚠️ Not saving scroll position from notification: current=\(newPosition.y), saved=\(scrollPosition.y)")
-                }
-            }
-        }
-        
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [self] _ in
-            // Important: Do NOT try to restore scroll position by directly modifying scroll view
-            // Instead, set flags so that our layout-driven restoration can work properly
-            // This prevents the flash to top before restoration
-            
-            // CRITICAL: Immediately set this flag to prevent any auto-scrolling attempts
-            isRestoringScrollPosition = true
-            
-            // Reset layout preparation state to false first
-            hasPreparedInitialLayout = false
-            
-            // ALWAYS use the UserDefaults value when restoring from background
-            if let savedY = UserDefaults.standard.object(forKey: "saved_scroll_position_y") as? CGFloat, savedY > 0 {
-                scrollPosition = CGPoint(x: 0, y: savedY)
-                print("📱 Retrieved saved position from UserDefaults: \(savedY)")
-                
-                // Schedule layout preparation flag to be set after a brief delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    hasPreparedInitialLayout = true
-                }
-            } else if scrollPosition.y > 0 {
-                print("📱 Using existing scroll position: \(scrollPosition.y)")
-                
-                // Schedule layout preparation flag to be set after a brief delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    hasPreparedInitialLayout = true
-                }
-            } else {
-                print("⚠️ No valid scroll position to restore, will default to top")
-                isRestoringScrollPosition = false
+            // Check if we need the scroll-to-bottom button after position is restored
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                checkIfScrollViewAtBottom()
             }
         }
     }
@@ -211,7 +153,7 @@ struct ContentView: View {
     /// Creates the keyboard attached view
     private func createKeyboardAttachedView(inputBaseHeight: CGFloat, safeAreaBottomPadding: CGFloat) -> some View {
         KeyboardAttachedView(
-            keyboardState: keyboardState,
+            keyboardManager: keyboardManager,
             text: $inputText,
             onSend: sendMessage,
             colorScheme: colorScheme,
@@ -220,8 +162,8 @@ struct ContentView: View {
             debugOutlineMode: debugOutlineMode
         )
         .frame(height: max(
-            keyboardState.inputViewHeight, // Already includes button row height
-            keyboardState.getInputViewPadding(
+            keyboardManager.inputViewHeight, // Already includes button row height
+            keyboardManager.getInputViewPadding(
                 baseHeight: inputBaseHeight,
                 safeAreaPadding: safeAreaBottomPadding
             )
@@ -333,88 +275,11 @@ struct ContentView: View {
         .scrollDisabled(false) // Ensure scrolling is enabled
         .scrollDismissesKeyboard(.interactively)
         .onChange(of: hasPreparedInitialLayout) { oldValue, isPrepared in
-            // When layout is ready and we have a saved position to restore
-            if isPrepared && isRestoringScrollPosition {
-                // Get the most up-to-date position from UserDefaults
-                let positionFromUserDefaults: CGFloat? = UserDefaults.standard.object(forKey: "saved_scroll_position_y") as? CGFloat
-                
-                // Determine the best position to use
-                var finalPosition: CGPoint = .zero
-                var hasValidPosition = false
-                
-                // Check UserDefaults first as it's more reliable across app state transitions
-                if let savedY = positionFromUserDefaults, savedY > 0 {
-                    finalPosition = CGPoint(x: 0, y: savedY)
-                    hasValidPosition = true
-                    print("📱 Using position from UserDefaults: \(savedY)")
-                }
-                // Fall back to in-memory position if UserDefaults doesn't have a value
-                else if scrollPosition.y > 0 {
-                    finalPosition = scrollPosition
-                    hasValidPosition = true
-                    print("📱 Using in-memory position: \(scrollPosition.y)")
-                }
-                
-                if hasValidPosition, let scrollView = findScrollView() {
-                    // Verify scroll view is ready with a valid content size
-                    let contentSize = scrollView.contentSize.height
-                    let boundsHeight = scrollView.bounds.height
-                    
-                    // Only proceed if content has actual size
-                    if contentSize > 0 {
-                        let maxValidY = max(0, contentSize - boundsHeight)
-                        
-                        // Ensure position is valid for current content
-                        let safeY = min(finalPosition.y, maxValidY)
-                        finalPosition.y = safeY
-                        
-                        print("📱 Restoring scroll position after layout ready: \(finalPosition.y) (content size: \(contentSize))")
-                        
-                        // Store finalized position for future reference
-                        scrollPosition = finalPosition
-                        
-                        // Apply saved position with guaranteed no animation
-                        UIView.performWithoutAnimation {
-                            scrollView.contentOffset = finalPosition
-                            scrollView.layoutIfNeeded()
-                        }
-                        
-                        // Ensure it stuck by setting it again after a very brief delay
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            UIView.performWithoutAnimation {
-                                scrollView.contentOffset = finalPosition
-                            }
-                            
-                            // Reset the restoration flag
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                isRestoringScrollPosition = false
-                                
-                                // Check if we need to show the scroll-to-bottom button
-                                checkIfScrollViewAtBottom()
-                            }
-                        }
-                    } else {
-                        // Content not yet fully laid out
-                        print("⚠️ Content size not ready yet: \(contentSize), will try setting position directly")
-                        
-                        // Try setting position directly anyway
-                        UIView.performWithoutAnimation {
-                            scrollView.contentOffset = finalPosition
-                        }
-                        
-                        // Reset after delay
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            isRestoringScrollPosition = false
-                            
-                            // Check if we need to show the scroll-to-bottom button
-                            checkIfScrollViewAtBottom()
-                        }
-                    }
-                } else {
-                    print("⚠️ No valid scroll position to restore")
-                    isRestoringScrollPosition = false
-                    
-                    // Check if we need to show the scroll-to-bottom button
+            // When layout is ready and we're not already restoring position
+            if isPrepared && !keyboardManager.isRestoringScrollPosition {
+                // Trigger position restoration via the keyboard manager
+                keyboardManager.restoreScrollPosition {
+                    // Check if we need to show the scroll-to-bottom button after restoration
                     checkIfScrollViewAtBottom()
                 }
             }
@@ -422,7 +287,7 @@ struct ContentView: View {
         .onChange(of: chatManager.messages.count) { oldCount, newCount in
             // Only auto-scroll when adding messages (not when scrolling up through history)
             // Skip if we're restoring scroll position
-            if newCount > oldCount && !isRestoringScrollPosition {
+            if newCount > oldCount && !keyboardManager.isRestoringScrollPosition {
                 DispatchQueue.main.async {
                     scrollView.scrollTo("messageBottom", anchor: .bottom)
                     showScrollToBottom = false // Hide button when we scroll to bottom
@@ -434,7 +299,7 @@ struct ContentView: View {
         }
         .onChange(of: chatManager.messages.last?.content) { _, _ in
             // Auto-scroll for new content, but skip if restoring position
-            if !isRestoringScrollPosition {
+            if !keyboardManager.isRestoringScrollPosition {
                 DispatchQueue.main.async {
                     withAnimation(.easeOut(duration: 0.2)) {
                         scrollView.scrollTo("messageBottom", anchor: .bottom)
@@ -445,7 +310,7 @@ struct ContentView: View {
         }
         .onChange(of: chatManager.streamingUpdateCount) { _, _ in
             // Ensure scrolling happens on each streaming update, but skip if restoring position
-            if !isRestoringScrollPosition {
+            if !keyboardManager.isRestoringScrollPosition {
                 DispatchQueue.main.async {
                     withAnimation(.easeOut(duration: 0.2)) {
                         scrollView.scrollTo("messageBottom", anchor: .bottom)
@@ -456,7 +321,7 @@ struct ContentView: View {
         }
         .onChange(of: chatManager.operationStatusUpdateCount) { _, _ in
             // Scroll when new operation status messages are added, but skip if restoring position
-            if !isRestoringScrollPosition {
+            if !keyboardManager.isRestoringScrollPosition {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     withAnimation(.easeOut(duration: 0.2)) {
                         scrollView.scrollTo("messageBottom", anchor: .bottom)
@@ -472,23 +337,16 @@ struct ContentView: View {
             // Only auto-scroll on initial appearance, not when reforegrounding
             let isInitialAppearance = !hasAppearedBefore
             
-            // Immediately set flag to prevent auto-scrolling if we have a saved position
-            if scrollPosition.y > 0 {
-                isRestoringScrollPosition = true
-                
-                // We need to wait for layout to complete before we can restore position
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                    hasPreparedInitialLayout = true
-                }
-            } 
-            // Scroll to bottom when view appears with a slight delay to ensure layout is complete
-            // Skip if we're restoring scroll position or if this is a reforegrounding
-            else if !isRestoringScrollPosition && isInitialAppearance {
+            // If it's the initial appearance, scroll to bottom
+            if isInitialAppearance {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     withAnimation(.easeOut(duration: 0.2)) {
                         scrollView.scrollTo("messageBottom", anchor: .bottom)
                     }
                 }
+            } else {
+                // Otherwise, prepare for position restoration
+                hasPreparedInitialLayout = true
             }
         }
         .simultaneousGesture(
@@ -529,7 +387,7 @@ struct ContentView: View {
             GeometryReader { geometry in
                 ZStack(alignment: .bottom) {
                     // Constants for layout management - based on system font metrics
-                    let inputBaseHeight: CGFloat = keyboardState.defaultInputHeight
+                    let inputBaseHeight: CGFloat = keyboardManager.defaultInputHeight
                     let safeAreaBottomPadding: CGFloat = 20
                     
                     // Debug border around entire ZStack
@@ -546,7 +404,7 @@ struct ContentView: View {
                         
                         // Dynamic spacer that adjusts based on keyboard presence and text input height
                         Spacer()
-                            .frame(height: keyboardState.getInputViewPadding(
+                            .frame(height: keyboardManager.getInputViewPadding(
                                 baseHeight: inputBaseHeight,
                                 safeAreaPadding: safeAreaBottomPadding
                             )) // Button row height already included in padding calculation
@@ -679,38 +537,8 @@ struct ContentView: View {
                 }
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
-                print("⏱️ Scene phase transition: \(oldPhase) -> \(newPhase)")
-                
-                
-                // Only operate on scene phase changes in certain directions
-                if oldPhase == .active && (newPhase == .inactive || newPhase == .background) {
-                    // This is a transition from active to background/inactive
-                    lastKnownValidScenePhase = oldPhase
-                    
-                    if let scrollView = findScrollView() {
-                        let newPosition = scrollView.contentOffset
-                        
-                        // Only save valid scroll positions and protect from negative values
-                        if newPosition.y > 0 {
-                            // First save to UserDefaults
-                            UserDefaults.standard.set(newPosition.y, forKey: "saved_scroll_position_y")
-                            
-                            // Then update state
-                            scrollPosition = newPosition
-                            print("📱 Saving scroll position from scene phase: \(newPosition.y)")
-                        } else if let savedY = UserDefaults.standard.object(forKey: "saved_scroll_position_y") as? CGFloat, savedY > 0 {
-                            // If current position is invalid but we have a saved one, keep using it
-                            print("⚠️ Current position invalid: \(newPosition.y), keeping saved: \(savedY)")
-                        } else {
-                            print("⚠️ No valid scroll position to save: current=\(newPosition.y)")
-                        }
-                    }
-                } 
-                else if newPhase == .inactive && oldPhase == .background {
-                    // Skip the background -> inactive transition, as it often gives invalid scroll positions
-                    print("📱 Skipping scroll position check during background -> inactive transition")
-                    lastKnownValidScenePhase = newPhase
-                }
+                // Let the keyboard manager handle scene phase transitions
+                keyboardManager.handleScenePhaseChange(from: oldPhase, to: newPhase)
                 
                 // Check for transition to active state (from any state)
                 if newPhase == .active {
@@ -729,8 +557,6 @@ struct ContentView: View {
                             }
                         }
                     }
-                    
-                    // Don't try to restore scroll here - we'll let the onAppear and onChange do it
                 }
             }
         }
@@ -739,71 +565,21 @@ struct ContentView: View {
     
     /// Dismisses the keyboard
     private func hideKeyboard() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        keyboardManager.hideKeyboard()
     }
-    
-    /// Finds the main ScrollView in the view hierarchy
-    private func findScrollView() -> UIScrollView? {
-        // Find the UIScrollView in the view hierarchy
-        let allWindows = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap { $0.windows }
-        
-        guard let window = allWindows.first(where: { $0.isKeyWindow }) else {
-            return nil
-        }
-        
-        return findScrollView(in: window)
-    }
-    
-    /// Recursive helper to find a ScrollView in a view hierarchy
-    private func findScrollView(in view: UIView) -> UIScrollView? {
-        if let scrollView = view as? UIScrollView {
-            return scrollView
-        }
-        
-        for subview in view.subviews {
-            if let scrollView = findScrollView(in: subview) {
-                return scrollView
-            }
-        }
-        
-        return nil
-    }
-    
-    // Add a dedicated property to track if we're in the process of scrolling to bottom
-    // This fixes the flickering issues by preventing position checks from changing the button state
-    // during programmatic scrolling
-    @State private var isScrollingToBottomProgrammatically = false
     
     /// Checks if the scroll view is at the bottom
     private func checkIfScrollViewAtBottom() {
-        // Skip check if we're programmatically scrolling to bottom
-        if isScrollingToBottomProgrammatically {
+        // Skip if we're programmatically scrolling to bottom
+        if keyboardManager.isRestoringScrollPosition {
             return
         }
         
         DispatchQueue.main.async {
-            guard let scrollView = self.findScrollView() else { return }
+            let isAtBottom = self.keyboardManager.isScrollViewAtBottom()
             
-            // Calculate the threshold for considering the view at the bottom (within 15 points)
-            let threshold: CGFloat = 15
-            let contentHeight = scrollView.contentSize.height
-            let scrollViewHeight = scrollView.bounds.height
-            let currentPosition = scrollView.contentOffset.y
-            let maximumScrollPosition = max(0, contentHeight - scrollViewHeight)
-            
-            // Only calculate when we have enough scrollable content
-            let hasScrollableContent = contentHeight > scrollViewHeight + 50 // Lower to 50pt for better sensitivity
-            
-            // Strict check: only consider at bottom if very close to max position
-            let isAtBottom = currentPosition >= (maximumScrollPosition - threshold)
-            
-            // Determine if button should be shown
-            let shouldShowButton = hasScrollableContent && !isAtBottom
-            
-            // Debug logging to troubleshoot
-            print("Scroll position: \(Int(currentPosition))/\(Int(maximumScrollPosition)), at bottom: \(isAtBottom), show button: \(shouldShowButton)")
+            // Determine if button should be shown - invert the at-bottom check
+            let shouldShowButton = !isAtBottom
             
             // Only animate if there's an actual change to avoid unnecessary animations
             if self.showScrollToBottom != shouldShowButton {
@@ -816,50 +592,25 @@ struct ContentView: View {
     
     /// Scrolls to the bottom of the chat
     private func scrollToBottom() {
-        guard let scrollView = scrollViewProxy else { return }
-        
-        // Set flag to prevent any position checks from running during the scroll operation
-        isScrollingToBottomProgrammatically = true
-        
         // Hide the button immediately to prevent it from showing during scroll animation
         withAnimation(.easeInOut(duration: 0.2)) {
             showScrollToBottom = false
         }
         
-        // Then scroll to bottom
-        withAnimation(.easeOut(duration: 0.3)) {
-            scrollView.scrollTo("messageBottom", anchor: .bottom)
-        }
-        
-        // Bypass all the intermediate checks and only do a final check
-        // after the animation is completely done
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            // Use direct UIKit scrolling to ensure we're at the bottom
-            if let uiScrollView = findScrollView() {
-                let contentHeight = uiScrollView.contentSize.height
-                let scrollViewHeight = uiScrollView.bounds.height
-                let maximumScrollPosition = max(0, contentHeight - scrollViewHeight)
-                
-                // Ensure we're at the bottom
-                UIView.performWithoutAnimation {
-                    uiScrollView.contentOffset = CGPoint(x: 0, y: maximumScrollPosition)
-                    uiScrollView.layoutIfNeeded()
-                }
-                
-                // Force button to be hidden
-                if showScrollToBottom {
+        // Use ScrollViewProxy if available for smooth SwiftUI scrolling
+        if let scrollView = scrollViewProxy {
+            withAnimation(.easeOut(duration: 0.3)) {
+                scrollView.scrollTo("messageBottom", anchor: .bottom)
+            }
+        } else {
+            // Fall back to UIKit approach via the keyboard manager
+            keyboardManager.scrollToBottom {
+                // Ensure button stays hidden after scroll completes
+                if self.showScrollToBottom {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        showScrollToBottom = false
+                        self.showScrollToBottom = false
                     }
                 }
-                
-                // Re-enable position checks but only after all animations have completed
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    isScrollingToBottomProgrammatically = false
-                }
-            } else {
-                // Re-enable position checks if we couldn't find the scroll view
-                isScrollingToBottomProgrammatically = false
             }
         }
     }
@@ -874,17 +625,9 @@ struct ContentView: View {
         let messageToSend = trimmedText
         inputText = ""
         
-        // Reset text input height immediately
+        // Reset text input height immediately using the keyboard manager
         DispatchQueue.main.async {
-            // Explicitly reset the KeyboardState inputViewHeight to default
-            keyboardState.inputViewHeight = keyboardState.defaultInputHeight
-            
-            // Notify about height change
-            NotificationCenter.default.post(
-                name: NSNotification.Name("InputViewHeightChanged"),
-                object: nil,
-                userInfo: ["height": keyboardState.defaultInputHeight]
-            )
+            keyboardManager.resetInputViewHeight()
         }
         
         // Add user message to chat immediately
@@ -1272,7 +1015,7 @@ struct TextInputView: View {
 // MARK: - KeyboardAttachedView
 struct KeyboardAttachedView: UIViewControllerRepresentable {
     // MARK: Properties
-    var keyboardState: KeyboardState
+    var keyboardManager: KeyboardManager
     @Binding var text: String
     var onSend: () -> Void
     var colorScheme: ColorScheme
@@ -1284,7 +1027,7 @@ struct KeyboardAttachedView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> KeyboardObservingViewController {
         print("KeyboardAttachedView.makeUIViewController")
         return KeyboardObservingViewController(
-            keyboardState: keyboardState,
+            keyboardManager: keyboardManager,
             text: $text,
             onSend: onSend,
             colorScheme: colorScheme,
@@ -1386,8 +1129,12 @@ struct MultilineTextField: UIViewRepresentable {
                 // Check if shift or command key is pressed
                 let modifierFlags = UIApplication.shared.windows.first?.windowScene?.keyWindow?.eventModifierFlags
                 
-                if modifierFlags?.contains(.shift) == true || modifierFlags?.contains(.command) == true {
-                    // Shift+Return or Command+Return: submit message
+                if modifierFlags?.contains(.shift) == true {
+                    // Shift+Return: submit message
+                    parent.onSubmit()
+                    return false
+                } else if modifierFlags?.contains(.command) == true {
+                    // Command+Return: submit message
                     parent.onSubmit()
                     return false
                 } else {
@@ -1409,21 +1156,13 @@ class KeyboardObservingViewController: UIViewController {
     private var inputHostView: UIHostingController<TextInputView>!
     
     // MARK: Constants
-    private var defaultFont: UIFont { UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.25) }
-    private var singleLineInputHeight: CGFloat { defaultFont.lineHeight + 16 } // Line height + padding
-    private var buttonRowHeight: CGFloat = 54 // Height for the send button row
-    private var inputViewHeight: CGFloat { singleLineInputHeight + 16 + buttonRowHeight } // Add container padding + button row
     private let keyboardVisibilityThreshold: CGFloat = 100
     
     // MARK: Properties
-    internal var keyboardState: KeyboardState // Changed from private to internal
+    internal var keyboardManager: KeyboardManager // For accessing keyboard properties
     private var bottomConstraint: NSLayoutConstraint?
     private var heightConstraint: NSLayoutConstraint?
     private var _lastInputViewHeight: CGFloat = 0
-    private var currentInputViewHeight: CGFloat {
-        get { inputViewHeight }
-        set { _lastInputViewHeight = newValue } 
-    }
     internal var text: Binding<String> // Changed from private to internal
     internal var onSend: () -> Void // Changed from private to internal
     internal var colorScheme: ColorScheme // Changed from private to internal
@@ -1437,7 +1176,7 @@ class KeyboardObservingViewController: UIViewController {
     }
     
     init(
-        keyboardState: KeyboardState,
+        keyboardManager: KeyboardManager,
         text: Binding<String>,
         onSend: @escaping () -> Void,
         colorScheme: ColorScheme,
@@ -1445,7 +1184,7 @@ class KeyboardObservingViewController: UIViewController {
         isDisabled: Bool,
         debugOutlineMode: DebugOutlineMode
     ) {
-        self.keyboardState = keyboardState
+        self.keyboardManager = keyboardManager
         self.text = text
         self.onSend = onSend
         self.colorScheme = colorScheme
@@ -1518,8 +1257,8 @@ class KeyboardObservingViewController: UIViewController {
             inputHostView.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
         
-        // Create height constraint that we can update later
-        heightConstraint = inputHostView.view.heightAnchor.constraint(equalToConstant: inputViewHeight)
+        // Create height constraint that we can update later - use keyboard manager's default height
+        heightConstraint = inputHostView.view.heightAnchor.constraint(equalToConstant: keyboardManager.defaultInputHeight)
         heightConstraint?.isActive = true
         
         // Attach to keyboard
@@ -1666,7 +1405,7 @@ class KeyboardObservingViewController: UIViewController {
         // Update state without SwiftUI animation (since we'll do UIKit animation)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        keyboardState.setKeyboardVisible(isVisible, height: keyboardFrame.height)
+        keyboardManager.setKeyboardVisible(isVisible, height: keyboardFrame.height)
         CATransaction.commit()
         
         // Match keyboard animation exactly using UIKit
@@ -1695,7 +1434,7 @@ class KeyboardObservingViewController: UIViewController {
         // Update state without SwiftUI animation (since we'll do UIKit animation)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        keyboardState.setKeyboardVisible(false, height: 0)
+        keyboardManager.setKeyboardVisible(false, height: 0)
         CATransaction.commit()
         
         // Match keyboard animation exactly
@@ -1721,9 +1460,6 @@ class KeyboardObservingViewController: UIViewController {
         // Update the height constraint
         heightConstraint?.constant = height
         
-        // Update keyboardState with new input view height
-        keyboardState.inputViewHeight = height
-        
         // Notify parent view to update layout for the new height
         NotificationCenter.default.post(
             name: NSNotification.Name("KeyboardStateChanged"),
@@ -1743,13 +1479,12 @@ class KeyboardObservingViewController: UIViewController {
         
         // Ensure the parent views are updated as well
         // This is especially important after sending a message
-        if text.wrappedValue.isEmpty || height == inputViewHeight {
+        if text.wrappedValue.isEmpty || height == keyboardManager.defaultInputHeight {
             print("📝 Text is empty or height is default, forcing reset to defaults")
             
             // Force another update after a slight delay to ensure it takes effect
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                self.heightConstraint?.constant = self.inputViewHeight
-                self.keyboardState.inputViewHeight = self.keyboardState.defaultInputHeight
+                self.heightConstraint?.constant = self.keyboardManager.defaultInputHeight
                 
                 UIView.animate(withDuration: 0.2) {
                     self.view.layoutIfNeeded()
@@ -1784,14 +1519,14 @@ class KeyboardObservingViewController: UIViewController {
         let isVisible = keyboardTop < screenHeight && keyboardHeight > keyboardVisibilityThreshold
         
         // Check if update needed
-        let heightDifference = abs(keyboardState.keyboardOffset - (isVisible ? keyboardHeight : 0))
-        let shouldUpdate = heightDifference > 1.0 || keyboardState.isKeyboardVisible != isVisible
+        let heightDifference = abs(keyboardManager.keyboardOffset - (isVisible ? keyboardHeight : 0))
+        let shouldUpdate = heightDifference > 1.0 || keyboardManager.isKeyboardVisible != isVisible
         
         if shouldUpdate {
             // Update state without animation during interactive gesture
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            keyboardState.setKeyboardVisible(isVisible, height: isVisible ? keyboardHeight : 0)
+            keyboardManager.setKeyboardVisible(isVisible, height: isVisible ? keyboardHeight : 0)
             CATransaction.commit()
             
             // Update layout immediately
