@@ -391,7 +391,20 @@ public struct TextInputView: View {
                 // This prevents race conditions with the X button
                 if self.isDictating {
                     // Update text field with the stored text plus newly recognized text
-                    self.text = self.textBeforeDictation + self.recognizedText
+                    let newText = self.textBeforeDictation + self.recognizedText
+                    
+                    // Ensure text updates happen on main thread
+                    DispatchQueue.main.async {
+                        self.text = newText
+                        
+                        // Force scroll to bottom
+                        let notification = Notification(
+                            name: Notification.Name("DictationTextUpdated"),
+                            object: nil,
+                            userInfo: nil
+                        )
+                        NotificationCenter.default.post(notification)
+                    }
                 }
                 
                 isFinal = result.isFinal
