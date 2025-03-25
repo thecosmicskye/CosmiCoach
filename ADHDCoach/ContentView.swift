@@ -54,7 +54,7 @@ struct ContentView: View {
     
     // MARK: - Debug State
     @State private var debugOutlineMode: DebugOutlineMode = .none
-    @State private var showDebugTools: Bool = true
+    @State private var showDebugTools: Bool = false
     
     init() {
         print("ContentView initialized at \(Date())")
