@@ -219,14 +219,13 @@ struct ContentView: View {
             debugOutlineMode: debugOutlineMode
         )
         .frame(height: max(
-            keyboardState.inputViewHeight, // Always respect the minimum actual height of the input view
+            keyboardState.inputViewHeight, // Already includes button row height
             keyboardState.getInputViewPadding(
                 baseHeight: inputBaseHeight,
                 safeAreaPadding: safeAreaBottomPadding
             )
         ))
-        .animation(.easeInOut(duration: 0.2), value: keyboardState.inputViewHeight)
-        .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, width: 2)
+        .border(debugOutlineMode == .keyboardAttachedView ? Color.purple : Color.clear, width: debugOutlineMode == .keyboardAttachedView ? 2 : 0)
     }
     
     /// Creates the message content view
@@ -519,9 +518,8 @@ struct ContentView: View {
                             .frame(height: keyboardState.getInputViewPadding(
                                 baseHeight: inputBaseHeight,
                                 safeAreaPadding: safeAreaBottomPadding
-                            ))
-                            .border(debugOutlineMode == .spacer ? Color.yellow : Color.clear, width: 2)
-                            .animation(.easeInOut(duration: 0.2), value: keyboardState.inputViewHeight)
+                            )) // Button row height already included in padding calculation
+                            .border(debugOutlineMode == .spacer ? Color.yellow : Color.clear, width: debugOutlineMode == .spacer ? 2 : 0)
                     }
                     .frame(height: geometry.size.height)
                     .border(debugOutlineMode == .vStack ? Color.orange : Color.clear, width: 2)
@@ -872,9 +870,10 @@ extension UIWindow {
 // MARK: - KeyboardState
 class KeyboardState: ObservableObject {
     // Default font and sizing for consistency - accessible to other components
-    var defaultFont: UIFont { UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.2) }
+    var defaultFont: UIFont { UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.25) }
     var singleLineHeight: CGFloat { defaultFont.lineHeight + 16 } // Line height + padding
-    var defaultInputHeight: CGFloat { singleLineHeight + 16 } // Add container padding
+    var buttonRowHeight: CGFloat = 54 // Height for the send button row
+    var defaultInputHeight: CGFloat { singleLineHeight + 16 + buttonRowHeight } // Add container padding + button row
     
     /// Current keyboard height when visible, or 0 when hidden
     @Published var keyboardOffset: CGFloat = 0
@@ -926,8 +925,10 @@ class KeyboardState: ObservableObject {
             // Calculate height difference from default
             let heightDifference = inputViewHeight - defaultInputHeight
             
-            // Add this difference to the keyboard offset
-            return keyboardOffset + safeAreaPadding + (heightDifference > 0 ? heightDifference : 0)
+            // With keyboard open, we need to ensure we have enough space for the text input AND button row
+            // The inputViewHeight includes text input + padding + button row
+            // When the keyboard is open, add the button row height to ensure proper space for both elements
+            return keyboardOffset + safeAreaPadding + buttonRowHeight + (heightDifference > 0 ? heightDifference : 0)
         } else {
             // When keyboard is hidden, just use the actual base height
             return actualBaseHeight
@@ -954,7 +955,7 @@ struct TextInputView: View {
     @State private var textEditorHeight: CGFloat = 0 // Will be set to minHeight in onAppear
     
     // Constants 
-    private var defaultFont: UIFont { UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.2) }
+    private var defaultFont: UIFont { UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.25) }
     private var defaultFontSize: CGFloat { defaultFont.pointSize }
     private var lineHeight: CGFloat { defaultFont.lineHeight }
     private let maxLines: Int = 4
@@ -977,15 +978,15 @@ struct TextInputView: View {
     
     // MARK: Body
     var body: some View {
-        HStack(alignment: .bottom) {
-            // Text input field - using a multi-line editor
+        VStack(spacing: 8) {
+            // Text input field - using a multi-line editor, now full width
             ZStack(alignment: .leading) {
                 // Placeholder text that shows when the text editor is empty
                 if text.isEmpty {
-                    Text("Message")
+                    Text("Message CosmiCoach")
                         .foregroundColor(Color(.placeholderText))
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 6)
+                        .font(.system(size: defaultFontSize))
                 }
                 
                 // Actual text editor
@@ -996,13 +997,10 @@ struct TextInputView: View {
                     }
                 })
                 .frame(height: min(textEditorHeight, maxHeight))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
                 .onAppear {
                     // Initialize height with calculated minHeight
                     textEditorHeight = minHeight
                 }
-                .background(Color.clear)
                 .onChange(of: text) { _, newText in
                     // Calculate height based on text content
                     let size = getTextSize(for: newText)
@@ -1012,8 +1010,9 @@ struct TextInputView: View {
                     if newHeight != textEditorHeight {
                         textEditorHeight = newHeight
                         
-                        // Calculate total height including padding and container
-                        let totalHeight = newHeight + 16 // Add padding for the container
+                        // Calculate total height including padding, container, and button row
+                        let buttonRowHeight: CGFloat = 54 // Match the height in KeyboardState
+                        let totalHeight = newHeight + 16 + buttonRowHeight // Add padding for container + button row
                         
                         // Logging for debugging
                         if inputViewLayoutDebug {
@@ -1032,61 +1031,70 @@ struct TextInputView: View {
                 }
                 .scrollContentBackground(.hidden)
             }
-            .padding(.horizontal, 7)
-            .background(Color(.secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 20))
-            .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, width: 1)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .border(debugOutlineMode == .textInput ? Color.pink : Color.clear, width: debugOutlineMode == .textInput ? 1 : 0)
             .animation(nil, value: text) // Prevent animation during transitions
             
-            // Send button
-            Button {
-                guard !isSending else { return }
-                isSending = true
+            // Send button row
+            HStack {
+                Spacer()
                 
-                // Reset text editor height before sending
-                textEditorHeight = minHeight
-                
-                // Explicitly notify about height change to default
-                if inputViewLayoutDebug {
-                    print("Resetting text height to default: \(minHeight)")
+                Button {
+                    guard !isSending else { return }
+                    isSending = true
+                    
+                    // Reset text editor height before sending
+                    textEditorHeight = minHeight
+                    
+                    // Explicitly notify about height change to default
+                    if inputViewLayoutDebug {
+                        print("Resetting text height to default: \(minHeight)")
+                    }
+                    
+                    // Calculate total input view height (text + container padding + button row)
+                    let buttonRowHeight: CGFloat = 54 // Match the height in KeyboardState
+                    let totalHeight = minHeight + 16 + buttonRowHeight // Add padding for container + button row
+                    
+                    // Notify parent about height change
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("InputViewHeightChanged"),
+                        object: nil,
+                        userInfo: ["height": totalHeight]
+                    )
+                    
+                    // Call send after height is reset
+                    onSend()
+                    
+                    // Reset button state after a brief delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        isSending = false
+                    }
+                } label: {
+                    ZStack {
+                        Circle()
+                            .foregroundColor(buttonColor)
+                            .frame(width: 34, height: 34)
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(isButtonDisabled ? Color(.systemBackground) : .white)
+                    }
                 }
-                
-                // Calculate total input view height (text + container padding)
-                let totalHeight = minHeight + 16 // Add padding for container
-                
-                // Notify parent about height change
-                NotificationCenter.default.post(
-                    name: NSNotification.Name("InputViewHeightChanged"),
-                    object: nil,
-                    userInfo: ["height": totalHeight]
-                )
-                
-                // Call send after height is reset
-                onSend()
-                
-                // Reset button state after a brief delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    isSending = false
-                }
-            } label: {
-                ZStack {
-                    Circle()
-                        .foregroundColor(buttonColor)
-                        .frame(width: 30, height: 30)
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 18, weight: .heavy))
-                        .foregroundColor(isButtonDisabled ? Color(.systemBackground) : .white)
-                }
+                .padding(.bottom, 4)
+                .padding(.horizontal, 2)
+                .disabled(isButtonDisabled)
+                .animation(.easeInOut(duration: 0.1), value: isButtonDisabled)
             }
-            .padding(.bottom, 4)
-            .disabled(isButtonDisabled)
-            .animation(.easeInOut(duration: 0.1), value: isButtonDisabled)
+            .padding(.horizontal, 8)
         }
-        .padding(.horizontal)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 8)
         .border(debugOutlineMode == .textInput ? Color.mint : Color.clear, width: 2)
         .transaction { transaction in
             transaction.animation = nil // Prevent position animations
         }
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(25, corners: [.topLeft, .topRight])
     }
     
     // Helper to calculate text size
@@ -1095,7 +1103,7 @@ struct TextInputView: View {
             .font: defaultFont
         ]
         
-        let width = UIScreen.main.bounds.width - 100 // Approximate width after padding and button
+        let width = UIScreen.main.bounds.width - 70 // Wider width since button is now in a separate row
         let constraintRect = CGSize(width: width, height: .greatestFiniteMagnitude)
         let boundingBox = text.boundingRect(
             with: constraintRect,
@@ -1161,7 +1169,7 @@ struct MultilineTextField: UIViewRepresentable {
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
         textView.delegate = context.coordinator
-        textView.font = UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.2) // Use system font size with slight increase
+        textView.font = UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.25) // Use system font size with slight increase
         textView.backgroundColor = .clear
         textView.isScrollEnabled = true
         textView.isEditable = true
@@ -1182,7 +1190,11 @@ struct MultilineTextField: UIViewRepresentable {
             // When text is cleared, notify about height change
             if text.isEmpty {
                 // Access defaultInputHeight via UIKit extension since we're in a UIViewRepresentable
-                let defaultHeight = UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.2).lineHeight + 32 // Line height + padding + container
+                let font = UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.25)
+                let lineHeight = font.lineHeight
+                let buttonRowHeight: CGFloat = 54 // Match the height in KeyboardState
+                let defaultHeight = lineHeight + 16 + 16 + buttonRowHeight // Line height + inner padding + container padding + button row
+                
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(
                         name: NSNotification.Name("InputViewHeightChanged"),
@@ -1244,9 +1256,10 @@ class KeyboardObservingViewController: UIViewController {
     private var inputHostView: UIHostingController<TextInputView>!
     
     // MARK: Constants
-    private var defaultFont: UIFont { UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.2) }
+    private var defaultFont: UIFont { UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.25) }
     private var singleLineInputHeight: CGFloat { defaultFont.lineHeight + 16 } // Line height + padding
-    private var inputViewHeight: CGFloat { singleLineInputHeight + 16 } // Add container padding
+    private var buttonRowHeight: CGFloat = 54 // Height for the send button row
+    private var inputViewHeight: CGFloat { singleLineInputHeight + 16 + buttonRowHeight } // Add container padding + button row
     private let keyboardVisibilityThreshold: CGFloat = 100
     
     // MARK: Properties
@@ -1323,6 +1336,7 @@ class KeyboardObservingViewController: UIViewController {
     private func setupKeyboardTrackingView() {
         keyboardTrackingView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(keyboardTrackingView)
+        keyboardTrackingView.backgroundColor = UIColor.secondarySystemBackground
         
         NSLayoutConstraint.activate([
             // Pin horizontally to view edges
@@ -1451,8 +1465,6 @@ class KeyboardObservingViewController: UIViewController {
         // Keyboard tracking view
         keyboardTrackingView.layer.borderWidth = isKeyboardAttachedDebug ? 2 : 0
         keyboardTrackingView.layer.borderColor = UIColor.systemBlue.cgColor
-        keyboardTrackingView.backgroundColor = isKeyboardAttachedDebug ? 
-            UIColor.systemBlue.withAlphaComponent(0.2) : UIColor.systemBackground
         
         // Safe area visualization
         safeAreaView.layer.borderWidth = isSafeAreaDebug ? 2 : 0
