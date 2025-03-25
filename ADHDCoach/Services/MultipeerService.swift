@@ -366,12 +366,12 @@ class MultipeerService: NSObject, ObservableObject {
     override init() {
         print("🔄 Initializing MultipeerService")
         
-        // Load sync enabled state, default to true
+        // Load sync enabled state, default to false
         let defaults = UserDefaults.standard
         if defaults.object(forKey: UserDefaultsKeys.enableSync) == nil {
-            // If the key doesn't exist yet, set it to true (enabling sync by default)
-            defaults.set(true, forKey: UserDefaultsKeys.enableSync)
-            self.isSyncEnabled = true
+            // If the key doesn't exist yet, set it to false (disabling sync by default)
+            defaults.set(false, forKey: UserDefaultsKeys.enableSync)
+            self.isSyncEnabled = false
         } else {
             // Otherwise just load the existing value
             self.isSyncEnabled = defaults.bool(forKey: UserDefaultsKeys.enableSync)
