@@ -607,17 +607,19 @@ struct ContentView: View {
         let trimmedText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
         
-        // Store message and clear input
+        // Store message before clearing input
         let messageToSend = trimmedText
+        
+        // Add user message to chat immediately
+        chatManager.addUserMessage(content: messageToSend)
+        
+        // Clear input text AFTER adding the message
         inputText = ""
         
         // Reset text input height immediately using the keyboard manager
         DispatchQueue.main.async {
             keyboardManager.resetInputViewHeight()
         }
-        
-        // Add user message to chat immediately
-        chatManager.addUserMessage(content: messageToSend)
         
         // Dismiss keyboard with animation
         withAnimation(.easeOut(duration: 0.25)) {

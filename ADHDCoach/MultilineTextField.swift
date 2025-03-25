@@ -28,10 +28,15 @@ public struct MultilineTextField: UIViewRepresentable {
     public func updateUIView(_ uiView: UITextView, context: Context) {
         // Only update if text changed externally
         if uiView.text != text {
+            let wasEmpty = uiView.text.isEmpty
+            let willBeEmpty = text.isEmpty
+            
+            // Update text view content
             uiView.text = text
             
-            // When text is cleared, notify about height change
-            if text.isEmpty {
+            // When text is cleared or changed to/from empty, notify about height change
+            // This ensures proper height updates for all text state transitions
+            if wasEmpty != willBeEmpty || willBeEmpty {
                 // Access defaultInputHeight via UIKit extension since we're in a UIViewRepresentable
                 let font = UIFont.systemFont(ofSize: UIFont.systemFontSize * 1.25)
                 let lineHeight = font.lineHeight
