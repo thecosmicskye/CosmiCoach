@@ -68,6 +68,36 @@ struct ADHDCoachApp: App {
     }
     
     /// Sets up the message and memory syncing between managers and MultipeerService
+    /// Checks if permissions were granted after onboarding and sends welcome message with context
+    private func checkPermissionsAndSendWelcomeMessage() async {
+        print("✨ Checking calendar and reminder permissions post-onboarding")
+        
+        // Re-check permissions to ensure they're up-to-date
+        eventKitManager.checkPermissions()
+        
+        // Get permission status
+        let calendarPermissionGranted = eventKitManager.calendarAccessGranted
+        let reminderPermissionGranted = eventKitManager.reminderAccessGranted
+        
+        print("✨ Permission status - Calendar: \(calendarPermissionGranted), Reminders: \(reminderPermissionGranted)")
+        
+        // If at least one permission was granted, send welcome message with context
+        if calendarPermissionGranted || reminderPermissionGranted {
+            print("✨ At least one permission granted, sending welcome message with context")
+            
+            // Wait a bit to make sure all data is loaded
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            
+            // Load memory data if available
+            let _ = await memoryManager.readMemory()
+            
+            // Manually trigger automatic message with full context
+            await chatManager.checkAndSendWelcomeMessageWithContext()
+        } else {
+            print("✨ No permissions granted, skipping welcome message with context")
+        }
+    }
+    
     private func setupMessageSync() {
         // Set up chat manager notification subscription
         NotificationCenter.default.addObserver(
@@ -192,6 +222,23 @@ struct ADHDCoachApp: App {
                         // Connect the managers to the ChatManager
                         chatManager.setEventKitManager(eventKitManager)
                         chatManager.setLocationManager(locationManager)
+                        
+                        // Check if this is the first launch after onboarding
+                        let isFirstLaunchAfterOnboarding = UserDefaults.standard.bool(forKey: "firstLaunchAfterOnboarding")
+                        if isFirstLaunchAfterOnboarding {
+                            print("✨ First launch after onboarding - will check permission status and send welcome message")
+                            
+                            // Clear the flag so this only runs once
+                            UserDefaults.standard.set(false, forKey: "firstLaunchAfterOnboarding")
+                            
+                            // Schedule a task to check permissions and send automatic message after a delay
+                            // This gives time for permission dialogs to be shown and processed
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                                Task {
+                                    await checkPermissionsAndSendWelcomeMessage()
+                                }
+                            }
+                        }
                         
                         // Set up message sync between ChatManager and MultipeerService
                         setupMessageSync()

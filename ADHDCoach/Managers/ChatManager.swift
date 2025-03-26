@@ -153,11 +153,8 @@ class ChatManager: ObservableObject, @unchecked Sendable {
             currentStreamingMessageId = nil
         }
         
-        // Add initial assistant message if this is the first time
-        if messages.isEmpty {
-            let welcomeMessage = "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?"
-            addAssistantMessage(content: welcomeMessage)
-        }
+        // NEVER automatically add a welcome message when first loading the app
+        // Let the appropriate flow (onboarding → permissions → welcome message) handle this instead
         
         // Set a default value for automatic messages if not already set
         if UserDefaults.standard.object(forKey: "enable_automatic_responses") == nil {
@@ -224,12 +221,30 @@ class ChatManager: ObservableObject, @unchecked Sendable {
      */
     @MainActor
     func checkAndSendAutomaticMessageAfterHistoryDeletion() async {
+        // Only send automatic message if feature is enabled and we have credentials
         if await automaticMessageService.shouldSendAutomaticMessageAfterHistoryDeletion() {
             await sendAutomaticMessage(isAfterHistoryDeletion: true)
-        } else {
-            // Fall back to a static welcome message if we can't query
-            addAssistantMessage(content: "Hi! I'm your ADHD Coach. I can help you manage your tasks, calendar, and overcome overwhelm. How are you feeling today?")
         }
+        // Otherwise, leave the chat empty - don't add a default message
+    }
+    
+    /**
+     * Sends a welcome message with full context after calendar/reminder permissions are granted.
+     * This is called after onboarding when the user grants permissions.
+     * It bypasses the normal automatic message checks to ensure it runs.
+     */
+    @MainActor
+    func checkAndSendWelcomeMessageWithContext() async {
+        print("✨ Sending welcome message with full context after permissions granted")
+        
+        guard !apiKey.isEmpty else {
+            print("❌ API key not set, can't send welcome message")
+            addAssistantMessage(content: "Please set your Claude API key in settings to get the most out of this app.")
+            return
+        }
+        
+        // Let's create a special welcome message that focuses on the user's data
+        await sendWelcomeWithContext()
     }
     
     // MARK: - Message Management
@@ -837,6 +852,115 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         }
     }
     
+    
+    /**
+     * Sends a welcome message with full context after user grants permissions.
+     * This specifically focuses on providing an overview of their calendar and reminders.
+     */
+    // MARK: - Third API method
+    private func sendWelcomeWithContext() async {
+        print("✨ SENDING WELCOME MESSAGE WITH CONTEXT")
+        
+        // First, ensure we have the latest data from external sources
+        await refreshContextData()
+        print("✨ Pre-loaded fresh context data before sending welcome message")
+        
+        // Get context data
+        let calendarEvents = eventKitManager?.fetchUpcomingEvents(days: 7) ?? []
+        print("✨ Retrieved \(calendarEvents.count) calendar events for welcome message")
+        
+        let reminders = await eventKitManager?.fetchReminders() ?? []
+        print("✨ Retrieved \(reminders.count) reminders for welcome message")
+        
+        // Prepare context for Claude
+        var memoryContent = "No memory available."
+        if let manager = memoryManager {
+            memoryContent = await manager.readMemory()
+            print("✨ Memory content loaded for welcome message. Length: \(memoryContent.count)")
+        } else {
+            print("✨ WARNING: Memory manager not available for welcome message")
+        }
+        
+        // Format calendar events and reminders for context
+        let calendarContext = formatCalendarEvents(calendarEvents)
+        let remindersContext = formatReminders(reminders)
+        
+        // Get location information if enabled
+        let locationContext = await getLocationContext()
+        
+        // Get recent conversation history
+        let conversationHistory = await MainActor.run {
+            return persistenceManager.formatRecentConversationHistory(messages: messages)
+        }
+        print("✨ Got conversation history for welcome message. Length: \(conversationHistory.count)")
+        
+        // Initialize streaming message
+        await MainActor.run {
+            currentStreamingMessage = ""
+            addAssistantMessage(content: "", isComplete: false)
+            print("✨ Added empty assistant message for streaming")
+        }
+        
+        // Create the welcome message text that specifically asks for an overview of the user's data
+        let welcomeMessageText = "[THIS IS A WELCOME MESSAGE - The user has just granted access to their calendar and/or reminders. Please provide a warm, personalized welcome that summarizes their upcoming schedule and tasks. Include specific details from their calendar events and reminders to show the value of granting these permissions in a conversational style. Use bold text liberally to highlight key information. If no data is available yet, encourage them to add some events or reminders to get started.]"
+        
+        // Send the message to Claude using the API service
+        await apiService.sendMessageToClaude(
+            userMessage: welcomeMessageText,
+            conversationHistory: conversationHistory,
+            memoryContent: memoryContent,
+            calendarContext: calendarContext,
+            remindersContext: remindersContext,
+            locationContext: locationContext,
+            toolDefinitions: toolHandler.getToolDefinitions(),
+            updateStreamingMessage: { [weak self] newContent in
+                // Use DispatchQueue.main to run on the main thread instead of Task
+                let semaphore = DispatchSemaphore(value: 0)
+                var result = ""
+                
+                if let weakSelf = self {
+                    // Use MainActor.run to safely call the MainActor-isolated method
+                    Task {
+                        result = await MainActor.run {
+                            return weakSelf.appendToStreamingMessage(newContent: newContent)
+                        }
+                        semaphore.signal()
+                    }
+                } else {
+                    // If self is nil, signal the semaphore to avoid deadlock
+                    semaphore.signal()
+                }
+                
+                // Wait outside the if block to ensure we always wait
+                semaphore.wait()
+                return result
+            },
+            finalizeStreamingMessage: { [weak self] in
+                Task { @MainActor in
+                    self?.finalizeStreamingMessage()
+                }
+            },
+            isProcessingCallback: { [weak self] isProcessing in
+                // Use DispatchQueue.main.async instead of Task with MainActor.run
+                DispatchQueue.main.async {
+                    self?.isProcessing = isProcessing
+                }
+            }
+        )
+        
+        // Process any memory updates from the response
+        if let lastMessage = await MainActor.run(body: { messages.last }), let manager = memoryManager {
+            let memoryUpdated = await toolHandler.processMemoryUpdates(response: lastMessage.content, memoryManager: manager, chatManager: self)
+            
+            // If memory wasn't updated through the text response, 
+            // but tool calls might have modified memories, calendar events, or reminders
+            if !memoryUpdated {
+                // Make sure context window stays up-to-date
+                await refreshContextData()
+                print("✨ Manually refreshing context after welcome message to ensure API has latest data")
+            }
+        }
+    }
     
     /**
      * Sends an automatic message without user input.

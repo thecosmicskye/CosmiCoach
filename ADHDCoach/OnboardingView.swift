@@ -238,6 +238,10 @@ struct OnboardingView: View {
     }
     
     private func completeOnboarding() {
+        // Set a flag to indicate this is the first launch after onboarding
+        // This will be checked in ADHDCoachApp to trigger welcome message with context
+        UserDefaults.standard.set(true, forKey: "firstLaunchAfterOnboarding")
+        
         withAnimation {
             hasCompletedOnboarding = true
         }

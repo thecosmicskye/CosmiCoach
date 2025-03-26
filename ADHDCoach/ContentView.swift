@@ -664,20 +664,12 @@ struct ContentView: View {
 
 // MARK: - Supporting Views
 
-/// Displays welcome message when no chat messages exist
+/// Empty view when no chat messages exist
 struct EmptyStateView: View {
     var body: some View {
-        VStack {
-            Spacer()
-            Text("Welcome to Cosmic Coach")
-                .font(.headline)
-                .foregroundColor(.secondary)
-            Text("Type a message to get started")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            Spacer()
-        }
-        .frame(maxHeight: .infinity)
+        // Completely empty view
+        Color.clear
+            .frame(maxHeight: .infinity)
     }
 }
 
