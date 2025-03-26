@@ -2,33 +2,57 @@ import SwiftUI
 import AVFoundation
 
 struct TypingDotsView: View {
-    @State private var animationStep = 0
+    @State private var firstDotOffset: CGFloat = 0
+    @State private var secondDotOffset: CGFloat = 0
+    @State private var thirdDotOffset: CGFloat = 0
+    @Environment(\.colorScheme) private var colorScheme
     
-    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    let dotSize: CGFloat = 8
+    let animationDuration: Double = 0.6
+    
+    var dotColor: Color {
+        colorScheme == .dark ? .white : .gray
+    }
     
     var body: some View {
         HStack(spacing: 4) {
-            Text("Typing")
-                .foregroundColor(.gray)
-                .font(.footnote)
+            Circle()
+                .fill(dotColor)
+                .frame(width: dotSize, height: dotSize)
+                .offset(y: firstDotOffset)
             
-            HStack(spacing: 2) {
-                Circle()
-                    .fill(animationStep >= 0 ? Color.gray : Color.gray.opacity(0.3))
-                    .frame(width: 5, height: 5)
-                
-                Circle()
-                    .fill(animationStep >= 1 ? Color.gray : Color.gray.opacity(0.3))
-                    .frame(width: 5, height: 5)
-                
-                Circle()
-                    .fill(animationStep >= 2 ? Color.gray : Color.gray.opacity(0.3))
-                    .frame(width: 5, height: 5)
+            Circle()
+                .fill(dotColor)
+                .frame(width: dotSize, height: dotSize)
+                .offset(y: secondDotOffset)
+            
+            Circle()
+                .fill(dotColor)
+                .frame(width: dotSize, height: dotSize)
+                .offset(y: thirdDotOffset)
+        }
+        .padding(.bottom, 8)
+        .onAppear {
+            startAnimation()
+        }
+    }
+    
+    private func startAnimation() {
+        let baseAnimation = Animation.easeInOut(duration: animationDuration).repeatForever(autoreverses: true)
+        
+        withAnimation(baseAnimation) {
+            firstDotOffset = -5
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            withAnimation(baseAnimation) {
+                secondDotOffset = -5
             }
         }
-        .onReceive(timer) { _ in
-            withAnimation {
-                animationStep = (animationStep + 1) % 4
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            withAnimation(baseAnimation) {
+                thirdDotOffset = -5
             }
         }
     }
@@ -77,7 +101,7 @@ struct MessageBubbleView: View {
                         // Empty Claude message - show typing indicator dots
                         HStack {
                             TypingDotsView()
-                                .padding(4)
+                                .padding(.horizontal, 4)
                         }
                     } else {
                         Group {
