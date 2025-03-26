@@ -902,7 +902,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         }
         
         // Create the welcome message text that specifically asks for an overview of the user's data
-        let welcomeMessageText = "[THIS IS A WELCOME MESSAGE - The user has just granted access to their calendar and/or reminders. Please provide a warm, personalized welcome that summarizes their upcoming schedule and tasks. Include specific details from their calendar events and reminders to show the value of granting these permissions in a conversational style. Use bold text liberally to highlight key information. If no data is available yet, encourage them to add some events or reminders to get started.]"
+        let welcomeMessageText = "[THIS IS A WELCOME MESSAGE - The user has just granted access to their calendar and/or reminders. Please provide a warm, personalized welcome that summarizes their upcoming schedule and tasks. Include specific details from their calendar events and reminders to show the value of granting these permissions in a conversational style. 12. Do not use markdown headers (#, ##). Use bold text liberally to highlight key information. If no data is available yet, encourage them to add some events or reminders to get started.]"
         
         // Send the message to Claude using the API service
         await apiService.sendMessageToClaude(
@@ -1013,7 +1013,7 @@ class ChatManager: ObservableObject, @unchecked Sendable {
         }
         
         // Create the automatic message text
-        let automaticMessageText = "[THIS IS AN AUTOMATIC MESSAGE - \(isAfterHistoryDeletion ? "The user has just cleared their chat history." : "The user has just opened the app after not using it for at least 5 minutes.") There is no specific user message. Based on the time of day, calendar events, reminders, and what you know about the user, provide a helpful, proactive greeting or insight.]"
+        let automaticMessageText = "[THIS IS AN AUTOMATIC MESSAGE - \(isAfterHistoryDeletion ? "The user has just cleared their chat history." : "The user has just opened the app after not using it for at least 5 minutes.") There is no specific user message. Based on the time of day, calendar events, reminders, and what you know about the user, provide a helpful, proactive greeting or insight. Do not use markdown headers. Use bold text liberally to highlight key information.]"
         
         // Send the message to Claude using the API service
         await apiService.sendMessageToClaude(
