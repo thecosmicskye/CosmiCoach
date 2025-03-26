@@ -136,11 +136,11 @@ public struct TextInputView: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .foregroundColor(themeColor)
+                                .foregroundColor(isButtonDisabled ? themeColor : Color(.systemBackground))
                                 .frame(width: 34, height: 34)
                             Image(systemName: "mic")
                                 .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(.white)
+                                .foregroundColor(isButtonDisabled ? .white : (colorScheme == .dark ? .white : .black))
                         }
                     }
                     .padding(.bottom, 4)
