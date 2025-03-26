@@ -1,6 +1,39 @@
 import SwiftUI
 import AVFoundation
 
+struct TypingDotsView: View {
+    @State private var animationStep = 0
+    
+    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+    
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("Typing")
+                .foregroundColor(.gray)
+                .font(.footnote)
+            
+            HStack(spacing: 2) {
+                Circle()
+                    .fill(animationStep >= 0 ? Color.gray : Color.gray.opacity(0.3))
+                    .frame(width: 5, height: 5)
+                
+                Circle()
+                    .fill(animationStep >= 1 ? Color.gray : Color.gray.opacity(0.3))
+                    .frame(width: 5, height: 5)
+                
+                Circle()
+                    .fill(animationStep >= 2 ? Color.gray : Color.gray.opacity(0.3))
+                    .frame(width: 5, height: 5)
+            }
+        }
+        .onReceive(timer) { _ in
+            withAnimation {
+                animationStep = (animationStep + 1) % 4
+            }
+        }
+    }
+}
+
 struct MessageBubbleView: View {
     let message: ChatMessage
     @Environment(\.colorScheme) private var colorScheme
@@ -41,10 +74,9 @@ struct MessageBubbleView: View {
                 } else {
                     // Claude message with markdown support
                     if !message.isComplete && message.content.isEmpty {
-                        // Empty Claude message - show only loader
+                        // Empty Claude message - show typing indicator dots
                         HStack {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .gray))
+                            TypingDotsView()
                                 .padding(4)
                         }
                     } else {
@@ -116,6 +148,7 @@ struct MessageBubbleView: View {
     VStack {
         MessageBubbleView(message: ChatMessage(content: "Hello, how can I help you today?\n\n**Bold text** and *italic text*\n\n- List item 1\n- List item 2", isUser: false))
         MessageBubbleView(message: ChatMessage(content: "I'm feeling overwhelmed with my tasks", isUser: true))
+        MessageBubbleView(message: ChatMessage(content: "", isUser: false, isComplete: false))
     }
     .padding()
     .environmentObject(ThemeManager())
