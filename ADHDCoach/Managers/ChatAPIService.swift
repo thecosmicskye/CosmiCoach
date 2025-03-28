@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 /**
  * ChatAPIService handles all communication with the Claude API.
@@ -133,6 +134,16 @@ class ChatAPIService {
      * @param finalizeStreamingMessage Callback to finalize the message when streaming is complete
      * @param isProcessingCallback Callback to update the processing state
      */
+    // Background task identifier for API requests
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    
+    // Store streaming state to handle app backgrounding
+    private var isRequestInProgress = false
+    private var currentRequest: URLRequest?
+    private var currentUpdateStreamingCallback: ((String) -> String)?
+    private var currentFinalizeStreamingCallback: (() -> Void)?
+    private var currentIsProcessingCallback: ((Bool) -> Void)?
+    
     func sendMessageToClaude(
         userMessage: String,
         conversationHistory: String,
@@ -145,6 +156,14 @@ class ChatAPIService {
         finalizeStreamingMessage: @escaping () -> Void,
         isProcessingCallback: @escaping (Bool) -> Void
     ) async {
+        // Start a background task to keep the request alive if app goes to background
+        registerBackgroundTask()
+        
+        // Store callbacks for possible resumption if app is backgrounded
+        self.currentUpdateStreamingCallback = updateStreamingMessage
+        self.currentFinalizeStreamingCallback = finalizeStreamingMessage
+        self.currentIsProcessingCallback = isProcessingCallback
+        self.isRequestInProgress = true
         // Store context for use in follow-up requests
         self.lastMemoryContent = memoryContent
         self.lastCalendarContext = calendarContext
@@ -286,6 +305,9 @@ class ChatAPIService {
             if let requestStr = String(data: requestData, encoding: .utf8) {
                 print("💡 FULL API REQUEST: \(String(requestStr.prefix(1000))) [...]") // Only print first 1000 chars
             }
+            
+            // Store the current request for possible resumption
+            self.currentRequest = request
             
             // Create a URLSession data task with delegate
             let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
@@ -691,6 +713,11 @@ class ChatAPIService {
                     print("💡 Cannot add tool_results because there's no assistant message with tool_use blocks")
                     finalizeStreamingMessage()
                     isProcessingCallback(false)
+                    
+                    // Reset streaming state and end background task
+                    self.isRequestInProgress = false
+                    self.currentRequest = nil
+                    endBackgroundTask()
                 }
             } else {
                 // No tool results to process, finalize the message
@@ -1641,6 +1668,11 @@ class ChatAPIService {
             finalizeStreamingMessage()
             isProcessingCallback(false)
             
+            // Reset streaming state and end background task
+            self.isRequestInProgress = false
+            self.currentRequest = nil
+            endBackgroundTask()
+            
         } catch {
             let errorMessage = "\n\nUnable to continue: There was an error connecting to the service. \(error.localizedDescription)"
             _ = updateStreamingMessage(errorMessage)
@@ -1736,5 +1768,134 @@ class ChatAPIService {
     func updateLocationContext(_ locationContext: String) async {
         self.lastLocationContext = locationContext
         print("💡 Location context updated in API service (length: \(locationContext.count) chars)")
+    }
+    
+    // MARK: - Background Task Handling
+    
+    /// Register a background task to keep API requests running when app is in background
+    private func registerBackgroundTask() {
+        print("🔄 Registering background task for API request")
+        
+        // End any existing background task first
+        if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+        }
+        
+        // Start a new background task
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask { [weak self] in
+            // This is the expiration handler, called when we're about to run out of time
+            print("⚠️ API request background task expiring")
+            self?.endBackgroundTask()
+        }
+        
+        print("🔄 Background task registered with ID: \(backgroundTaskID.rawValue)")
+    }
+    
+    /// End the current background task
+    private func endBackgroundTask() {
+        if backgroundTaskID != .invalid {
+            print("🔄 Ending background task with ID: \(backgroundTaskID.rawValue)")
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+        }
+    }
+    
+    /// Resume a streaming request that was interrupted by app backgrounding
+    func resumeInterruptedStreamingIfNeeded() {
+        guard isRequestInProgress, 
+              let request = currentRequest,
+              let updateStreamingMessage = currentUpdateStreamingCallback,
+              let finalizeStreamingMessage = currentFinalizeStreamingCallback,
+              let isProcessingCallback = currentIsProcessingCallback else {
+            print("📱 No streaming request to resume")
+            return
+        }
+        
+        print("🔄 Resuming interrupted streaming request")
+        
+        // Reset streaming state to avoid multiple resumptions
+        isRequestInProgress = false
+        
+        // Create a task to resume the streaming
+        Task {
+            do {
+                print("🔄 Restarting API request after app foregrounded")
+                
+                // Start a new background task for the resumed request
+                registerBackgroundTask()
+                
+                // Create a fresh stream from the stored request
+                let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
+                
+                guard let httpResponse = response as? HTTPURLResponse else {
+                    isProcessingCallback(false)
+                    return
+                }
+                
+                print("🔄 Resumed API request returned with status code: \(httpResponse.statusCode)")
+                
+                if httpResponse.statusCode != 200 {
+                    var errorData = Data()
+                    for try await byte in asyncBytes {
+                        errorData.append(byte)
+                    }
+                    
+                    let errorMessage = "Sorry, there was an error resuming your request after backgrounding the app."
+                    _ = updateStreamingMessage(errorMessage)
+                    finalizeStreamingMessage()
+                    isProcessingCallback(false)
+                    return
+                }
+                
+                // Add an indicator that the stream was resumed
+                _ = updateStreamingMessage("\n[Resuming after app backgrounded...]\n")
+                
+                // Process the streaming response as normal
+                for try await line in asyncBytes.lines {
+                    // Same streaming code as the original method...
+                    // Only handle text content for simplicity in this minimal implementation
+                    
+                    // Skip empty lines
+                    guard !line.isEmpty else { continue }
+                    
+                    // SSE format has "data: " prefix
+                    guard line.hasPrefix("data: ") else { continue }
+                    
+                    // Remove the "data: " prefix
+                    let jsonStr = line.dropFirst(6)
+                    
+                    // Handle the stream end event
+                    if jsonStr == "[DONE]" {
+                        break
+                    }
+                    
+                    // Parse the JSON and look for text content
+                    if let data = jsonStr.data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let contentDelta = json["delta"] as? [String: Any],
+                       let textContent = contentDelta["text"] as? String {
+                        
+                        // Send the text content
+                        _ = updateStreamingMessage(textContent)
+                    }
+                }
+                
+                // Complete the streaming
+                finalizeStreamingMessage()
+                isProcessingCallback(false)
+                
+                // End the background task
+                endBackgroundTask()
+                
+            } catch {
+                print("🔄 Error resuming streaming: \(error.localizedDescription)")
+                let errorMessage = "\n[Could not resume streaming after backgrounding the app. Please try again.]"
+                _ = updateStreamingMessage(errorMessage)
+                finalizeStreamingMessage()
+                isProcessingCallback(false)
+                endBackgroundTask()
+            }
+        }
     }
 }

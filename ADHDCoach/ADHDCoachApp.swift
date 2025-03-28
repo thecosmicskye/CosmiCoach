@@ -302,6 +302,11 @@ struct ADHDCoachApp: App {
                 // Ensure navigation bar appearance is preserved when app becomes active
                 configureUIKitAppearance()
                 
+                // Check if there's an interrupted API streaming request to resume
+                Task {
+                    await chatManager.resumeInterruptedStreaming()
+                }
+                
                 // Force navigation bar to be visible by modifying UINavigationBar global appearance
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     UINavigationBar.appearance().isHidden = false
