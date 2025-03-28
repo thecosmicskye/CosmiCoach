@@ -1164,6 +1164,19 @@ class ChatManager: ObservableObject, @unchecked Sendable {
      * IMPORTANT: This method is now called before each API request to ensure
      * the date/time and all context data is always up-to-date.
      */
+    /**
+     * Checks if there are any interrupted streaming requests that need to be resumed
+     * after the app is foregrounded.
+     */
+    @MainActor
+    func resumeInterruptedStreaming() async {
+        print("🔄 Checking for interrupted streaming requests to resume")
+        apiService.resumeInterruptedStreamingIfNeeded()
+    }
+    
+    /**
+     * Refreshes all context data to ensure API has latest information.
+     */
     func refreshContextData() async {
         print("🔄 Refreshing context data for up-to-date information")
         print("🕒 Current time: \(DateFormatter.formatCurrentDateTimeWithTimezone())")
